@@ -1,7 +1,9 @@
 import math
 from datetime import UTC, datetime, timedelta, timezone
+from typing import Any
 
 import pytest
+
 from nosolear.domain.observations import Context, DetectorNotAllowed, Outcome, make_observation
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY as T
 from nosolear.domain.taxonomy import Detector
@@ -11,7 +13,7 @@ T0 = datetime(2026, 11, 12, 8, 0, tzinfo=UTC)
 
 
 def obs(**kw):
-    base = dict(
+    base: dict[str, Any] = dict(
         taxonomy=T,
         error_key="sound.sub.v.w",
         outcome=Outcome.MISS,

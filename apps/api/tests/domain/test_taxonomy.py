@@ -1,4 +1,5 @@
 import pytest
+
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY as T
 from nosolear.domain.taxonomy import Detector, Family, Skill, UnknownErrorKey
 
