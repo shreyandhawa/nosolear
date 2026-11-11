@@ -1,2 +1,2 @@
 #!/usr/bin/env bash
-git diff --cached --name-only --diff-filter=ACM | scripts/check-no-personal-data.sh
+git -c core.quotepath=off diff --cached --name-only --diff-filter=ACMR | scripts/check-no-personal-data.sh

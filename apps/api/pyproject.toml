@@ -37,3 +37,7 @@ strict = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = [
+    # Revisit: httpx pinned at 0.28.1; drop this once starlette's testclient dependency is resolved.
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",
+]
