@@ -7,6 +7,7 @@ dependencies = [
     "fastapi==0.162.4",
     "uvicorn==0.54.0",
     "pydantic-settings==2.16.2",
+    "scipy==1.18.1",
 ]
 
 [dependency-groups]
@@ -16,6 +17,7 @@ dev = [
     "ruff==0.17.4",
     "pyright==1.1.414",
     "httpx==0.28.1",
+    "scipy-stubs==1.18.1.1",
 ]
 
 [build-system]
@@ -36,9 +38,11 @@ include = ["src", "tests"]
 pythonVersion = "3.14"
 typeCheckingMode = "basic"
 strict = ["src"]
+extraPaths = ["tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["tests"]
 filterwarnings = [
     # Revisit: httpx pinned at 0.28.1; drop this once starlette's testclient dependency is resolved.
     "ignore:Using `httpx` with `starlette.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",
