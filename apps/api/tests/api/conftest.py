@@ -21,5 +21,5 @@ def client_with_tmp_db(tmp_path: Path) -> Iterator[TestClient]:
 def seeded_profile(client_with_tmp_db: TestClient) -> Profile:
     profile = build_profile(SAMPLE_OBS, as_of=NOW, taxonomy=TAX)
     engine = client_with_tmp_db.app.state.engine  # pyright: ignore[reportAttributeAccessIssue]
-    ProfileRepository(engine, TAX).save(profile, session_id=None, reason="test")
+    ProfileRepository(engine, TAX).save(profile, session_id=None, reason="rebuild")
     return profile
