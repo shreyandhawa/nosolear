@@ -1,2 +1,4 @@
 minimumReleaseAgeExclude:
   - vite@8.3.8
+  # msw 3.0.5 is newer than the release-age gate allows
+  - msw@3.0.5
