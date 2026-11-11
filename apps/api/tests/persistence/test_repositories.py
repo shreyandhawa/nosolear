@@ -1,8 +1,10 @@
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
 from factories import NPT, SAMPLE_OBS, T0, TAX, count, mk
 from sqlalchemy import Engine, text
+from sqlalchemy.exc import IntegrityError, StatementError
 
 from nosolear.domain.observations import Context, Outcome
 from nosolear.domain.profile import build_profile
@@ -44,10 +46,8 @@ def test_all_orders_by_observed_at_then_insertion(db_engine: Engine) -> None:
 
 
 def test_naive_datetime_is_rejected(db_engine: Engine) -> None:
-    from dataclasses import replace
-
     naive = replace(SAMPLE_OBS[0], observed_at=datetime(2026, 11, 12, 8, 0))
-    with pytest.raises(ValueError, match="aware"):
+    with pytest.raises(StatementError, match="aware"):
         ObservationRepository(db_engine).add_many([naive])
 
 
@@ -92,8 +92,6 @@ def test_latest_is_none_after_saving_empty_profile(db_engine: Engine) -> None:
 
 
 def test_invalid_reason_is_rejected(db_engine: Engine) -> None:
-    from sqlalchemy.exc import IntegrityError
-
     p = build_profile(SAMPLE_OBS, as_of=T0, taxonomy=TAX)
     with pytest.raises(IntegrityError):
         ProfileRepository(db_engine, TAX).save(p, session_id=None, reason="nope")
