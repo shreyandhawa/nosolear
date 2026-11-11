@@ -12,7 +12,7 @@ from nosolear.dev.seed import seed_observations
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY
 from nosolear.persistence.db import create_engine_for, upgrade_to_head
 from nosolear.persistence.repositories import ObservationRepository, ProfileRepository
-from nosolear.settings import Settings
+from nosolear.settings import REPO_ROOT, Settings
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -41,7 +41,15 @@ def _rebuild(engine: Engine) -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    engine = create_engine_for(Settings().database_url)
+    settings = Settings()
+    if args.command == "dev-seed" and settings.data_dir == REPO_ROOT / "data":
+        print(
+            "refusing to seed the real data directory (the observation log has no delete path);"
+            " set NOSOLEAR_DATA_DIR to a separate location, e.g. NOSOLEAR_DATA_DIR=data/dev",
+            file=sys.stderr,
+        )
+        return 2
+    engine = create_engine_for(settings.database_url)
     try:
         if args.command == "db":
             upgrade_to_head(engine)

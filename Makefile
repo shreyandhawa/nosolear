@@ -1,4 +1,4 @@
-.PHONY: setup api web seed test lint gen-api
+.PHONY: setup api api-dev web seed test lint gen-api
 
 setup:
 	cd apps/api && uv sync
@@ -8,11 +8,14 @@ setup:
 api:
 	cd apps/api && uv run uvicorn nosolear.api.app:create_app --factory --reload --port 8000
 
+api-dev:
+	cd apps/api && NOSOLEAR_DATA_DIR=$(CURDIR)/data/dev uv run uvicorn nosolear.api.app:create_app --factory --reload --port 8000
+
 web:
 	cd apps/web && pnpm dev
 
 seed:
-	cd apps/api && uv run nosolear db upgrade && uv run nosolear dev-seed
+	cd apps/api && export NOSOLEAR_DATA_DIR=$(CURDIR)/data/dev && uv run nosolear db upgrade && uv run nosolear dev-seed
 
 test:
 	cd apps/api && uv run pytest -q
