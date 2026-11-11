@@ -1,0 +1,64 @@
+# --- Personal data: NEVER commit (this repo is public) ---
+# Recordings, error profile, score history, local database
+data/
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+recordings/
+*.wav
+*.webm
+*.ogg
+*.m4a
+*.mp3
+*.flac
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local model weights / caches
+models/
+*.gguf
+*.safetensors
+*.onnx
+.cache/
+.huggingface/
+
+# Node / TypeScript
+node_modules/
+dist/
+build/
+.next/
+.turbo/
+.vite/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+pnpm-debug.log*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# Playwright
+test-results/
+playwright-report/
