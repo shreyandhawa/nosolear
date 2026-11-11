@@ -11,6 +11,7 @@ from nosolear.domain.taxonomy import DEFAULT_TAXONOMY, Detector
 TAX = DEFAULT_TAXONOMY
 T0 = datetime(2026, 11, 12, 8, 0, tzinfo=UTC)
 DAY = timedelta(days=1)
+NOW = T0
 NPT = timezone(timedelta(hours=5, minutes=45))
 
 
@@ -48,3 +49,11 @@ SAMPLE_OBS = [
 def count(engine: Engine, table: str) -> int:
     with engine.connect() as conn:
         return conn.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar_one()
+
+
+class FixedClock:
+    def __init__(self, now: datetime) -> None:
+        self._now = now
+
+    def now(self) -> datetime:
+        return self._now
