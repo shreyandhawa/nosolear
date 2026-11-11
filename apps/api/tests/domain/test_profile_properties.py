@@ -1,9 +1,9 @@
-import os
 from datetime import timedelta
 
 from factories import T0, TAX, mk
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
+
 from nosolear.domain.estimates import (
     DEFAULT_PRIOR,
     HYPOTHESIS_PRIOR,
@@ -13,13 +13,8 @@ from nosolear.domain.estimates import (
     decay,
     estimate,
 )
-from nosolear.domain.profile import build_profile
-
 from nosolear.domain.observations import Context, Observation, Outcome
-
-settings.register_profile("default", max_examples=100, deadline=None)
-settings.register_profile("heavy", max_examples=1000, deadline=None)
-settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))
+from nosolear.domain.profile import build_profile
 
 HALF_LIFE = 14.0
 LEVEL = 0.8
