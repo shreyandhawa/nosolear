@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from numbers import Real
 
 from nosolear.domain.taxonomy import Detector, Taxonomy
 
@@ -52,12 +53,19 @@ def make_observation(
     evidence: Mapping[str, object] | None = None,
 ) -> Observation:
     definition = taxonomy.get(error_key)
+    # Coerce so plain strings become members and unknown values raise ValueError. This is the
+    # trust boundary: everything downstream may rely on enum members.
+    detector = Detector(detector)
     if detector not in definition.detectors:
         raise DetectorNotAllowed(f"{detector} may not report {error_key}")
+    if isinstance(confidence, bool) or not isinstance(confidence, Real):
+        raise ValueError(f"confidence must be a real number, got {confidence!r}")
     if not math.isfinite(confidence) or not 0 < confidence <= 1:
         raise ValueError(f"confidence must be in (0, 1], got {confidence}")
     if observed_at.tzinfo is None or observed_at.utcoffset() is None:
         raise ValueError("observed_at must be timezone-aware")
+    outcome = Outcome(outcome)
+    context = Context(context)
     return Observation(
         error_key=error_key,
         outcome=outcome,
