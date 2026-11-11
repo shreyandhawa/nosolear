@@ -30,9 +30,9 @@ def create_engine_for(url: str) -> Engine:
     return engine
 
 
-def upgrade_to_head(engine: Engine) -> None:
+def upgrade_to_head(engine: Engine, revision: str = "head") -> None:
     config = Config()
     config.set_main_option("script_location", str(MIGRATIONS_DIR))
     with engine.begin() as connection:
         config.attributes["connection"] = connection
-        command.upgrade(config, "head")
+        command.upgrade(config, revision)
