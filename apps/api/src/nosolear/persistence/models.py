@@ -23,6 +23,16 @@ from nosolear.domain.status import Status
 from nosolear.domain.taxonomy import Detector
 
 
+def format_utc(value: datetime) -> str:
+    """The one stored text form of a datetime: UTC, fixed width, microseconds (`...+00:00`).
+
+    Fixed width keeps text ordering chronological. Used by `UTCDateTime` and by JSON snapshots.
+    """
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("datetime must be timezone-aware")
+    return value.astimezone(UTC).isoformat(timespec="microseconds")
+
+
 class UTCDateTime(TypeDecorator[datetime]):
     """Aware datetimes stored as ISO-8601 text in UTC (`...+00:00`); naive input is an error."""
 
@@ -32,9 +42,7 @@ class UTCDateTime(TypeDecorator[datetime]):
     def process_bind_param(self, value: datetime | None, dialect: Dialect) -> str | None:
         if value is None:
             return None
-        if value.tzinfo is None or value.utcoffset() is None:
-            raise ValueError("datetime must be timezone-aware")
-        return value.astimezone(UTC).isoformat(timespec="microseconds")
+        return format_utc(value)
 
     def process_result_value(self, value: str | None, dialect: Dialect) -> datetime | None:
         return None if value is None else datetime.fromisoformat(value).astimezone(UTC)
