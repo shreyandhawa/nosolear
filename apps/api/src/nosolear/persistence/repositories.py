@@ -13,7 +13,12 @@ from nosolear.domain.observations import Context, Observation, Outcome
 from nosolear.domain.profile import Profile, ProfileEntry
 from nosolear.domain.status import Status
 from nosolear.domain.taxonomy import Detector, Taxonomy
-from nosolear.persistence.models import observations, profile_entries, profile_snapshots
+from nosolear.persistence.models import (
+    format_utc,
+    observations,
+    profile_entries,
+    profile_snapshots,
+)
 
 
 def _now() -> datetime:
@@ -88,8 +93,8 @@ def _snapshot_entry(row: dict[str, Any]) -> dict[str, Any]:
     stored = ("error_key", "a", "b", "p_hat", "ci_low", "ci_high", "n_eff", "status", "priority")
     return {
         **{k: row[k] for k in stored},
-        "updated_at": row["updated_at"].isoformat(),
-        "last_seen_at": row["last_seen_at"].isoformat(),
+        "updated_at": format_utc(row["updated_at"]),
+        "last_seen_at": format_utc(row["last_seen_at"]),
     }
 
 

@@ -13,7 +13,8 @@ from nosolear.settings import Settings
 
 
 def _run(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=metadata)
+    # SQLite cannot alter columns or add constraints in place; batch mode rebuilds the table.
+    context.configure(connection=connection, target_metadata=metadata, render_as_batch=True)
     with context.begin_transaction():
         context.run_migrations()
 

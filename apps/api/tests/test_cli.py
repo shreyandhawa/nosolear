@@ -47,3 +47,19 @@ def test_rebuild_profile_command(
     capsys.readouterr()
     assert main(["rebuild-profile"]) == 0
     assert "Rebuilt profile: 0 keys as of " in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("value", ["", "data", "./data"])
+def test_dev_seed_refuses_the_default_data_dir(
+    value: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("NOSOLEAR_DATA_DIR", value)
+
+    def _no_engine(url: str) -> object:
+        raise AssertionError(f"must refuse before touching the database: {url}")
+
+    monkeypatch.setattr("nosolear.cli.create_engine_for", _no_engine)
+    assert main(["dev-seed"]) == 2
+    assert main(["dev-seed", "--force"]) == 2
+    err = capsys.readouterr().err
+    assert "NOSOLEAR_DATA_DIR" in err and "data/dev" in err

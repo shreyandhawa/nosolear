@@ -49,7 +49,7 @@ def decay(state: BetaState, *, to: datetime, prior: Prior, half_life_days: float
 def apply(state: BetaState, obs: Observation) -> BetaState:
     if obs.observed_at < state.updated_at:
         raise ValueError("observation is older than the state it is applied to")
-    miss = obs.outcome is Outcome.MISS
+    miss = obs.outcome == Outcome.MISS
     return BetaState(
         a=state.a + (obs.weight if miss else 0.0),
         b=state.b + (0.0 if miss else obs.weight),

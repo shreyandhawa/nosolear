@@ -1,3 +1,5 @@
+import json
+import re
 from dataclasses import replace
 from datetime import UTC, datetime
 
@@ -96,3 +98,23 @@ def test_invalid_reason_is_rejected(db_engine: Engine) -> None:
     with pytest.raises(IntegrityError):
         ProfileRepository(db_engine, TAX).save(p, session_id=None, reason="nope")
     assert count(db_engine, "profile_entries") == 0
+
+
+def test_snapshot_json_datetimes_use_the_stored_utc_format(db_engine: Engine) -> None:
+    """Same fixed-width UTC text with microseconds as the UTCDateTime columns, offsets folded."""
+    p = build_profile(SAMPLE_OBS, as_of=T0.astimezone(NPT), taxonomy=TAX)
+    ProfileRepository(db_engine, TAX).save(p, session_id=None, reason="rebuild")
+    with db_engine.connect() as conn:
+        raw = conn.execute(text("SELECT entries_json FROM profile_snapshots")).scalar_one()
+        stored = {
+            r.error_key: r
+            for r in conn.exec_driver_sql(
+                "SELECT error_key, updated_at, last_seen_at FROM profile_entries"
+            )
+        }
+    entries = json.loads(raw)
+    assert len(entries) == len(stored) > 0
+    for entry in entries:
+        for field in ("updated_at", "last_seen_at"):
+            assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}\+00:00", entry[field])
+            assert entry[field] == getattr(stored[entry["error_key"]], field)
