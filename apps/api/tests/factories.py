@@ -3,6 +3,8 @@
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta, timezone
 
+from sqlalchemy import Engine, text
+
 from nosolear.domain.observations import Context, Observation, Outcome, make_observation
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY, Detector
 
@@ -31,3 +33,18 @@ def mk(
         confidence=confidence,
         evidence=evidence,
     )
+
+
+SAMPLE_OBS = [
+    mk("sound.sub.v.w", Outcome.MISS, T0 - 3 * DAY),
+    mk("sound.sub.v.w", Outcome.OK, T0 - 2 * DAY),
+    mk("sound.sub.v.w", Outcome.MISS, T0 - DAY, context=Context.UNSCRIPTED),
+    mk("sound.sub.θ.t", Outcome.OK, T0 - 2 * DAY),
+    mk("sound.sub.θ.t", Outcome.MISS, T0 - DAY),
+    mk("fluency.filler", Outcome.MISS, T0 - DAY, detector=Detector.ASR_METRICS, confidence=0.8),
+]
+
+
+def count(engine: Engine, table: str) -> int:
+    with engine.connect() as conn:
+        return conn.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar_one()
