@@ -1,6 +1,6 @@
 # Nosolear architecture
 
-Status: **draft for review**. No code gets written until this is approved.
+Status: **approved 2026-11-11**. Later changes go through PRs, like code.
 Date: 2026-11-11. All prices and limits were checked against official pages on this date (see [Sources](#16-sources)).
 
 ---
@@ -278,7 +278,7 @@ These feed the fluency metrics (pauses, words per minute, time to first word) an
 - **Pros:** free and private.
 - **Cons:** noticeably weaker rewrites, and it competes for RAM with the speech models.
 
-**Recommendation: A.** The model is one config value and your call ([§14](#14-open-questions-for-you)):
+**Recommendation: A. Decided: Opus 5.5 (`claude-opus-5-5`).** The model is one config value, so it can change later:
 
 | Model | Price per million tokens (in / out) | Estimated monthly cost at daily use |
 |---|---|---|
@@ -709,7 +709,7 @@ The spikes are throwaway experiments whose results set the design. Each has a de
 
 ## 14. Open questions for you
 
-1. **Coach model:** Opus 5.5 (about $7/month of the credit) or Haiku 5.5 (under $1)? I recommend Opus. For the Articulate skill, the quality of the rewrite *is* the product.
+1. ~~Coach model~~ **Decided 2026-11-11: Opus 5.5.**
 2. **Azure signup:** are you OK giving Azure a card for identity verification? Only an F0 resource would be created, with a $1 budget alert. If not, the fallback is the phone probe plus local analysis only, which scores sounds much more roughly.
 3. **Backups:** should `data/` be backed up somewhere specific, or is Time Machine enough?
 
