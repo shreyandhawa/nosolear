@@ -378,7 +378,7 @@ Each key keeps two numbers: `a` (weighted misses) and `b` (weighted passes), sta
   - default: `H = 14`
   - effect: improvement shows up within a couple of weeks, while one bad session can't swing everything.
 - **Estimate:** miss rate `p̂ = a / (a + b)`, with an 80% interval from the Beta distribution and an effective sample size `n = a + b − a0 − b0`.
-- **Prior:** `a0 = 1, b0 = 3` for hypothesized keys, meaning "maybe a 25% miss rate, low confidence". One baseline session outweighs it.
+- **Prior:** `a0 = 1, b0 = 3` for hypothesized keys, meaning "maybe a 25% miss rate, low confidence". All other keys start at `a0 = 1, b0 = 9`, about 10%. One baseline session outweighs either prior.
 
 **Why this model:**
 - It treats "3 misses out of 4" and "30 out of 40" correctly: same estimate, very different confidence.
@@ -394,8 +394,9 @@ Each key keeps two numbers: `a` (weighted misses) and `b` (weighted passes), sta
 | `improving` | Active, and `p̂` is down at least 30% from 14 days ago |
 | `mastered` | Upper end of the 80% interval `< 0.10` and `n ≥ 20` |
 | Back to `active` | From mastered only if `p̂ > 0.20` |
+| `watching` | Everything else: below the active rate, but without enough evidence for mastered |
 
-The thresholds are config values, tuned after Phase 1.
+The rules are checked in this order: unknown, relapse from mastered, mastered, active/improving, watching. The thresholds are config values, tuned after Phase 1.
 
 ### 6.6 Choosing what to practice (selection policy)
 
@@ -710,8 +711,8 @@ The spikes are throwaway experiments whose results set the design. Each has a de
 ## 14. Open questions for you
 
 1. ~~Coach model~~ **Decided 2026-11-11: Opus 5.5.**
-2. **Azure signup:** are you OK giving Azure a card for identity verification? Only an F0 resource would be created, with a $1 budget alert. If not, the fallback is the phone probe plus local analysis only, which scores sounds much more roughly.
-3. **Backups:** should `data/` be backed up somewhere specific, or is Time Machine enough?
+2. ~~Azure signup~~ **Decided 2026-11-11: yes.** Only an F0 Speech resource, with a $1 budget alert.
+3. ~~Backups~~ **Decided 2026-11-11: Time Machine is enough.**
 
 ---
 
