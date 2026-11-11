@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+git diff --cached --name-only --diff-filter=ACM | scripts/check-no-personal-data.sh
