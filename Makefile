@@ -1,4 +1,4 @@
-.PHONY: setup api web test lint
+.PHONY: setup api web seed test lint
 
 setup:
 	cd apps/api && uv sync
@@ -10,6 +10,9 @@ api:
 
 web:
 	cd apps/web && pnpm dev
+
+seed:
+	cd apps/api && uv run nosolear db upgrade && uv run nosolear dev-seed
 
 test:
 	cd apps/api && uv run pytest -q

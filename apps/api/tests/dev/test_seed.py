@@ -1,4 +1,5 @@
 from factories import NOW, TAX
+
 from nosolear.dev.seed import seed_observations
 from nosolear.domain.observations import Outcome
 from nosolear.domain.taxonomy import Detector
