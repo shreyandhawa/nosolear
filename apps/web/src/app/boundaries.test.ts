@@ -1,8 +1,7 @@
 // @vitest-environment node
-import { fileURLToPath } from "node:url";
 import { ESLint } from "eslint";
 
-const webRoot = fileURLToPath(new URL("../..", import.meta.url));
+const webRoot = decodeURIComponent(new URL("../..", import.meta.url).pathname);
 
 async function boundaryMessages(code: string, filePath: string) {
   const eslint = new ESLint({ cwd: webRoot });
