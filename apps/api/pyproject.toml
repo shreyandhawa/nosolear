@@ -38,7 +38,7 @@ include = ["src", "tests"]
 pythonVersion = "3.14"
 typeCheckingMode = "basic"
 strict = ["src"]
-extraPaths = ["tests"]
+extraPaths = ["src", "tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

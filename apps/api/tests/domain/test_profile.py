@@ -1,9 +1,9 @@
 import pytest
 from factories import DAY, T0, TAX, mk
-from nosolear.domain.profile import ALGO_VERSION, build_profile
-from nosolear.domain.status import Status
 
 from nosolear.domain.observations import Context, Outcome
+from nosolear.domain.profile import ALGO_VERSION, build_profile
+from nosolear.domain.status import Status
 
 MISS, OK = Outcome.MISS, Outcome.OK
 
@@ -70,3 +70,13 @@ def test_profile_metadata_and_last_seen():
 def test_naive_as_of_rejected():
     with pytest.raises(ValueError):
         build_profile([], as_of=T0.replace(tzinfo=None), taxonomy=TAX)
+
+
+def test_interleaved_keys_are_estimated_independently():
+    vw = [mk("sound.sub.v.w", MISS, T0), mk("sound.sub.v.w", OK, T0 + 2 * DAY)]
+    tt = [mk("sound.sub.θ.t", MISS, T0 + DAY)]
+    both = build_profile(vw + tt, as_of=T0 + 3 * DAY, taxonomy=TAX)
+    alone = build_profile(vw, as_of=T0 + 3 * DAY, taxonomy=TAX)
+    by_key = {e.definition.key: e for e in both.entries}
+    assert by_key["sound.sub.v.w"] == alone.entries[0]
+    assert by_key["sound.sub.θ.t"].last_seen_at == T0 + DAY
