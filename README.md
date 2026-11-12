@@ -56,6 +56,7 @@ git clone https://github.com/shreyandhawa/nosolear.git
 cd nosolear
 make setup
 cp .env.example .env
+chmod 600 .env
 ```
 
 `make setup` installs the API and web dependencies and turns on the repository's git hooks. Then edit `.env`:
@@ -81,7 +82,7 @@ The report has one row per component: Azure Speech, Azure capabilities, Anthropi
 - **not probed**: the live capability probe has not run
 - **degraded**: it works, with a caveat
 
-`nosolear doctor` is offline. It never prints a key, a fragment of one or its length. It exits 0 when nothing is missing, 1 when something is, and 2 when your settings are invalid. Until you add keys, Azure Speech and Anthropic show as missing. `nosolear doctor --probe` (live checks against the providers) arrives in Phase 0d.
+`nosolear doctor` is offline. It never prints a key, a fragment of one or its length. It exits 0 when nothing is missing, 1 when something is, and 2 when your settings are invalid. Until you add keys, Azure Speech and Anthropic show as missing, and so does the transcriber, which can use Azure or a local model from an extra. If the data dir row says `.env` is readable by other users, run `chmod 600 .env`. `nosolear doctor --probe` (live checks against the providers) arrives in Phase 0d.
 
 ## Run
 
