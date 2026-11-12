@@ -22,15 +22,16 @@ Phase 0b execution (open-source foundation). Gate 2 is passed: the phase plans P
 - 2026-11-12: Phase 0b Task 7: readiness (`domain/readiness.py`, `check_readiness`, `SystemEnvironment`, `GET /api/readiness`, `nosolear doctor`; `doctor --probe` waits for Phase 0d). Keys enter only as booleans.
 - 2026-11-12: Phase 0b Task 8: network guards (`domain/network_policy.py`, outermost `RequestGuardMiddleware`: loopback peer, exact Host/Origin membership, no cross-site fetch), CORS limited to the app origins, `nosolear serve` (`proxy_headers=False`), Makefile uses it; API tests use `loopback_client`.
 - 2026-11-12: Phase 0b Task 9: CI `audit` job (pip-audit 2.10.1 on the exported lockfile, `pnpm audit --audit-level=high`), `api` matrix on ubuntu and macOS behind a stable `api` gate job, pytest `live` marker (excluded by default), `make test-live`, and the `live_settings` and `require_keys` helpers. Branch protection still to be updated with `audit`, pending owner confirmation.
+- 2026-11-12: Phase 0b Task 10: the README is now the setup guide (platforms, prerequisites, keys, set up, `nosolear doctor`, run, extras, what leaves your machine, costs, security), checked by `tests/docs/test_readme.py` against the Makefile, the CLI parser and the settings.
 
 ## In progress
 
-- Task 9 is in review on `p0b/09-ci-audit-macos-live`. Phase 0b Tasks 1–8 are merged (PRs #14–#22); `main` is at 5c96709. Task 9's last step, updating branch protection to require `audit` (the `api` check now gates both matrix legs), is pending the owner's confirmation; the controller runs it after merge.
-- The subagent-driven-development ledger for Phase 0b is at `.superpowers/sdd/2026-11-12-phase-0b-open-source-foundation/progress.md` (git-ignored, on the owner's machine). It holds the preflight scan, every controller ruling, and the deferred Minor findings that the phase-end review (Task 12) must triage. Read it before dispatching Task 9. Its `global-constraints.md`, `reviewer-instructions.md` and `rereview-instructions.md` are reusable dispatch inputs.
+- Task 10 is in review on `p0b/10-readme-setup-guide`. Phase 0b Tasks 1–9 are merged (PRs #14–#23); `main` is at f5dda47. Task 9's last step, updating branch protection to require `audit` (the `api` check gates both matrix legs), is pending the owner's confirmation; the controller runs it.
+- The subagent-driven-development ledger for Phase 0b is at `.superpowers/sdd/2026-11-12-phase-0b-open-source-foundation/progress.md` (git-ignored, on the owner's machine). It holds the preflight scan, every controller ruling, and the deferred Minor findings that the phase-end review (Task 12) must triage. Read it before dispatching Task 11. Its `global-constraints.md`, `reviewer-instructions.md` and `rereview-instructions.md` are reusable dispatch inputs.
 
 ## Next
 
-1. Task 10 (after Task 9 merges), then Tasks 11–12. The plan is `docs/superpowers/plans/2026-11-12-phase-0b-open-source-foundation.md`. Use `superpowers:subagent-driven-development` and resume the existing ledger (tasks with a `complete` line are done). One branch and one PR per task, with a fresh implementer subagent and a different reviewer subagent each time. Squash-merge on green CI.
+1. Task 11 (after Task 10 merges), then Task 12. The plan is `docs/superpowers/plans/2026-11-12-phase-0b-open-source-foundation.md`. Use `superpowers:subagent-driven-development` and resume the existing ledger (tasks with a `complete` line are done). One branch and one PR per task, with a fresh implementer subagent and a different reviewer subagent each time. Squash-merge on green CI.
 2. Any task that adds a dependency reruns `uv run --project apps/api python scripts/third_party_licences.py`.
 3. Correct `docs/ARCHITECTURE.md` §17/§18 for the licence discrepancy below.
 4. At the end of each phase: run `/security-review`, update this file, and hand off to a fresh session.
@@ -85,7 +86,7 @@ None right now.
 
 ## Branch and PR state
 
-- `main`: 5c96709 "Add loopback request guards and nosolear serve, and move the Makefile to it (#22)".
+- `main`: f5dda47 "Add CI audit job, macOS runner and the live pytest marker (#23)".
 - `docs/phase-plans`: merged (#13) and kept.
 - `p0b/01-community-files` … `p0b/06-pack-in-profile`: merged (#14–#19) and kept.
 - `docs/byok-architecture`: merged and kept (deleting branches needs the owner's approval).
