@@ -22,13 +22,13 @@ def _subcommands() -> set[str]:
 
 
 def test_every_make_target_in_readme_exists() -> None:
-    used = {m for span in TICKED for m in re.findall(r"\bmake ([a-z-]+)", span)}
-    assert used
+    used = set(re.findall(r"\bmake ([a-z][a-z-]*)", README))
+    assert {"setup", "api", "web"} <= used
     assert used <= _make_targets()
 
 
 def test_every_nosolear_subcommand_in_readme_exists() -> None:
-    used = {m for span in TICKED for m in re.findall(r"\bnosolear ([a-z-]+)", span)}
+    used = set(re.findall(r"\bnosolear ([a-z][a-z-]*)", README))
     assert {"doctor", "serve"} <= used
     assert used <= _subcommands()
 
@@ -51,13 +51,20 @@ def test_readme_has_required_sections() -> None:
         "Costs",
         "Security",
     ):
-        assert f"## {heading}" in README
+        assert re.search(rf"^## {re.escape(heading)}$", README, re.M), heading
 
 
 def test_readme_warns_about_single_user_machines_and_links_licence_files() -> None:
     text = README.lower()
     for needle in ("single-user machine", "third_party_notices", "privacy.md", "security.md"):
         assert needle in text
+
+
+def test_security_section_states_the_dev_server_rules() -> None:
+    section = next(s for s in re.split(r"^## ", README, flags=re.M) if s.startswith("Security\n"))
+    for needle in ("single-user machine", "--host", "5173", "8000"):
+        assert needle in section, needle
+    assert "uvicorn" not in README
 
 
 def test_readme_no_longer_describes_a_nepali_only_app() -> None:

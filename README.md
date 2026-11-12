@@ -12,9 +12,9 @@ The daily loop takes about 15 minutes: speak for 60 seconds, get one fix per ski
 
 ## Status
 
-The backend comes first and the web UI arrives in Phase 2. Today you can:
+The backend comes first. A first profile page exists, and the recording and scoring screens arrive in later phases (the main web UI is Phase 2). Today you can:
 
-- seed a synthetic error profile with `make seed` and look at the profile page
+- seed a synthetic error profile with `make seed`, start `make api-dev` and `make web`, then open `/profile` at http://localhost:5173
 - check your setup with `nosolear doctor`
 - run the local API with `nosolear serve` (or `make api`)
 
@@ -31,7 +31,7 @@ Install these first. On macOS use [Homebrew](https://brew.sh); on Linux (and WSL
 
 - **Git**
 - **[uv](https://docs.astral.sh/uv/)**: installs Python 3.14 and the API's dependencies
-- **Node** at the version in `.node-version` (26), and **pnpm** at the version pinned in `apps/web/package.json`
+- **Node** at the version in `.node-version`, and **pnpm** at the version in the `packageManager` field of `apps/web/package.json`. Distribution packages for Node are usually far older, so on Linux and WSL2 install a version manager such as [fnm](https://github.com/Schniz/fnm) or [nvm](https://github.com/nvm-sh/nvm), run it in the repo root so it reads `.node-version`, then run `corepack enable` to get the pinned pnpm. On macOS, `brew install fnm` works the same way
 - **make**
 - **espeak-ng**: only for the `local` extra that arrives in Phase 0d; skip it for now
 
@@ -114,7 +114,7 @@ Prices below were checked on 2026-11-11 and are subject to each provider's terms
 
 - **Azure Speech on F0**: free. Daily use takes about 1.5-2.5 of the 5 free audio hours a month and about 75k of the 500k free TTS characters a month. With `azure_stt` as the transcriber you come close to the cap, so a local transcriber is recommended.
 - **Claude**: billed per token to your Anthropic account. At about 24k tokens a day, the default model (`claude-opus-5-5`) costs about $7 a month. Haiku 5.5 costs about $0.20.
-- **Caps**: the app reserves usage before every paid call and stops at your caps. Defaults: Azure at 4.5 audio hours and 450k TTS characters a month (90% of F0), Claude at 100k tokens a day. Change them with `NOSOLEAR_CAP_AZURE_AUDIO_HOURS`, `NOSOLEAR_CAP_AZURE_TTS_CHARS` and `NOSOLEAR_CAP_CLAUDE_TOKENS`.
+- **Caps**: from Phase 0c and 0d, when the providers arrive, the app will reserve usage before every paid call and stop at your caps (nothing paid runs yet). Defaults: Azure at 4.5 audio hours and 450k TTS characters a month (90% of F0), Claude at 100k tokens a day. Change them with `NOSOLEAR_CAP_AZURE_AUDIO_HOURS`, `NOSOLEAR_CAP_AZURE_TTS_CHARS` and `NOSOLEAR_CAP_CLAUDE_TOKENS`.
 - **Disk and RAM**: about 0.4 GB a month of audio; 3-5 GB of RAM while local speech models are loaded.
 
 ## Security
