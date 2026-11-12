@@ -5,24 +5,18 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from nosolear.domain.estimates import (
-    DEFAULT_PRIOR,
-    HYPOTHESIS_PRIOR,
     BetaState,
     KeyEstimate,
-    Prior,
     apply,
     decay,
     estimate,
 )
 from nosolear.domain.observations import Observation
+from nosolear.domain.packs import LanguagePack
 from nosolear.domain.status import Status, StatusThresholds, classify
 from nosolear.domain.taxonomy import KeyDefinition, Taxonomy
 
 ALGO_VERSION = 1
-
-
-def prior_for(defn: KeyDefinition) -> Prior:
-    return HYPOTHESIS_PRIOR if defn.hypothesis else DEFAULT_PRIOR
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +44,7 @@ class Profile:
     as_of: datetime
     taxonomy_version: int
     algo_version: int
+    pack_id: str
     entries: tuple[ProfileEntry, ...]
 
 
@@ -68,9 +63,10 @@ def _build_entry(
     defn: KeyDefinition,
     observations: list[Observation],
     as_of: datetime,
+    pack: LanguagePack,
     config: ProfileConfig,
 ) -> ProfileEntry:
-    prior = prior_for(defn)
+    prior = pack.prior_for(defn.key)
     t = config.thresholds
     state = BetaState(prior.a0, prior.b0, observations[0].observed_at)
     history: list[tuple[datetime, float]] = []
@@ -115,6 +111,7 @@ def build_profile(
     *,
     as_of: datetime,
     taxonomy: Taxonomy,
+    pack: LanguagePack,
     config: ProfileConfig = DEFAULT_CONFIG,
 ) -> Profile:
     if as_of.tzinfo is None or as_of.utcoffset() is None:
@@ -129,12 +126,13 @@ def build_profile(
     for o in included:
         by_key.setdefault(o.error_key, []).append(o)
     entries = [
-        _build_entry(taxonomy.get(key), group, as_of, config) for key, group in by_key.items()
+        _build_entry(taxonomy.get(key), group, as_of, pack, config) for key, group in by_key.items()
     ]
     entries.sort(key=lambda e: (-e.priority, e.definition.key))
     return Profile(
         as_of=as_of,
         taxonomy_version=taxonomy.version,
         algo_version=ALGO_VERSION,
+        pack_id=pack.id,
         entries=tuple(entries),
     )

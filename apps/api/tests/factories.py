@@ -5,11 +5,15 @@ from datetime import UTC, datetime, timedelta, timezone
 
 from sqlalchemy import Engine, text
 
+from nosolear.adapters.content_files import load_pack
 from nosolear.domain.observations import Context, Observation, Outcome, make_observation
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY, Detector
-from nosolear.settings import Settings
+from nosolear.settings import CONTENT_DIR, Settings
 
 TAX = DEFAULT_TAXONOMY
+NEPALI = load_pack(CONTENT_DIR / "packs", "nepali")
+NEUTRAL = load_pack(CONTENT_DIR / "packs", "neutral")
+PACK = NEPALI
 T0 = datetime(2026, 11, 12, 8, 0, tzinfo=UTC)
 DAY = timedelta(days=1)
 NOW = T0

@@ -1,8 +1,15 @@
+from pathlib import Path
+
+import pytest
+from factories import NEPALI, NOW, SAMPLE_OBS, TAX, FixedClock
 from fastapi.testclient import TestClient
 
 from nosolear.api.app import create_app
+from nosolear.app.rebuild_profile import rebuild_profile
 from nosolear.domain.profile import ALGO_VERSION, Profile
 from nosolear.domain.taxonomy import TAXONOMY_VERSION
+from nosolear.persistence.repositories import ObservationRepository, ProfileRepository
+from nosolear.settings import Settings
 
 
 def test_profile_empty_db(client_with_tmp_db: TestClient):
@@ -44,3 +51,32 @@ def test_profile_returns_entries_in_priority_order(
 def test_openapi_operation_id():
     schema = create_app().openapi()
     assert schema["paths"]["/api/profile"]["get"]["operationId"] == "getProfile"
+
+
+def test_startup_rebuilds_a_profile_built_under_another_pack(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("NOSOLEAR_PACK", "nepali")
+    with TestClient(create_app(Settings(data_dir=tmp_path))) as first:
+        engine = first.app.state.engine  # pyright: ignore[reportAttributeAccessIssue]
+        ObservationRepository(engine).add_many(SAMPLE_OBS)
+        rebuild_profile(
+            observations=ObservationRepository(engine),
+            profiles=ProfileRepository(engine, TAX),
+            taxonomy=TAX,
+            pack=NEPALI,
+            clock=FixedClock(NOW),
+        )
+    monkeypatch.setenv("NOSOLEAR_PACK", "neutral")
+    with TestClient(create_app(Settings(data_dir=tmp_path))) as second:
+        engine = second.app.state.engine  # pyright: ignore[reportAttributeAccessIssue]
+        assert ProfileRepository(engine, TAX).latest_pack_id() == "neutral"
+
+
+def test_invalid_pack_does_not_stop_startup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+):
+    monkeypatch.setenv("NOSOLEAR_PACK", "nosuchpack")
+    with caplog.at_level("WARNING"), TestClient(create_app(Settings(data_dir=tmp_path))) as client:
+        assert client.get("/api/health").status_code == 200
+    assert any("nosuchpack" in r.getMessage() for r in caplog.records)

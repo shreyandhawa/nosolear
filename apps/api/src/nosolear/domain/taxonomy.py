@@ -56,7 +56,6 @@ class KeyDefinition:
     impact: int
     drill_family: str
     detectors: frozenset[Detector]
-    hypothesis: bool
     description: str
 
 
@@ -82,7 +81,6 @@ def _definition(
     impact: int,
     drill_family: str,
     detectors: Iterable[Detector],
-    hypothesis: bool,
     description: str,
 ) -> KeyDefinition:
     return KeyDefinition(
@@ -92,7 +90,6 @@ def _definition(
         impact=impact,
         drill_family=drill_family,
         detectors=frozenset(detectors),
-        hypothesis=hypothesis,
         description=description,
     )
 
@@ -101,14 +98,13 @@ _SUB_DETECTORS = (Detector.AZURE_PA, Detector.PHONE_PROBE)
 _LOW_DETECTORS = (Detector.AZURE_PA,)
 
 
-def _sub(expected: str, produced: str, impact: int, hypothesis: bool = True) -> KeyDefinition:
+def _sub(expected: str, produced: str, impact: int) -> KeyDefinition:
     return _definition(
         f"{Family.SUB}.{expected}.{produced}",
         Family.SUB,
         impact,
         "minimal_pairs",
         _SUB_DETECTORS,
-        hypothesis,
         _sub_description(expected, produced),
     )
 
@@ -120,7 +116,6 @@ def _low(phone: str, impact: int) -> KeyDefinition:
         impact,
         "sound_practice",
         _LOW_DETECTORS,
-        True,
         _low_description(phone),
     )
 
@@ -157,7 +152,6 @@ _EXPLICIT: tuple[KeyDefinition, ...] = (
         2,
         "cluster_practice",
         _PROBE,
-        True,
         "Extra vowel added before an s-cluster, like 'istop' for 'stop'",
     ),
     _definition(
@@ -166,7 +160,6 @@ _EXPLICIT: tuple[KeyDefinition, ...] = (
         2,
         "cluster_practice",
         (Detector.PHONE_PROBE, Detector.AZURE_PA),
-        False,
         "Last consonant dropped from a word-final cluster, like 'tes' for 'test'",
     ),
     _definition(
@@ -175,7 +168,6 @@ _EXPLICIT: tuple[KeyDefinition, ...] = (
         3,
         "stress_practice",
         (),
-        True,
         "Stress on the wrong syllable of a word",
     ),
     _definition(
@@ -184,7 +176,6 @@ _EXPLICIT: tuple[KeyDefinition, ...] = (
         2,
         "rhythm_practice",
         _AZURE,
-        True,
         "Pausing in the middle of a phrase where there is no break",
     ),
     _definition(
@@ -193,7 +184,6 @@ _EXPLICIT: tuple[KeyDefinition, ...] = (
         2,
         "rhythm_practice",
         _AZURE,
-        True,
         "Pitch stays flat instead of rising and falling",
     ),
     _definition(
@@ -202,7 +192,6 @@ _EXPLICIT: tuple[KeyDefinition, ...] = (
         1,
         "rhythm_practice",
         _AZURE,
-        False,
         "Running on without a pause where one is expected",
     ),
     _definition(
@@ -211,7 +200,6 @@ _EXPLICIT: tuple[KeyDefinition, ...] = (
         3,
         "rapid_questions",
         _ASR,
-        False,
         "Long wait before starting to answer",
     ),
     _definition(
@@ -220,7 +208,6 @@ _EXPLICIT: tuple[KeyDefinition, ...] = (
         2,
         "rapid_questions",
         _ASR,
-        False,
         "Filler words like 'um' and 'uh'",
     ),
     _definition(
@@ -229,7 +216,6 @@ _EXPLICIT: tuple[KeyDefinition, ...] = (
         2,
         "rapid_questions",
         _ASR,
-        False,
         "Long pause in the middle of an answer",
     ),
     _definition(
@@ -238,7 +224,6 @@ _EXPLICIT: tuple[KeyDefinition, ...] = (
         1,
         "rapid_questions",
         _ASR,
-        False,
         "Starting a sentence, then dropping it and starting again",
     ),
     _definition(
@@ -247,7 +232,6 @@ _EXPLICIT: tuple[KeyDefinition, ...] = (
         3,
         "grammar_rewrite",
         _COACH,
-        False,
         "Wrong verb tense, like 'I go yesterday'",
     ),
     _definition(
@@ -256,7 +240,6 @@ _EXPLICIT: tuple[KeyDefinition, ...] = (
         2,
         "grammar_rewrite",
         _COACH,
-        True,
         "Missing or wrong a, an or the",
     ),
     _definition(
@@ -265,7 +248,6 @@ _EXPLICIT: tuple[KeyDefinition, ...] = (
         2,
         "grammar_rewrite",
         _COACH,
-        True,
         "Wrong preposition, like 'discuss about'",
     ),
     _definition(
@@ -274,7 +256,6 @@ _EXPLICIT: tuple[KeyDefinition, ...] = (
         2,
         "grammar_rewrite",
         _COACH,
-        False,
         "Subject and verb do not agree, like 'she go'",
     ),
     _definition(
@@ -283,7 +264,6 @@ _EXPLICIT: tuple[KeyDefinition, ...] = (
         1,
         "grammar_rewrite",
         _COACH,
-        False,
         "Missing or wrong plural ending",
     ),
     _definition(
@@ -292,7 +272,6 @@ _EXPLICIT: tuple[KeyDefinition, ...] = (
         3,
         "pre_builder",
         _COACH,
-        False,
         "Answer never states its main point",
     ),
     _definition(
@@ -301,7 +280,6 @@ _EXPLICIT: tuple[KeyDefinition, ...] = (
         3,
         "pre_builder",
         _COACH,
-        False,
         "Main point comes too late in the answer",
     ),
     _definition(
@@ -310,7 +288,6 @@ _EXPLICIT: tuple[KeyDefinition, ...] = (
         2,
         "pre_builder",
         _COACH,
-        False,
         "Point is made without a reason",
     ),
     _definition(
@@ -319,7 +296,6 @@ _EXPLICIT: tuple[KeyDefinition, ...] = (
         2,
         "pre_builder",
         _COACH,
-        False,
         "Point is made without an example",
     ),
     _definition(
@@ -328,7 +304,6 @@ _EXPLICIT: tuple[KeyDefinition, ...] = (
         2,
         "clarity_rewrite",
         _COACH,
-        False,
         "Sentences strung together without a clear stop",
     ),
     _definition(
@@ -337,7 +312,6 @@ _EXPLICIT: tuple[KeyDefinition, ...] = (
         2,
         "clarity_rewrite",
         _COACH,
-        False,
         "Vague wording where a specific one would do",
     ),
     _definition(
@@ -346,7 +320,6 @@ _EXPLICIT: tuple[KeyDefinition, ...] = (
         2,
         "clarity_rewrite",
         _COACH,
-        False,
         "More words than the idea needs",
     ),
     _definition(
@@ -355,7 +328,6 @@ _EXPLICIT: tuple[KeyDefinition, ...] = (
         1,
         "clarity_rewrite",
         _COACH,
-        False,
         "Saying the same thing more than once",
     ),
 )
@@ -373,7 +345,6 @@ def _dynamic(key: str) -> KeyDefinition | None:
                 1,
                 "minimal_pairs",
                 _SUB_DETECTORS,
-                False,
                 _sub_description(expected, produced),
             )
     elif len(parts) == 3 and f"{parts[0]}.{parts[1]}" == Family.LOW and _is_phone(parts[2]):
@@ -383,7 +354,6 @@ def _dynamic(key: str) -> KeyDefinition | None:
             1,
             "sound_practice",
             _LOW_DETECTORS,
-            False,
             _low_description(parts[2]),
         )
     return None

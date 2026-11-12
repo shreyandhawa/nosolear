@@ -4,7 +4,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
-from factories import NPT, SAMPLE_OBS, T0, TAX, count, mk
+from factories import NEUTRAL, NPT, PACK, SAMPLE_OBS, T0, TAX, count, mk
 from sqlalchemy import Engine, text
 from sqlalchemy.exc import IntegrityError, StatementError
 
@@ -54,14 +54,14 @@ def test_naive_datetime_is_rejected(db_engine: Engine) -> None:
 
 
 def test_profile_save_and_latest_roundtrip(db_engine: Engine) -> None:
-    p = build_profile(SAMPLE_OBS, as_of=T0, taxonomy=TAX)
+    p = build_profile(SAMPLE_OBS, as_of=T0, taxonomy=TAX, pack=PACK)
     repo = ProfileRepository(db_engine, TAX)
     repo.save(p, session_id=None, reason="rebuild")
     assert repo.latest() == p
 
 
 def test_save_returns_hex_id_and_stores_snapshot(db_engine: Engine) -> None:
-    p = build_profile(SAMPLE_OBS, as_of=T0, taxonomy=TAX)
+    p = build_profile(SAMPLE_OBS, as_of=T0, taxonomy=TAX, pack=PACK)
     snap_id = ProfileRepository(db_engine, TAX).save(p, session_id=None, reason="baseline")
     assert len(snap_id) == 32
     int(snap_id, 16)
@@ -73,8 +73,12 @@ def test_save_returns_hex_id_and_stores_snapshot(db_engine: Engine) -> None:
 
 def test_save_replaces_entries_and_appends_snapshot(db_engine: Engine) -> None:
     repo = ProfileRepository(db_engine, TAX)
-    repo.save(build_profile(SAMPLE_OBS, as_of=T0, taxonomy=TAX), session_id=None, reason="rebuild")
-    p2 = build_profile(SAMPLE_OBS[:1], as_of=T0, taxonomy=TAX)
+    repo.save(
+        build_profile(SAMPLE_OBS, as_of=T0, taxonomy=TAX, pack=PACK),
+        session_id=None,
+        reason="rebuild",
+    )
+    p2 = build_profile(SAMPLE_OBS[:1], as_of=T0, taxonomy=TAX, pack=PACK)
     assert len(p2.entries) < 3
     repo.save(p2, session_id=None, reason="rebuild")
     assert repo.latest() == p2
@@ -88,13 +92,15 @@ def test_latest_is_none_on_empty_db(db_engine: Engine) -> None:
 
 def test_latest_is_none_after_saving_empty_profile(db_engine: Engine) -> None:
     repo = ProfileRepository(db_engine, TAX)
-    repo.save(build_profile([], as_of=T0, taxonomy=TAX), session_id=None, reason="rebuild")
+    repo.save(
+        build_profile([], as_of=T0, taxonomy=TAX, pack=PACK), session_id=None, reason="rebuild"
+    )
     assert count(db_engine, "profile_snapshots") == 1
     assert repo.latest() is None
 
 
 def test_invalid_reason_is_rejected(db_engine: Engine) -> None:
-    p = build_profile(SAMPLE_OBS, as_of=T0, taxonomy=TAX)
+    p = build_profile(SAMPLE_OBS, as_of=T0, taxonomy=TAX, pack=PACK)
     with pytest.raises(IntegrityError):
         ProfileRepository(db_engine, TAX).save(p, session_id=None, reason="nope")
     assert count(db_engine, "profile_entries") == 0
@@ -102,7 +108,7 @@ def test_invalid_reason_is_rejected(db_engine: Engine) -> None:
 
 def test_snapshot_json_datetimes_use_the_stored_utc_format(db_engine: Engine) -> None:
     """Same fixed-width UTC text with microseconds as the UTCDateTime columns, offsets folded."""
-    p = build_profile(SAMPLE_OBS, as_of=T0.astimezone(NPT), taxonomy=TAX)
+    p = build_profile(SAMPLE_OBS, as_of=T0.astimezone(NPT), taxonomy=TAX, pack=PACK)
     ProfileRepository(db_engine, TAX).save(p, session_id=None, reason="rebuild")
     with db_engine.connect() as conn:
         raw = conn.execute(text("SELECT entries_json FROM profile_snapshots")).scalar_one()
@@ -118,3 +124,15 @@ def test_snapshot_json_datetimes_use_the_stored_utc_format(db_engine: Engine) ->
         for field in ("updated_at", "last_seen_at"):
             assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}\+00:00", entry[field])
             assert entry[field] == getattr(stored[entry["error_key"]], field)
+
+
+def test_pack_id_roundtrips_and_is_stored_on_the_snapshot(db_engine: Engine) -> None:
+    repo = ProfileRepository(db_engine, TAX)
+    assert repo.latest_pack_id() is None
+    p = build_profile(SAMPLE_OBS, as_of=T0, taxonomy=TAX, pack=NEUTRAL)
+    repo.save(p, session_id=None, reason="rebuild")
+    assert repo.latest_pack_id() == "neutral"
+    latest = repo.latest()
+    assert latest is not None and latest.pack_id == "neutral"
+    with db_engine.connect() as conn:
+        assert conn.execute(text("SELECT pack_id FROM profile_snapshots")).scalar_one() == "neutral"
