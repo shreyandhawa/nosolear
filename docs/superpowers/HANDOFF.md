@@ -22,11 +22,12 @@ Phase 0b execution (open-source foundation). Gate 2 is passed: the phase plans P
 
 ## In progress
 
-- Branch `p0b/06-pack-in-profile`: Task 6, PR open for review. Earlier task PRs may still be open; check `gh pr list`.
+- Nothing open. Phase 0b Tasks 1–6 are merged (PRs #14–#19); `main` is at 690a8ad.
+- The subagent-driven-development ledger for Phase 0b is at `.superpowers/sdd/2026-11-12-phase-0b-open-source-foundation/progress.md` (git-ignored, on the owner's machine). It holds the preflight scan, every controller ruling, and the deferred Minor findings that the phase-end review (Task 12) must triage. Read it before dispatching Task 7. Its `global-constraints.md`, `reviewer-instructions.md` and `rereview-instructions.md` are reusable dispatch inputs.
 
 ## Next
 
-1. Task 7: readiness (`nosolear doctor`, `GET /api/readiness`). The plan is `docs/superpowers/plans/2026-11-12-phase-0b-open-source-foundation.md`. One branch and one PR per task, with a fresh implementer subagent and a different reviewer subagent each time. Squash-merge on green CI.
+1. Task 7: readiness (`nosolear doctor`, `GET /api/readiness`), then Tasks 8–12. The plan is `docs/superpowers/plans/2026-11-12-phase-0b-open-source-foundation.md`. Use `superpowers:subagent-driven-development` and resume the existing ledger (tasks with a `complete` line are done). One branch and one PR per task, with a fresh implementer subagent and a different reviewer subagent each time. Squash-merge on green CI.
 2. Any task that adds a dependency reruns `uv run --project apps/api python scripts/third_party_licences.py`.
 3. Correct `docs/ARCHITECTURE.md` §17/§18 for the licence discrepancy below.
 4. At the end of each phase: run `/security-review`, update this file, and hand off to a fresh session.
@@ -81,10 +82,9 @@ None right now.
 
 ## Branch and PR state
 
-- `main`: 391b639 "Add phase plans 0b–1 for the open-source BYOK backend (#13)".
+- `main`: 690a8ad "Wire the active language pack into the profile and rebuild on pack change (#19)".
 - `docs/phase-plans`: merged (#13) and kept.
-- `p0b/01-community-files`: Task 1 PR.
-- `p0b/02-third-party-notices`: Task 2 PR.
+- `p0b/01-community-files` … `p0b/06-pack-in-profile`: merged (#14–#19) and kept.
 - `docs/byok-architecture`: merged and kept (deleting branches needs the owner's approval).
 - `p0b/spikes`: unmerged and kept. Everything is under `spikes/`, with no audio and no data.
 
@@ -96,7 +96,9 @@ None are built yet, so every adapter in Phase 0d starts unverified. Live checks 
 
 - Hand off at about 35–40% context, at a task boundary, and at the end of every phase.
 - Commits: imperative sentence. No Co-Authored-By trailer. No "Generated with Claude Code" footer.
-- Commit and push to the feature branch as you go. Never push to `main`. Squash-merge task PRs once CI is green and a non-author reviewer approves. Gate PRs wait for the owner.
+- Commit and push to the feature branch as you go. Never push to `main`. Squash-merge task PRs once CI is green and a non-author reviewer approves. Gate PRs wait for the owner. (2026-11-12: the owner said work could happen on `main`, but `main`'s branch protection requires a PR with `enforce_admins` on, so the per-task PR flow stays; changing protection is the owner's call.)
+- Review seats (2026-11-12, to protect the owner's Max limits): security-heavy tasks (0b Tasks 7, 8, 11) get the task reviewer plus pr-review-toolkit's silent-failure-hunter and pr-test-analyzer; other tasks get one sonnet task reviewer whose prompt adds error-handling and test-gap lenses. Scoped re-reviews of small fix diffs can run on haiku. Check `mcp__ccd_session_mgmt__get_usage` between tasks.
+- The owner's `.env` holds a real Azure key and region. Never read or print it; tests never load it (the autouse fixture in `apps/api/tests/conftest.py`). Task 9 must exempt `live` tests from that isolation.
 - Models: haiku for search, summaries and running tests; sonnet for well-specified implementation and routine review; opus for architecture, security review and final review. If a cheaper model fails review twice, re-dispatch on a stronger one.
 - Ask the owner for: anything that costs money, deleting branches or data, and approval gates.
 
