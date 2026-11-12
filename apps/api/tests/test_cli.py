@@ -285,3 +285,51 @@ def test_doctor_non_utf8_env_file_exits_2(
     _env_file(monkeypatch, env)
     assert main(["doctor"]) == 2
     assert "cannot read settings: .env is not valid UTF-8" in capsys.readouterr().err
+
+
+def _spy_uvicorn(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
+    calls: list[dict[str, object]] = []
+
+    def fake_run(app: str, **kwargs: object) -> None:
+        calls.append({"app": app, **kwargs})
+
+    monkeypatch.setattr("uvicorn.run", fake_run)
+    return calls
+
+
+def test_serve_runs_uvicorn_on_loopback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _env(tmp_path, monkeypatch)
+    calls = _spy_uvicorn(monkeypatch)
+    assert main(["serve"]) == 0
+    assert calls == [
+        {
+            "app": "nosolear.api.app:create_app",
+            "factory": True,
+            "host": "127.0.0.1",
+            "port": 8000,
+            "reload": False,
+            "proxy_headers": False,
+        }
+    ]
+    assert list(tmp_path.iterdir()) == []  # serve itself creates nothing
+
+
+def test_serve_reload_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _env(tmp_path, monkeypatch)
+    calls = _spy_uvicorn(monkeypatch)
+    assert main(["serve", "--reload"]) == 0
+    assert calls[0]["reload"] is True
+
+
+def test_serve_refuses_a_non_loopback_host(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _env(tmp_path, monkeypatch)
+    monkeypatch.setenv("NOSOLEAR_HOST", "0.0.0.0")
+
+    def fail(*a: object, **k: object) -> None:
+        raise AssertionError("uvicorn.run must not be called")
+
+    monkeypatch.setattr("uvicorn.run", fail)
+    assert main(["serve"]) == 2
+    assert "NOSOLEAR_HOST" in capsys.readouterr().err

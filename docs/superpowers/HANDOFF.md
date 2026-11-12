@@ -20,15 +20,16 @@ Phase 0b execution (open-source foundation). Gate 2 is passed: the phase plans P
 - 2026-11-12: Phase 0b Task 5: language packs (`domain/packs.py`, `calibration_items.py`, `adapters/content_files.py`, `content/packs/{neutral,nepali}`, `content/calibration/items.toml`) with the Phase 0a hypothesis keys moved into the `nepali` pack.
 - 2026-11-12: Phase 0b Task 6: the active pack drives profile priors (`build_profile(..., pack=)`, `Profile.pack_id`, migration `0003_pack_id`, `ensure_profile_pack` on startup, `pack error:` exit 2 in the CLI); the taxonomy `hypothesis` flag is gone.
 - 2026-11-12: Phase 0b Task 7: readiness (`domain/readiness.py`, `check_readiness`, `SystemEnvironment`, `GET /api/readiness`, `nosolear doctor`; `doctor --probe` waits for Phase 0d). Keys enter only as booleans.
+- 2026-11-12: Phase 0b Task 8: network guards (`domain/network_policy.py`, outermost `RequestGuardMiddleware`: loopback peer, exact Host/Origin membership, no cross-site fetch), CORS limited to the app origins, `nosolear serve` (`proxy_headers=False`), Makefile uses it; API tests use `loopback_client`.
 
 ## In progress
 
-- Task 7 is in review on `p0b/07-readiness`. Phase 0b Tasks 1–6 are merged (PRs #14–#19); `main` is at adb6f44.
-- The subagent-driven-development ledger for Phase 0b is at `.superpowers/sdd/2026-11-12-phase-0b-open-source-foundation/progress.md` (git-ignored, on the owner's machine). It holds the preflight scan, every controller ruling, and the deferred Minor findings that the phase-end review (Task 12) must triage. Read it before dispatching Task 7. Its `global-constraints.md`, `reviewer-instructions.md` and `rereview-instructions.md` are reusable dispatch inputs.
+- Task 8 is in review on `p0b/08-network-guards-and-serve`. Phase 0b Tasks 1–7 are merged (PRs #14–#21); `main` is at a5ff150.
+- The subagent-driven-development ledger for Phase 0b is at `.superpowers/sdd/2026-11-12-phase-0b-open-source-foundation/progress.md` (git-ignored, on the owner's machine). It holds the preflight scan, every controller ruling, and the deferred Minor findings that the phase-end review (Task 12) must triage. Read it before dispatching Task 9. Its `global-constraints.md`, `reviewer-instructions.md` and `rereview-instructions.md` are reusable dispatch inputs.
 
 ## Next
 
-1. Task 8 (after Task 7 merges), then Tasks 9–12. The plan is `docs/superpowers/plans/2026-11-12-phase-0b-open-source-foundation.md`. Use `superpowers:subagent-driven-development` and resume the existing ledger (tasks with a `complete` line are done). One branch and one PR per task, with a fresh implementer subagent and a different reviewer subagent each time. Squash-merge on green CI.
+1. Task 9 (after Task 8 merges), then Tasks 10–12. The plan is `docs/superpowers/plans/2026-11-12-phase-0b-open-source-foundation.md`. Use `superpowers:subagent-driven-development` and resume the existing ledger (tasks with a `complete` line are done). One branch and one PR per task, with a fresh implementer subagent and a different reviewer subagent each time. Squash-merge on green CI.
 2. Any task that adds a dependency reruns `uv run --project apps/api python scripts/third_party_licences.py`.
 3. Correct `docs/ARCHITECTURE.md` §17/§18 for the licence discrepancy below.
 4. At the end of each phase: run `/security-review`, update this file, and hand off to a fresh session.

@@ -3,8 +3,7 @@ import logging
 import stat
 from pathlib import Path
 
-from factories import make_settings
-from fastapi.testclient import TestClient
+from factories import loopback_client, make_settings
 
 from nosolear.api.app import create_app
 
@@ -17,7 +16,7 @@ def test_lifespan_prepares_data_dir_and_scrubbing(tmp_path: Path) -> None:
     data.chmod(0o755)
     (data / "old.txt").write_text("x")
     (data / "old.txt").chmod(0o644)
-    with TestClient(create_app(make_settings(data_dir=data, anthropic_api_key=KEY))):
+    with loopback_client(create_app(make_settings(data_dir=data, anthropic_api_key=KEY))):
         stream = io.StringIO()
         log = logging.getLogger("t.lifespan")
         log.handlers = [logging.StreamHandler(stream)]

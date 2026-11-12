@@ -35,6 +35,8 @@ def _parser() -> argparse.ArgumentParser:
     seed.add_argument("--force", action="store_true", help="append even if observations exist")
     doctor = commands.add_parser("doctor", help="show what is configured and what is missing")
     doctor.add_argument("--probe", action="store_true", help="check live providers (Phase 0d)")
+    serve = commands.add_parser("serve", help="run the API on loopback")
+    serve.add_argument("--reload", action="store_true", help="restart on code changes (dev)")
     return parser
 
 
@@ -62,6 +64,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     except OSError as exc:
         print(f"cannot read settings: {exc.strerror or type(exc).__name__}", file=sys.stderr)
         return 2
+    if args.command == "serve":
+        import uvicorn
+
+        uvicorn.run(
+            "nosolear.api.app:create_app",
+            factory=True,
+            host=settings.host,
+            port=settings.port,
+            reload=args.reload,
+            proxy_headers=False,
+        )
+        return 0
     if args.command == "doctor":
         if args.probe:
             print("probes arrive in Phase 0d", file=sys.stderr)

@@ -6,10 +6,10 @@ setup:
 	git config core.hooksPath scripts/git-hooks
 
 api:
-	cd apps/api && uv run uvicorn nosolear.api.app:create_app --factory --reload --port 8000
+	cd apps/api && uv run nosolear serve --reload
 
 api-dev:
-	cd apps/api && NOSOLEAR_DATA_DIR=$(CURDIR)/data/dev uv run uvicorn nosolear.api.app:create_app --factory --reload --port 8000
+	cd apps/api && NOSOLEAR_DATA_DIR=$(CURDIR)/data/dev uv run nosolear serve --reload
 
 web:
 	cd apps/web && pnpm dev

@@ -2,7 +2,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from factories import NOW, PACK, SAMPLE_OBS, TAX
+from factories import NOW, PACK, SAMPLE_OBS, TAX, loopback_client
 from fastapi.testclient import TestClient
 
 from nosolear.api.app import create_app
@@ -13,7 +13,7 @@ from nosolear.settings import Settings
 
 @pytest.fixture
 def client_with_tmp_db(tmp_path: Path) -> Iterator[TestClient]:
-    with TestClient(create_app(Settings(data_dir=tmp_path))) as client:
+    with loopback_client(create_app(Settings(data_dir=tmp_path))) as client:
         yield client
 
 

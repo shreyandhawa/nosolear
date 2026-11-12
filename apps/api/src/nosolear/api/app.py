@@ -4,10 +4,12 @@ from contextlib import asynccontextmanager
 from typing import Literal
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from nosolear.adapters.system_clock import SystemClock
 from nosolear.api.deps import load_active_pack
+from nosolear.api.guards import RequestGuardMiddleware
 from nosolear.api.profile_routes import router as profile_router
 from nosolear.api.readiness_routes import router as readiness_router
 from nosolear.app.ensure_profile_pack import ensure_profile_pack
@@ -50,7 +52,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Nosolear", lifespan=_lifespan)
-    app.state.settings = settings or Settings()
+    settings = settings or Settings()
+    app.state.settings = settings
     app.include_router(profile_router)
     app.include_router(readiness_router)
 
@@ -58,4 +61,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def health() -> HealthResponse:  # pyright: ignore[reportUnusedFunction]
         return HealthResponse(status="ok")
 
+    # CORS first, guard last: the guard is outermost and refuses before CORS answers anything.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(settings.app_origins),
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
+        allow_headers=["content-type"],
+        allow_credentials=False,
+    )
+    app.add_middleware(RequestGuardMiddleware, port=settings.port, app_origins=settings.app_origins)
     return app

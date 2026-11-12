@@ -2,8 +2,7 @@ import json
 import typing
 from pathlib import Path
 
-from factories import FakeEnvironment
-from fastapi.testclient import TestClient
+from factories import FakeEnvironment, loopback_client
 
 from nosolear.api.app import create_app
 from nosolear.api.deps import get_environment, get_readiness_report
@@ -37,7 +36,7 @@ def _settings(tmp_path: Path) -> Settings:
 
 
 def test_readiness_returns_eight_rows_and_no_key(tmp_path: Path):
-    with TestClient(create_app(_settings(tmp_path))) as client:
+    with loopback_client(create_app(_settings(tmp_path))) as client:
         r = client.get("/api/readiness")
         assert r.status_code == 200
         body = r.json()
@@ -53,14 +52,14 @@ def test_readiness_returns_eight_rows_and_no_key(tmp_path: Path):
 
 
 def test_openapi_lists_the_route_without_keys(tmp_path: Path):
-    with TestClient(create_app(_settings(tmp_path))) as client:
+    with loopback_client(create_app(_settings(tmp_path))) as client:
         text = client.get("/openapi.json").text
     assert "/api/readiness" in text and "getReadiness" in text
     assert KEY_A not in text and KEY_B not in text
 
 
 def test_readiness_writes_nothing_under_the_data_dir(tmp_path: Path):
-    with TestClient(create_app(_settings(tmp_path))) as client:
+    with loopback_client(create_app(_settings(tmp_path))) as client:
         before = _snapshot(tmp_path)
         assert client.get("/api/readiness").status_code == 200
         assert _snapshot(tmp_path) == before
@@ -80,7 +79,7 @@ def test_route_maps_a_hand_built_report(tmp_path: Path):
     )
     app = create_app(_settings(tmp_path))
     app.dependency_overrides[get_readiness_report] = lambda: ReadinessReport(rows)
-    with TestClient(app) as client:
+    with loopback_client(app) as client:
         body = client.get("/api/readiness").json()
     assert body["ready"] is False
     assert [r["label"] for r in body["rows"]] == [
@@ -101,6 +100,6 @@ def test_environment_dependency_can_be_overridden(tmp_path: Path):
     app = create_app(_settings(tmp_path))
     env = FakeEnvironment(modules={"torch", "transformers"}, executables={"espeak-ng"})
     app.dependency_overrides[get_environment] = lambda: env
-    with TestClient(app) as client:
+    with loopback_client(app) as client:
         rows = {r["component"]: r for r in client.get("/api/readiness").json()["rows"]}
     assert rows["phone_probe"]["status"] == "ready"
