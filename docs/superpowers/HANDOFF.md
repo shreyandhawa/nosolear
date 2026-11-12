@@ -15,14 +15,15 @@ Phase 0b execution (open-source foundation). Gate 2 is passed: the phase plans P
 - 2026-11-12: Turned on GitHub private vulnerability reporting for the repo. `gh api repos/shreyandhawa/nosolear/private-vulnerability-reporting -q .enabled` prints `true`.
 - 2026-11-12: Phase 0b Task 1: `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, `PRIVACY.md` and their test.
 - 2026-11-12: Phase 0b Task 2: `THIRD_PARTY_NOTICES`, `scripts/third_party_licences.py` (`--check` for drift) and `test_notices.py`. Licences verified against upstream on 2026-11-12.
+- 2026-11-12: Phase 0b Task 3: the full `Settings` tree (loopback-only host and origins, key-length and pattern checks, timezone, caps), `.env.example` and the CLI error path; tests never load the real `.env`.
 
 ## In progress
 
-- Branch `p0b/02-third-party-notices`: Task 2, awaiting review and merge (PR open). Task 1 (`p0b/01-community-files`) is in review or merged; check `gh pr list`.
+- Branch `p0b/03-settings-tree`: Task 3, PR open for review. Tasks 1-2 (`p0b/01-community-files`, `p0b/02-third-party-notices`) are in review or merged; check `gh pr list`.
 
 ## Next
 
-1. Task 3: settings tree and `.env.example`. The plan is `docs/superpowers/plans/2026-11-12-phase-0b-open-source-foundation.md`. One branch and one PR per task, with a fresh implementer subagent and a different reviewer subagent each time. Squash-merge on green CI.
+1. Task 4: secret scrubbing and private data dir. The plan is `docs/superpowers/plans/2026-11-12-phase-0b-open-source-foundation.md`. One branch and one PR per task, with a fresh implementer subagent and a different reviewer subagent each time. Squash-merge on green CI.
 2. Any task that adds a dependency reruns `uv run --project apps/api python scripts/third_party_licences.py`.
 3. Correct `docs/ARCHITECTURE.md` §17/§18 for the licence discrepancy below.
 4. At the end of each phase: run `/security-review`, update this file, and hand off to a fresh session.
