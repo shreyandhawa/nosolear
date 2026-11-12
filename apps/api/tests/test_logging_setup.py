@@ -1,5 +1,6 @@
 import io
 import logging
+import sys
 from collections.abc import Iterator
 from urllib.parse import quote
 
@@ -184,3 +185,16 @@ def test_reinstall_after_foreign_factory_replacement() -> None:
     log, out = _logger("t.rewrap")
     log.info("k=%s", KEY)
     assert KEY not in out.getvalue()
+
+
+def test_exc_info_is_cleared_and_exc_text_is_scrubbed_and_cached() -> None:
+    install_secret_scrubbing([KEY])
+    try:
+        raise RuntimeError(f"boom {KEY}")
+    except RuntimeError:
+        record = logging.getLogger("t.excinfo").makeRecord(
+            "t.excinfo", logging.ERROR, __file__, 1, "failed", (), sys.exc_info()
+        )
+    assert record.exc_info is None
+    assert record.exc_text is not None
+    assert "Traceback" in record.exc_text and KEY not in record.exc_text

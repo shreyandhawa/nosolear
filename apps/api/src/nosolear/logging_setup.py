@@ -1,8 +1,8 @@
 """Keeps configured secrets out of log records, whichever logger or handler emits them.
 
-Covered: the message, its arguments, the traceback (chained too) and `stack_info`. Not covered:
-`extra=` fields (set after the factory runs) and formatters that call `formatException` on
-`record.exc_info` themselves.
+Covered: the message, its arguments, the traceback (chained too; `exc_info` is cleared once the
+scrubbed `exc_text` is cached) and `stack_info`. Not covered: `extra=` fields (set after the
+factory runs).
 """
 
 import logging
@@ -83,6 +83,9 @@ def _factory(*args: object, **kwargs: object) -> logging.LogRecord:
             record.exc_text = _scrub(formatted)
         except Exception:
             record.exc_text = _UNFORMATTABLE_TRACEBACK
+        # the stdlib Formatter still appends the cached `exc_text`; dropping `exc_info` stops
+        # formatters that render it themselves (JSON, structlog, Rich) re-rendering the raw one
+        record.exc_info = None
     if record.stack_info:
         record.stack_info = _scrub(record.stack_info)
     return record

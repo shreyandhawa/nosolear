@@ -3,15 +3,23 @@
 Later phases append `@leak_surface` producers (adapter error paths, job `steps_json`, ledger
 rows, the coach prompt log); `test_no_key_leaks.py` parametrises over `LEAK_SURFACES`, so a new
 surface becomes a new test case with no edit to the test.
+
+Rule: define producers in `tests/security/planted.py` or a `tests/security/surfaces_*.py` module.
+The registry is filled when `planted` is imported (it imports every `surfaces_*` module at its
+end), which happens before the test module's `parametrize` reads it. A producer defined anywhere
+else would register too late and never run.
 """
 
 import base64
 import contextlib
+import importlib
 import io
 import json
 import logging
 import math
-from collections.abc import Callable, Mapping
+import pkgutil
+import traceback
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, quote_plus
@@ -22,6 +30,7 @@ from pydantic import ValidationError
 
 from nosolear.api.app import create_app
 from nosolear.cli import main
+from nosolear.domain.redaction import REDACTED
 from nosolear.logging_setup import install_secret_scrubbing
 from nosolear.settings import REPO_ROOT, Settings, settings_error_summary
 
@@ -69,49 +78,74 @@ def _forms(key: str) -> dict[str, str]:
     forms = {
         "plain": key,
         "repr": repr(key),
+        "repr (unquoted)": repr(key)[1:-1],
         "double-quoted": f'"{key}"',
         "url-encoded": quote(key, safe=""),
         "url-encoded (quote)": quote(key),
         "url-encoded (quote_plus)": quote_plus(key),
         "json-escaped": json.dumps(key),
+        "json-escaped (unquoted)": json.dumps(key)[1:-1],
         "json-escaped (unicode)": json.dumps(key, ensure_ascii=False),
+        "json-escaped (unicode, unquoted)": json.dumps(key, ensure_ascii=False)[1:-1],
     }
     forms.update(_b64_forms(key))
     return forms
 
 
-_FORMS: tuple[tuple[str, str], ...] = tuple(
-    (name, form) for key in PLANTED for name, form in _forms(key).items()
-)
+def _form_table(keys: tuple[str, ...]) -> tuple[tuple[str, str], ...]:
+    return tuple((name, form) for key in keys for name, form in _forms(key).items())
+
+
+_SAFE_LEAVES = (int, float, bool, type(None))  # bool is an int; listed for the reader
 
 
 def _texts(surface: object) -> list[str]:
+    """Every piece of text that could show a key, failing closed on types it does not know.
+
+    Strings and bytes are read directly; mappings, iterables (views, generators, rows, deques)
+    and exception chains are walked; numbers and None are safe; anything else is scanned through
+    both `str()` and `repr()`.
+    """
     if isinstance(surface, str):
         return [surface]
     if isinstance(surface, (bytes, bytearray)):
         return [bytes(surface).decode("utf-8", errors="replace")]
+    if isinstance(surface, _SAFE_LEAVES):
+        return []
+    found = [str(surface), repr(surface)]
     if isinstance(surface, Mapping):
-        found: list[str] = []
         for k, v in surface.items():  # pyright: ignore[reportUnknownVariableType]
             found += _texts(k) + _texts(v)
-        return found
-    if isinstance(surface, (list, tuple, set, frozenset)):
-        return [t for item in surface for t in _texts(item)]  # pyright: ignore[reportUnknownVariableType]
-    return []
+    elif isinstance(surface, Iterable):
+        found += [t for item in surface for t in _texts(item)]  # pyright: ignore[reportUnknownVariableType]
+    if isinstance(surface, BaseException):
+        found += [t for arg in surface.args for t in _texts(arg)]
+        for linked in (surface.__cause__, surface.__context__):
+            if linked is not None:
+                found += _texts(linked)
+    return found
+
+
+def find_leak(*surfaces: object, keys: tuple[str, ...] = PLANTED) -> str | None:
+    """The name of the first form of any of `keys` found in the surfaces, else None."""
+    texts = [t for surface in surfaces for t in _texts(surface)]
+    for name, form in _form_table(keys):
+        if any(form in text for text in texts):
+            return name
+    return None
 
 
 def assert_no_planted_key(*surfaces: object, where: str) -> None:
     """Fail, naming `where` and the form but never the key, if a planted key is in any surface."""
-    texts = [t for surface in surfaces for t in _texts(surface)]
-    for name, form in _FORMS:
-        if any(form in text for text in texts):
-            raise AssertionError(f"a planted key ({name} form) leaked through {where}")
+    form = find_leak(*surfaces)
+    if form is not None:
+        raise AssertionError(f"a planted key ({form} form) leaked through {where}")
 
 
 # ---- surfaces ------------------------------------------------------------------------------
 
 
-class _LogCapture:
+class LogCapture:
     """A real handler and Formatter on a private logger (or a named one), read back as text."""
 
     def __init__(self, formatter: logging.Formatter, name: str = "planted.capture") -> None:
@@ -120,7 +154,7 @@ class _LogCapture:
         self.handler.setFormatter(formatter)
         self.logger = logging.getLogger(name)
 
-    def __enter__(self) -> _LogCapture:
+    def __enter__(self) -> LogCapture:
         self._state = (self.logger.level, self.logger.propagate)
         self.logger.addHandler(self.handler)
         self.logger.setLevel(logging.DEBUG)
@@ -137,7 +171,14 @@ class _LogCapture:
         return self.stream.getvalue()
 
 
-_FORMAT = "%(levelname)s %(name)s %(message)s"
+FORMAT = "%(levelname)s %(name)s %(message)s"
+
+
+def _marked(text: str, *needles: str) -> str:
+    """`text`, after checking the capture really saw a scrubbed record (not an empty capture)."""
+    for needle in needles:
+        assert needle in text, f"capture is missing {needle!r}"
+    return text
 
 
 @leak_surface
@@ -152,41 +193,121 @@ def settings_repr_str_dump_json(tmp: Path) -> tuple[str, str]:
 def log_message_args_and_fstring(tmp: Path) -> tuple[str, str]:
     s = planted_settings(tmp)
     install_secret_scrubbing(s.secret_values())
-    with _LogCapture(logging.Formatter(_FORMAT)) as cap:
+    with LogCapture(logging.Formatter(FORMAT)) as cap:
         cap.logger.info("key=%s", PLANTED_AZURE_KEY)
         cap.logger.info("pair %s %s", PLANTED_ANTHROPIC_KEY, {"k": PLANTED_AZURE_KEY})
         cap.logger.info("named %(k)s", {"k": PLANTED_ANTHROPIC_KEY})
         cap.logger.info(f"fstring {PLANTED_AZURE_KEY} and {PLANTED_ANTHROPIC_KEY!r}")
         cap.logger.warning("object %s", s)
         cap.logger.info("quoted %r", PLANTED_AZURE_KEY)
-    return "log messages and arguments", cap.text
+    return "log messages and arguments", _marked(cap.text, REDACTED)
 
 
 @leak_surface
 def log_exception_with_key_in_message(tmp: Path) -> tuple[str, str]:
     s = planted_settings(tmp)
     install_secret_scrubbing(s.secret_values())
-    with _LogCapture(logging.Formatter(_FORMAT)) as cap:
+    with LogCapture(logging.Formatter(FORMAT)) as cap:
         try:
             raise RuntimeError(f"boom {PLANTED_AZURE_KEY}")
         except RuntimeError:
             cap.logger.exception("failed with %s", PLANTED_ANTHROPIC_KEY)
-    return "log exception traceback", cap.text
+    return "log exception traceback", _marked(cap.text, "Traceback", REDACTED)
+
+
+def _chained() -> RuntimeError:
+    try:
+        try:
+            raise ValueError(PLANTED_ANTHROPIC_KEY)
+        except ValueError as inner:
+            raise RuntimeError(f"outer {PLANTED_AZURE_KEY}") from inner
+    except RuntimeError as exc:
+        return exc
+    raise AssertionError("unreachable")
 
 
 @leak_surface
 def log_chained_exception(tmp: Path) -> tuple[str, str]:
     s = planted_settings(tmp)
     install_secret_scrubbing(s.secret_values())
-    with _LogCapture(logging.Formatter(_FORMAT)) as cap:
-        try:
-            try:
-                raise ValueError(PLANTED_ANTHROPIC_KEY)
-            except ValueError as inner:
-                raise RuntimeError(f"outer {PLANTED_AZURE_KEY}") from inner
-        except RuntimeError:
-            cap.logger.exception("chained")
-    return "log chained exception traceback", cap.text
+    with LogCapture(logging.Formatter(FORMAT)) as cap:
+        cap.logger.error("chained", exc_info=_chained())
+    return "log chained exception traceback", _marked(
+        cap.text, "Traceback", "direct cause", REDACTED
+    )
+
+
+class _SelfRenderingFormatter(logging.Formatter):
+    """Stands in for JSON/structlog/Rich formatters: renders `exc_info` itself when it is set."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        text = record.getMessage()
+        if record.exc_info:
+            text += "\n" + "".join(traceback.format_exception(*record.exc_info))
+        elif record.exc_text:
+            text += "\n" + record.exc_text
+        return text
+
+
+@leak_surface
+def log_self_rendering_formatter(tmp: Path) -> tuple[str, str]:
+    s = planted_settings(tmp)
+    install_secret_scrubbing(s.secret_values())
+    with LogCapture(_SelfRenderingFormatter()) as cap:
+        cap.logger.error("chained", exc_info=_chained())
+    return "log exception through a self-rendering formatter", _marked(
+        cap.text, "Traceback", "direct cause", REDACTED
+    )
+
+
+@leak_surface
+def uvicorn_unhandled_exception_log(tmp: Path) -> tuple[str, str]:
+    """How uvicorn logs an unhandled exception, through its own formatter and logger."""
+    from uvicorn.logging import DefaultFormatter
+
+    settings = planted_settings(tmp)
+    install_secret_scrubbing(settings.secret_values())
+    formatter = DefaultFormatter(fmt="%(levelprefix)s %(message)s", use_colors=False)
+    with LogCapture(formatter, name="uvicorn.error") as cap:
+        cap.logger.error("Exception in ASGI application\n", exc_info=_chained())
+    return "uvicorn.error unhandled exception log", _marked(
+        cap.text, "Traceback", "direct cause", REDACTED
+    )
+
+
+# surfaces that go through the scrubbing installed by hand; the negative control disables it
+SCRUBBED_LOG_SURFACES = (
+    "log_message_args_and_fstring",
+    "log_exception_with_key_in_message",
+    "log_chained_exception",
+    "log_self_rendering_formatter",
+    "uvicorn_unhandled_exception_log",
+)
+
+
+@leak_surface
+def lifespan_installs_scrubbing(tmp: Path) -> tuple[str, str]:
+    """No hand-installed scrubbing: the app lifespan's `prepare_process` must do it."""
+    app = create_app(planted_settings(tmp / "data"))
+    with loopback_client(app), LogCapture(logging.Formatter(FORMAT), "nosolear.wiring") as cap:
+        cap.logger.warning("config %s", PLANTED_AZURE_KEY)
+        cap.logger.error("failed", exc_info=_chained())
+    return "log records after the app lifespan started", _marked(cap.text, "Traceback", REDACTED)
+
+
+@leak_surface
+def cli_installs_scrubbing(tmp: Path) -> tuple[str, str]:
+    """No hand-installed scrubbing: `main` must install it on the `db upgrade` path."""
+    with pytest.MonkeyPatch.context() as mp:
+        _planted_env(mp, tmp / "data")
+        code, out, err = _run_cli(["db", "upgrade"])
+    assert code == 0
+    with LogCapture(logging.Formatter(FORMAT), "nosolear.wiring") as cap:
+        cap.logger.warning("config %s", PLANTED_ANTHROPIC_KEY)
+        cap.logger.error("failed", exc_info=_chained())
+    return "log records after `nosolear db upgrade`", _marked(
+        cap.text + out + err, "Traceback", REDACTED
+    )
 
 
 @leak_surface
@@ -195,6 +316,7 @@ def api_readiness_response(tmp: Path) -> tuple[str, str]:
     with loopback_client(app) as client:
         response = client.get("/api/readiness")
     assert response.status_code == 200
+    assert response.text.count("key set") == 2, "the planted keys were not picked up"
     return "GET /api/readiness", response.text + repr(dict(response.headers))
 
 
@@ -217,51 +339,18 @@ def openapi_schema(tmp: Path) -> tuple[str, str]:
 
 
 @leak_surface
-def api_unhandled_error_response_and_log(tmp: Path) -> tuple[str, str]:
-    settings = planted_settings(tmp / "data")
-    app = create_app(settings)
+def api_unhandled_error_response(tmp: Path) -> tuple[str, str]:
+    """The 500 a client sees. (TestClient logs nothing here; the uvicorn surface covers the log.)"""
+    app = create_app(planted_settings(tmp / "data"))
 
     @app.get("/api/_boom")
     def boom() -> None:  # pyright: ignore[reportUnusedFunction]
         raise RuntimeError(f"boom {PLANTED_AZURE_KEY}")
 
-    install_secret_scrubbing(settings.secret_values())
-    root = logging.getLogger()
-    stream = io.StringIO()
-    handler = logging.StreamHandler(stream)
-    handler.setFormatter(logging.Formatter(_FORMAT))
-    root.addHandler(handler)
-    try:
-        client = loopback_client(app)
-        client._transport.raise_server_exceptions = False  # pyright: ignore
-        with client:
-            response = client.get("/api/_boom")
-    finally:
-        root.removeHandler(handler)
+    with loopback_client(app, raise_server_exceptions=False) as client:
+        response = client.get("/api/_boom")
     assert response.status_code == 500
-    return "unhandled error response and log", (
-        response.text + repr(dict(response.headers)) + stream.getvalue()
-    )
-
-
-@leak_surface
-def uvicorn_unhandled_exception_log(tmp: Path) -> tuple[str, str]:
-    """How uvicorn logs an unhandled exception, through its own formatter and logger."""
-    from uvicorn.logging import DefaultFormatter
-
-    settings = planted_settings(tmp)
-    install_secret_scrubbing(settings.secret_values())
-    formatter = DefaultFormatter(fmt="%(levelprefix)s %(message)s", use_colors=False)
-    with _LogCapture(formatter, name="uvicorn.error") as cap:
-        try:
-            try:
-                raise ValueError(f"cause {PLANTED_ANTHROPIC_KEY}")
-            except ValueError as inner:
-                raise RuntimeError(f"boom {PLANTED_AZURE_KEY}") from inner
-        except RuntimeError as exc:
-            cap.logger.error("Exception in ASGI application\n", exc_info=exc)
-    assert "Traceback" in cap.text
-    return "uvicorn.error unhandled exception log", cap.text
+    return "unhandled error response", response.text + repr(dict(response.headers))
 
 
 def _run_cli(argv: list[str]) -> tuple[int, str, str]:
@@ -271,15 +360,22 @@ def _run_cli(argv: list[str]) -> tuple[int, str, str]:
     return code, out.getvalue(), err.getvalue()
 
 
+def _planted_env(mp: pytest.MonkeyPatch, data_dir: Path, **extra: str) -> None:
+    mp.setenv("NOSOLEAR_DATA_DIR", str(data_dir))
+    mp.setenv("NOSOLEAR_AZURE_SPEECH_KEY", PLANTED_AZURE_KEY)
+    mp.setenv("NOSOLEAR_AZURE_SPEECH_REGION", "westus2")
+    mp.setenv("NOSOLEAR_ANTHROPIC_API_KEY", PLANTED_ANTHROPIC_KEY)
+    for name, value in extra.items():
+        mp.setenv(name, value)
+
+
 @leak_surface
 def doctor_output(tmp: Path) -> tuple[str, str]:
     with pytest.MonkeyPatch.context() as mp:
-        mp.setenv("NOSOLEAR_DATA_DIR", str(tmp / "data"))
-        mp.setenv("NOSOLEAR_AZURE_SPEECH_KEY", PLANTED_AZURE_KEY)
-        mp.setenv("NOSOLEAR_AZURE_SPEECH_REGION", "westus2")
-        mp.setenv("NOSOLEAR_ANTHROPIC_API_KEY", PLANTED_ANTHROPIC_KEY)
+        _planted_env(mp, tmp / "data")
         code, out, err = _run_cli(["doctor"])
     assert code in (0, 1)
+    assert out.count("key set") == 2, "the planted keys were not picked up"
     return "nosolear doctor stdout and stderr", out + err
 
 
@@ -288,6 +384,7 @@ def validation_error_text(tmp: Path) -> tuple[str, str]:
     try:
         planted_settings(tmp, azure_speech_region=PLANTED_AZURE_KEY)
     except ValidationError as exc:
+        assert [e["loc"] for e in exc.errors()] == [("azure_speech_region",)]
         return "settings ValidationError", str(exc) + repr(exc) + settings_error_summary(exc)
     raise AssertionError("a key in the region field must fail validation")
 
@@ -295,12 +392,29 @@ def validation_error_text(tmp: Path) -> tuple[str, str]:
 @leak_surface
 def cli_bad_settings_stderr(tmp: Path) -> tuple[str, str]:
     with pytest.MonkeyPatch.context() as mp:
-        mp.setenv("NOSOLEAR_DATA_DIR", str(tmp / "data"))
-        mp.setenv("NOSOLEAR_AZURE_SPEECH_KEY", PLANTED_AZURE_KEY)
-        mp.setenv("NOSOLEAR_AZURE_SPEECH_REGION", PLANTED_ANTHROPIC_KEY)
+        _planted_env(mp, tmp / "data", NOSOLEAR_AZURE_SPEECH_REGION=PLANTED_ANTHROPIC_KEY)
         code, out, err = _run_cli(["doctor"])
     assert code == 2
+    assert "NOSOLEAR_AZURE_SPEECH_REGION" in err
     return "cli invalid settings output", out + err
+
+
+@leak_surface
+def cli_data_dir_error_stderr(tmp: Path) -> tuple[str, str]:
+    """`serve` with an unusable data dir exits before uvicorn starts, without echoing keys."""
+    not_a_dir = tmp / "afile"
+    not_a_dir.write_text("x")
+
+    def fail(*args: object, **kwargs: object) -> None:
+        raise AssertionError("uvicorn.run must not be reached")
+
+    with pytest.MonkeyPatch.context() as mp:
+        _planted_env(mp, not_a_dir)
+        mp.setattr("uvicorn.run", fail)
+        code, out, err = _run_cli(["serve"])
+    assert code == 2
+    assert "data directory problem" in err
+    return "cli serve data-directory error output", out + err
 
 
 @leak_surface
@@ -310,3 +424,13 @@ def env_example_and_repo_files(tmp: Path) -> tuple[str, str]:
     return "repo files (.env.example, README.md)", "\n".join(
         (REPO_ROOT / name).read_text(encoding="utf-8") for name in names
     )
+
+
+def _import_surface_modules() -> None:
+    """Register every `surfaces_*` module's producers; must run after `leak_surface` exists."""
+    for module in pkgutil.iter_modules([str(Path(__file__).parent)]):
+        if module.name.startswith("surfaces_"):
+            importlib.import_module(f"security.{module.name}")
+
+
+_import_surface_modules()
