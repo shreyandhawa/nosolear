@@ -69,7 +69,7 @@ def test_plain_settings_never_sees_the_real_env_file() -> None:
 
 
 def test_constants() -> None:
-    assert LOOPBACK_NAMES == frozenset({"localhost", "127.0.0.1", "::1"})
+    assert sorted(LOOPBACK_NAMES) == ["127.0.0.1", "::1", "localhost"]
     assert TRANSCRIBERS == ("auto", "mlx_whisper", "faster_whisper", "azure_stt", "crisper_whisper")
     assert CONTENT_DIR == REPO_ROOT / "content"
     assert MIN_KEY_LENGTH == 16
