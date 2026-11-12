@@ -44,7 +44,7 @@ None right now.
 ## Branch and PR state
 
 - `main`: bea116e "Fix final-review findings for Phase 0a (#11)".
-- `docs/byok-architecture`: the architecture revision PR (gate 1).
+- `docs/byok-architecture`: the architecture revision, [PR #12](https://github.com/shreyandhawa/nosolear/pull/12) (gate 1). Commits 79d69b5 (revision), 5bf20c0 (review fixes).
 - `p0b/spikes`: unmerged, kept. Two commits, all under `spikes/`. No audio or data files.
 
 ## Adapters not yet verified against the live service
