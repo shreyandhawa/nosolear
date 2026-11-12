@@ -9,8 +9,10 @@ from sqlalchemy import Engine
 
 from nosolear.adapters.private_fs import DataDirError
 from nosolear.adapters.system_clock import SystemClock
+from nosolear.api.deps import load_active_pack
 from nosolear.app.rebuild_profile import rebuild_profile
 from nosolear.dev.seed import seed_observations
+from nosolear.domain.packs import LanguagePack, PackError
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY
 from nosolear.persistence.db import create_engine_for, upgrade_to_head
 from nosolear.persistence.repositories import ObservationRepository, ProfileRepository
@@ -32,11 +34,12 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _rebuild(engine: Engine) -> None:
+def _rebuild(engine: Engine, pack: LanguagePack) -> None:
     profile = rebuild_profile(
         observations=ObservationRepository(engine),
         profiles=ProfileRepository(engine, DEFAULT_TAXONOMY),
         taxonomy=DEFAULT_TAXONOMY,
+        pack=pack,
         clock=SystemClock(),
     )
     print(f"Rebuilt profile: {len(profile.entries)} keys as of {profile.as_of.isoformat()}")
@@ -61,12 +64,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     except DataDirError as exc:
         print(f"data directory problem: {exc}", file=sys.stderr)
         return 2
+    pack: LanguagePack | None = None
+    if args.command in ("rebuild-profile", "dev-seed"):
+        try:
+            pack = load_active_pack(settings)
+        except PackError as exc:
+            print(f"pack error: {exc}", file=sys.stderr)
+            return 2
     engine = create_engine_for(settings.database_url)
     try:
         if args.command == "db":
             upgrade_to_head(engine)
         elif args.command == "rebuild-profile":
-            _rebuild(engine)
+            assert pack is not None
+            _rebuild(engine, pack)
         elif args.command == "dev-seed":
             observations = ObservationRepository(engine)
             if observations.all() and not args.force:
@@ -75,7 +86,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             observations.add_many(
                 seed_observations(days=args.days, seed=args.seed, end=SystemClock().now())
             )
-            _rebuild(engine)
+            assert pack is not None
+            _rebuild(engine, pack)
     finally:
         engine.dispose()
     return 0

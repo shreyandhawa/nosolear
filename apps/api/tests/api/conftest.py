@@ -2,7 +2,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from factories import NOW, SAMPLE_OBS, TAX
+from factories import NOW, PACK, SAMPLE_OBS, TAX
 from fastapi.testclient import TestClient
 
 from nosolear.api.app import create_app
@@ -19,7 +19,7 @@ def client_with_tmp_db(tmp_path: Path) -> Iterator[TestClient]:
 
 @pytest.fixture
 def seeded_profile(client_with_tmp_db: TestClient) -> Profile:
-    profile = build_profile(SAMPLE_OBS, as_of=NOW, taxonomy=TAX)
+    profile = build_profile(SAMPLE_OBS, as_of=NOW, taxonomy=TAX, pack=PACK)
     engine = client_with_tmp_db.app.state.engine  # pyright: ignore[reportAttributeAccessIssue]
     ProfileRepository(engine, TAX).save(profile, session_id=None, reason="rebuild")
     return profile

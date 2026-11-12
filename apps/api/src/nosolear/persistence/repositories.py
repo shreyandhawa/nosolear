@@ -86,6 +86,7 @@ def _entry_row(profile: Profile, e: ProfileEntry) -> dict[str, Any]:
         "as_of": profile.as_of,
         "algo_version": profile.algo_version,
         "taxonomy_version": profile.taxonomy_version,
+        "pack_id": profile.pack_id,
     }
 
 
@@ -121,9 +122,14 @@ class ProfileRepository:
                     algo_version=profile.algo_version,
                     taxonomy_version=profile.taxonomy_version,
                     entries_json=json.dumps([_snapshot_entry(r) for r in rows]),
+                    pack_id=profile.pack_id,
                 )
             )
         return snapshot_id
+
+    def latest_pack_id(self) -> str | None:
+        with self._engine.connect() as conn:
+            return conn.execute(select(profile_entries.c.pack_id).limit(1)).scalar()
 
     def latest(self) -> Profile | None:
         stmt = select(profile_entries).order_by(
@@ -151,5 +157,6 @@ class ProfileRepository:
             as_of=first.as_of,
             taxonomy_version=first.taxonomy_version,
             algo_version=first.algo_version,
+            pack_id=first.pack_id,
             entries=entries,
         )

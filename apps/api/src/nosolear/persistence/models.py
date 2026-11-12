@@ -129,6 +129,7 @@ profile_entries = Table(
     C("as_of", UTCDateTime, nullable=False),
     C("algo_version", Integer, nullable=False),
     C("taxonomy_version", Integer, nullable=False),
+    C("pack_id", String, nullable=False),
     CheckConstraint(_in_list("status", Status), name="ck_profile_entries_status"),
 )
 
@@ -143,6 +144,7 @@ profile_snapshots = Table(
     C("algo_version", Integer, nullable=False),
     C("taxonomy_version", Integer, nullable=False),
     C("entries_json", Text, nullable=False),
+    C("pack_id", String, nullable=False),
     CheckConstraint(
         "reason IN ('rebuild', 'baseline', 'daily', 'retest')", name="ck_profile_snapshots_reason"
     ),

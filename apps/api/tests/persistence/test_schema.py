@@ -142,3 +142,22 @@ def test_migration_0002_preserves_existing_rows(tmp_path: Path) -> None:
         assert c.execute(text("SELECT status FROM profile_entries")).scalar_one() == "active"
         assert c.execute(text("SELECT COUNT(*) FROM sessions")).scalar_one() == 1
     engine.dispose()
+
+
+def test_migration_0003_backfills_nepali(tmp_path: Path) -> None:
+    engine = create_engine_for(f"sqlite:///{tmp_path / 'm.sqlite'}")
+    upgrade_to_head(engine, revision="0002")
+    with engine.begin() as c:
+        _entry(c, "active")
+        c.execute(
+            text(
+                "INSERT INTO profile_snapshots (id, reason, taken_at, as_of, algo_version, "
+                "taxonomy_version, entries_json) "
+                f"VALUES ('x', 'rebuild', '{TS}', '{TS}', 1, 1, '[]')"
+            )
+        )
+    upgrade_to_head(engine)
+    with engine.connect() as c:
+        assert c.execute(text("SELECT pack_id FROM profile_entries")).scalar_one() == "nepali"
+        assert c.execute(text("SELECT pack_id FROM profile_snapshots")).scalar_one() == "nepali"
+    engine.dispose()

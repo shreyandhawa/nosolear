@@ -3,28 +3,10 @@ import pytest
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY as T
 from nosolear.domain.taxonomy import Detector, Family, Skill, UnknownErrorKey
 
-HYPOTHESES = [
-    "sound.sub.v.w",
-    "sound.sub.w.v",
-    "sound.sub.f.p",
-    "sound.sub.θ.t",
-    "sound.sub.ð.d",
-    "sound.sub.ʃ.s",
-    "sound.sub.s.ʃ",
-    "sound.sub.z.dʒ",
-    "sound.ins.epenthesis_sC",
-    "prosody.word_stress",
-    "grammar.article",
-]
-
-
-def test_hypothesis_keys_present():
-    assert all(T.get(k).hypothesis for k in HYPOTHESES)
-
 
 def test_dynamic_substitution_key():
     d = T.get("sound.sub.p.b")
-    assert (d.family, d.skill, d.impact, d.hypothesis) == (Family.SUB, Skill.SOUNDS, 1, False)
+    assert (d.family, d.skill, d.impact) == (Family.SUB, Skill.SOUNDS, 1)
     assert d.detectors == frozenset({Detector.AZURE_PA, Detector.PHONE_PROBE})
 
 
@@ -60,7 +42,7 @@ def test_word_stress_not_scored_until_phase_2():
 
 def test_dynamic_weak_sound_key():
     d = T.get("sound.low.k")
-    assert (d.family, d.skill, d.impact, d.hypothesis) == (Family.LOW, Skill.SOUNDS, 1, False)
+    assert (d.family, d.skill, d.impact) == (Family.LOW, Skill.SOUNDS, 1)
     assert d.drill_family == "sound_practice"
     assert d.detectors == frozenset({Detector.AZURE_PA})
     assert d.description == "/k/ unclear"
@@ -74,11 +56,10 @@ def test_descriptions_share_one_format_for_explicit_and_dynamic_keys():
 
 def test_explicit_key_matches_table():
     d = T.get("grammar.verb_tense")
-    assert (d.impact, d.drill_family, d.detectors, d.hypothesis) == (
+    assert (d.impact, d.drill_family, d.detectors) == (
         3,
         "grammar_rewrite",
         frozenset({Detector.COACH}),
-        False,
     )
     assert T.get("sound.del.final_cluster").detectors == frozenset(
         {Detector.PHONE_PROBE, Detector.AZURE_PA}

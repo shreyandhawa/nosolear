@@ -3,6 +3,9 @@ from pathlib import Path
 import pytest
 
 from nosolear.cli import main
+from nosolear.domain.taxonomy import DEFAULT_TAXONOMY
+from nosolear.persistence.db import create_engine_for
+from nosolear.persistence.repositories import ProfileRepository
 
 
 def _env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -112,3 +115,48 @@ def test_data_dir_problem_exits_2(
     monkeypatch.setenv("NOSOLEAR_DATA_DIR", str(file))
     assert main(["db", "upgrade"]) == 2
     assert "data directory problem:" in capsys.readouterr().err
+
+
+def _p_hats(tmp_path: Path) -> dict[str, float]:
+    engine = create_engine_for(f"sqlite:///{tmp_path / 'nosolear.sqlite'}")
+    try:
+        profile = ProfileRepository(engine, DEFAULT_TAXONOMY).latest()
+        assert profile is not None
+        return {e.definition.key: e.estimate.p_hat for e in profile.entries}
+    finally:
+        engine.dispose()
+
+
+def test_rebuild_profile_follows_the_pack(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _env(tmp_path, monkeypatch)
+    monkeypatch.setenv("NOSOLEAR_PACK", "nepali")
+    assert main(["db", "upgrade"]) == 0
+    assert main(["dev-seed"]) == 0
+    nepali = _p_hats(tmp_path)
+    monkeypatch.setenv("NOSOLEAR_PACK", "neutral")
+    assert main(["rebuild-profile"]) == 0
+    assert _p_hats(tmp_path) != nepali
+    engine = create_engine_for(f"sqlite:///{tmp_path / 'nosolear.sqlite'}")
+    try:
+        assert ProfileRepository(engine, DEFAULT_TAXONOMY).latest_pack_id() == "neutral"
+    finally:
+        engine.dispose()
+
+
+def test_unknown_pack_exits_2_with_a_clean_message(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _env(tmp_path, monkeypatch)
+    monkeypatch.setenv("NOSOLEAR_PACK", "nosuchpack")
+    assert main(["rebuild-profile"]) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("pack error:") and "nosuchpack" in err and "Traceback" not in err
+
+
+def test_path_like_pack_exits_2(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _env(tmp_path, monkeypatch)
+    monkeypatch.setenv("NOSOLEAR_PACK", "../x")
+    assert main(["rebuild-profile"]) == 2
+    assert "Traceback" not in capsys.readouterr().err
