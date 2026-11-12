@@ -1,5 +1,7 @@
 # Phase 0b: Spikes S1–S3: Implementation Plan
 
+> **Superseded on 2026-11-12 by the open-source BYOK direction (see docs/ARCHITECTURE.md §13). Kept for history; do not execute.**
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Answer the three questions in ARCHITECTURE §13 with measurements on the user's own voice:
