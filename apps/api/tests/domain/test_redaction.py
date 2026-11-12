@@ -1,7 +1,7 @@
 import json
 from urllib.parse import quote, quote_plus
 
-from hypothesis import assume, given
+from hypothesis import given
 from hypothesis import strategies as st
 
 from nosolear.domain.redaction import REDACTED, scrub
@@ -46,11 +46,30 @@ def test_nested_secrets_are_both_removed() -> None:
     assert scrub(f"{outer} {inner}", [outer, inner]) == f"{REDACTED} {REDACTED}"
 
 
-@given(
-    prefix=st.text(),
-    suffix=st.text(),
-    secret=st.text(min_size=MIN_KEY_LENGTH).filter(lambda s: not any(c.isspace() for c in s)),
+def test_quote_and_non_ascii_secret() -> None:
+    for secret in ['it\'s "quoted" 0123456789', "clé-sécrète-ünï-0123456789"]:
+        for form in (secret, quote(secret), quote_plus(secret), json.dumps(secret), repr(secret)):
+            assert secret not in scrub(f"x {form} y", [secret])
+            assert "[redacted]" in scrub(f"x {form} y", [secret])
+
+
+_KEYS = st.text(min_size=MIN_KEY_LENGTH).filter(
+    lambda s: not any(c.isspace() or c in "[]" for c in s)
 )
+
+
+@given(prefix=st.text(), suffix=st.text(), secret=_KEYS)
 def test_secret_never_survives(prefix: str, suffix: str, secret: str) -> None:
-    assume(REDACTED not in secret and secret not in REDACTED)
     assert secret not in scrub(prefix + secret + suffix, [secret])
+
+
+@given(secret=_KEYS, which=st.integers(0, 4))
+def test_escaped_forms_never_survive(secret: str, which: int) -> None:
+    form = [
+        quote(secret),
+        quote(secret, safe=""),
+        quote_plus(secret),
+        json.dumps(secret)[1:-1],
+        repr(secret)[1:-1],
+    ][which]
+    assert form not in scrub(f"a {form} b", [secret])

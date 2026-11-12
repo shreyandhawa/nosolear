@@ -84,3 +84,71 @@ def test_make_private_file(tmp_path: Path) -> None:
     file.chmod(0o644)
     make_private_file(file)
     assert mode(file) == 0o600
+
+
+def test_foreign_owner_leaves_mode_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "d"
+    target.mkdir()
+    target.chmod(0o755)
+    real_stat = os.stat
+
+    def fake(path: object, *args: object, **kw: object) -> os.stat_result:
+        result = real_stat(path, *args, **kw)  # pyright: ignore[reportArgumentType]
+        fields = list(result)
+        fields[4] = os.getuid() + 1
+        return os.stat_result(fields)
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(os, "stat", fake)
+        with pytest.raises(DataDirError):
+            ensure_private_dir(target)
+    assert mode(target) == 0o755
+
+
+def test_data_dir_that_is_a_file(tmp_path: Path) -> None:
+    file = tmp_path / "f"
+    file.write_text("x")
+    with pytest.raises(DataDirError):
+        ensure_private_dir(file)
+
+
+def test_unchangeable_entries_are_collected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "d"
+    root.mkdir()
+    (root / "a").write_text("x")
+    (root / "b").write_text("x")
+    real_chmod = os.chmod
+
+    def fake(path: object, m: int, *args: object, **kw: object) -> None:
+        if str(path).endswith(("a", "b")):
+            raise PermissionError(1, "Operation not permitted")
+        real_chmod(path, m, *args, **kw)  # pyright: ignore[reportArgumentType]
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(os, "chmod", fake)
+        with pytest.raises(DataDirError) as info:
+            tighten_tree(root)
+    assert str(root / "a") in str(info.value)
+    assert str(root / "b") in str(info.value)
+
+
+def test_entry_vanishing_mid_walk_is_tolerated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "d"
+    root.mkdir()
+    (root / "gone").write_text("x")
+    real_chmod = os.chmod
+
+    def fake(path: object, m: int, *args: object, **kw: object) -> None:
+        if str(path).endswith("gone"):
+            raise FileNotFoundError(2, "No such file")
+        real_chmod(path, m, *args, **kw)  # pyright: ignore[reportArgumentType]
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(os, "chmod", fake)
+        tighten_tree(root)

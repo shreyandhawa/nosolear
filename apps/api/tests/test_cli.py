@@ -93,3 +93,22 @@ def test_db_upgrade_tightens_data_dir(tmp_path: Path, monkeypatch: pytest.Monkey
     monkeypatch.setenv("NOSOLEAR_DATA_DIR", str(data))
     assert main(["db", "upgrade"]) == 0
     assert data.stat().st_mode & 0o777 == 0o700
+
+
+def test_db_upgrade_creates_owner_only_database(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data = tmp_path / "fresh"
+    monkeypatch.setenv("NOSOLEAR_DATA_DIR", str(data))
+    assert main(["db", "upgrade"]) == 0
+    assert (data / "nosolear.sqlite").stat().st_mode & 0o777 == 0o600
+
+
+def test_data_dir_problem_exits_2(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    file = tmp_path / "afile"
+    file.write_text("x")
+    monkeypatch.setenv("NOSOLEAR_DATA_DIR", str(file))
+    assert main(["db", "upgrade"]) == 2
+    assert "data directory problem:" in capsys.readouterr().err

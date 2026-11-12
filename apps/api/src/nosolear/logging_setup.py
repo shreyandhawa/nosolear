@@ -1,48 +1,106 @@
-"""Keeps configured secrets out of every log record, whichever logger or handler emits it."""
+"""Keeps configured secrets out of log records, whichever logger or handler emits them.
+
+Covered: the message, its arguments, the traceback (chained too) and `stack_info`. Not covered:
+`extra=` fields (set after the factory runs) and formatters that call `formatException` on
+`record.exc_info` themselves.
+"""
 
 import logging
 import traceback
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
+from typing import cast
 
-from nosolear.domain.redaction import scrub
+from nosolear.domain.redaction import scrub_forms, secret_forms
+
+UNFORMATTABLE = "<unformattable log message>"
+_UNFORMATTABLE_TRACEBACK = "<unformattable traceback>"
 
 _original_factory: Callable[..., logging.LogRecord] | None = None
-_secrets: tuple[str, ...] = ()
+_forms: tuple[str, ...] = ()
 
 
-def _scrubbed_message(record: logging.LogRecord) -> str:
+def _scrub(text: str) -> str:
+    return scrub_forms(text, _forms)
+
+
+def _scrub_arg(arg: object) -> object:
+    if isinstance(arg, str):
+        return _scrub(arg)
     try:
-        message = record.getMessage()
-    except TypeError, ValueError, KeyError:  # mismatched format arguments
-        message = f"{record.msg} {record.args}"
-    return scrub(message, _secrets)
+        shown = str(arg)
+    except Exception:
+        return UNFORMATTABLE
+    scrubbed = _scrub(shown)
+    return scrubbed if scrubbed != shown else arg
+
+
+def _scrub_args(args: object) -> object:
+    if isinstance(args, tuple):
+        return tuple(_scrub_arg(a) for a in cast("tuple[object, ...]", args))
+    if isinstance(args, Mapping):
+        return {k: _scrub_arg(v) for k, v in cast("Mapping[object, object]", args).items()}
+    return args
+
+
+def _full_message(record: logging.LogRecord) -> str:
+    """The scrubbed message, formatted from the record as it is now; never raises."""
+    try:
+        return _scrub(record.getMessage())
+    except Exception:
+        try:
+            return _scrub(f"{record.msg} {record.args}")
+        except Exception:
+            return UNFORMATTABLE
+
+
+def _scrub_message(record: logging.LogRecord) -> None:
+    """Scrub template and arguments in place so formatters that read `args` still work."""
+    original_msg, original_args = record.msg, record.args
+    try:
+        if isinstance(record.msg, str):
+            record.msg = _scrub(record.msg)
+        record.args = _scrub_args(record.args)  # pyright: ignore[reportAttributeAccessIssue]
+        formatted = record.getMessage()
+        if _scrub(formatted) == formatted:
+            return
+    except Exception:
+        pass
+    record.msg, record.args = original_msg, original_args
+    record.msg = _full_message(record)
+    record.args = None
 
 
 def _factory(*args: object, **kwargs: object) -> logging.LogRecord:
     assert _original_factory is not None
     record = _original_factory(*args, **kwargs)
-    record.msg = _scrubbed_message(record)
-    record.args = None
+    try:
+        _scrub_message(record)
+    except Exception:
+        record.msg, record.args = UNFORMATTABLE, None
     if record.exc_info and record.exc_info[1] is not None:
-        formatted = "".join(traceback.format_exception(*record.exc_info)).rstrip("\n")
-        record.exc_text = scrub(formatted, _secrets)
+        try:
+            formatted = "".join(traceback.format_exception(*record.exc_info)).rstrip("\n")
+            record.exc_text = _scrub(formatted)
+        except Exception:
+            record.exc_text = _UNFORMATTABLE_TRACEBACK
     if record.stack_info:
-        record.stack_info = scrub(record.stack_info, _secrets)
+        record.stack_info = _scrub(record.stack_info)
     return record
 
 
 def install_secret_scrubbing(secrets: Iterable[str]) -> None:
     """Scrub `secrets` from all later log records. Calling again replaces the earlier secrets."""
-    global _original_factory, _secrets
-    _secrets = tuple(secrets)
-    if _original_factory is None:
-        _original_factory = logging.getLogRecordFactory()
+    global _original_factory, _forms
+    _forms = secret_forms(secrets)
+    current = logging.getLogRecordFactory()
+    if current is not _factory:  # first install, or another library replaced our factory
+        _original_factory = current
         logging.setLogRecordFactory(_factory)
 
 
 def uninstall_secret_scrubbing() -> None:
-    global _original_factory, _secrets
-    if _original_factory is not None:
+    global _original_factory, _forms
+    if _original_factory is not None and logging.getLogRecordFactory() is _factory:
         logging.setLogRecordFactory(_original_factory)
     _original_factory = None
-    _secrets = ()
+    _forms = ()

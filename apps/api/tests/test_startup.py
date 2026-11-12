@@ -47,12 +47,23 @@ def test_preset_telemetry_value_kept(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
 
 def test_installs_scrubbing(tmp_path: Path) -> None:
+    other = "azure-key-0123456789abcdef"
     prepare_process(
-        make_settings(data_dir=tmp_path / "d", anthropic_api_key=KEY), create_data_dir=False
+        make_settings(data_dir=tmp_path / "d", anthropic_api_key=KEY, azure_speech_key=other),
+        create_data_dir=False,
     )
     stream = io.StringIO()
     log = logging.getLogger("t.startup")
     log.handlers = [logging.StreamHandler(stream)]
     log.propagate = False
-    log.warning("k=%s", KEY)
+    log.warning("k=%s and %s", KEY, other)
     assert KEY not in stream.getvalue()
+    assert other not in stream.getvalue()
+    assert stream.getvalue().count("[redacted]") == 2
+
+
+def test_umask_is_owner_only_when_creating(tmp_path: Path) -> None:
+    prepare_process(make_settings(data_dir=tmp_path / "d"), create_data_dir=True)
+    probe = tmp_path / "d" / "probe"
+    probe.write_text("x")
+    assert mode(probe) == 0o600

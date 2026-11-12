@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from pydantic import ValidationError
 from sqlalchemy import Engine
 
+from nosolear.adapters.private_fs import DataDirError
 from nosolear.adapters.system_clock import SystemClock
 from nosolear.app.rebuild_profile import rebuild_profile
 from nosolear.dev.seed import seed_observations
@@ -55,7 +56,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    prepare_process(settings, create_data_dir=True)
+    try:
+        prepare_process(settings, create_data_dir=True)
+    except DataDirError as exc:
+        print(f"data directory problem: {exc}", file=sys.stderr)
+        return 2
     engine = create_engine_for(settings.database_url)
     try:
         if args.command == "db":

@@ -32,7 +32,14 @@ def _isolated_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     for name in [n for n in os.environ if n.startswith("NOSOLEAR_")]:
         monkeypatch.delenv(name)
     monkeypatch.setitem(Settings.model_config, "env_file", None)
-    # prepare_process sets this and installs the log record factory; neither may leak between tests
-    monkeypatch.delenv("HF_HUB_DISABLE_TELEMETRY", raising=False)
+    # prepare_process sets HF_HUB_DISABLE_TELEMETRY, the umask and the log record factory;
+    # none of them may leak between tests
+    telemetry = os.environ.pop("HF_HUB_DISABLE_TELEMETRY", None)
+    umask = os.umask(0)
+    os.umask(umask)
     yield
     uninstall_secret_scrubbing()
+    os.umask(umask)
+    os.environ.pop("HF_HUB_DISABLE_TELEMETRY", None)
+    if telemetry is not None:
+        os.environ["HF_HUB_DISABLE_TELEMETRY"] = telemetry

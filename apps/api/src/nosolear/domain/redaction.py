@@ -20,9 +20,19 @@ def _variants(secret: str) -> set[str]:
     }
 
 
-def scrub(text: str, secrets: Iterable[str]) -> str:
-    """Replace every non-empty secret, and its escaped forms, with `REDACTED`; longest first."""
+def secret_forms(secrets: Iterable[str]) -> tuple[str, ...]:
+    """Every raw and escaped form of the non-empty secrets, longest first."""
     forms = {form for secret in secrets if secret for form in _variants(secret)}
-    for form in sorted(forms, key=len, reverse=True):
+    return tuple(sorted(forms, key=len, reverse=True))
+
+
+def scrub_forms(text: str, forms: tuple[str, ...]) -> str:
+    """Replace each of `forms` (as made by `secret_forms`) with `REDACTED`."""
+    for form in forms:
         text = text.replace(form, REDACTED)
     return text
+
+
+def scrub(text: str, secrets: Iterable[str]) -> str:
+    """Replace every non-empty secret, and its escaped forms, with `REDACTED`; longest first."""
+    return scrub_forms(text, secret_forms(secrets))
