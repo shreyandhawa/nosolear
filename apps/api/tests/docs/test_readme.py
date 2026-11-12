@@ -4,7 +4,6 @@ from nosolear.cli import _parser
 from nosolear.settings import REPO_ROOT, Settings
 
 README = (REPO_ROOT / "README.md").read_text()
-TICKED = re.findall(r"`([^`\n]+)`", README)
 FIELD_NAMES = {f"NOSOLEAR_{f.upper()}" for f in Settings.model_fields}
 
 

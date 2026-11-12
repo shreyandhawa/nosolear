@@ -31,7 +31,7 @@ Install these first. On macOS use [Homebrew](https://brew.sh); on Linux (and WSL
 
 - **Git**
 - **[uv](https://docs.astral.sh/uv/)**: installs Python 3.14 and the API's dependencies
-- **Node** at the version in `.node-version`, and **pnpm** at the version in the `packageManager` field of `apps/web/package.json`. Distribution packages for Node are usually far older, so on Linux and WSL2 install a version manager such as [fnm](https://github.com/Schniz/fnm) or [nvm](https://github.com/nvm-sh/nvm), run it in the repo root so it reads `.node-version`, then run `corepack enable` to get the pinned pnpm. On macOS, `brew install fnm` works the same way
+- **Node** at the version in `.node-version`, and **pnpm** at the version in the `packageManager` field of `apps/web/package.json`. Distribution packages for Node are usually far older, so on Linux and WSL2 install [fnm](https://github.com/Schniz/fnm), which reads `.node-version`, and run `fnm use --install-if-missing` in the repo root, then run `corepack enable` to get the pinned pnpm. If you use nvm instead, run `nvm install "$(cat .node-version)"`. On macOS, `brew install fnm` works the same way
 - **make**
 - **espeak-ng**: only for the `local` extra that arrives in Phase 0d; skip it for now
 
