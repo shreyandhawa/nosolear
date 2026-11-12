@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from factories import NEPALI, NOW, SAMPLE_OBS, TAX, FixedClock
+from factories import NEPALI, NOW, SAMPLE_OBS, TAX, FixedClock, loopback_client
 from fastapi.testclient import TestClient
 
 from nosolear.api.app import create_app
@@ -57,7 +57,7 @@ def test_startup_rebuilds_a_profile_built_under_another_pack(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setenv("NOSOLEAR_PACK", "nepali")
-    with TestClient(create_app(Settings(data_dir=tmp_path))) as first:
+    with loopback_client(create_app(Settings(data_dir=tmp_path))) as first:
         engine = first.app.state.engine  # pyright: ignore[reportAttributeAccessIssue]
         ObservationRepository(engine).add_many(SAMPLE_OBS)
         rebuild_profile(
@@ -68,7 +68,7 @@ def test_startup_rebuilds_a_profile_built_under_another_pack(
             clock=FixedClock(NOW),
         )
     monkeypatch.setenv("NOSOLEAR_PACK", "neutral")
-    with TestClient(create_app(Settings(data_dir=tmp_path))) as second:
+    with loopback_client(create_app(Settings(data_dir=tmp_path))) as second:
         engine = second.app.state.engine  # pyright: ignore[reportAttributeAccessIssue]
         assert ProfileRepository(engine, TAX).latest_pack_id() == "neutral"
 
@@ -77,6 +77,9 @@ def test_invalid_pack_does_not_stop_startup(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ):
     monkeypatch.setenv("NOSOLEAR_PACK", "nosuchpack")
-    with caplog.at_level("WARNING"), TestClient(create_app(Settings(data_dir=tmp_path))) as client:
+    with (
+        caplog.at_level("WARNING"),
+        loopback_client(create_app(Settings(data_dir=tmp_path))) as client,
+    ):
         assert client.get("/api/health").status_code == 200
     assert any("nosuchpack" in r.getMessage() for r in caplog.records)

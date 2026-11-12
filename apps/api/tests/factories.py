@@ -4,6 +4,8 @@ from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 
 from nosolear.adapters.content_files import load_pack
@@ -100,3 +102,8 @@ class FakeEnvironment:
 
     def platform(self) -> tuple[str, str]:
         return self._platform
+
+
+def loopback_client(app: FastAPI, *, port: int = 8000) -> TestClient:
+    """A client the request guard accepts: loopback peer, loopback Host."""
+    return TestClient(app, base_url=f"http://127.0.0.1:{port}", client=("127.0.0.1", 50000))
