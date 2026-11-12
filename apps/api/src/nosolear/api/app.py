@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from nosolear.adapters.system_clock import SystemClock
 from nosolear.api.deps import load_active_pack
 from nosolear.api.profile_routes import router as profile_router
+from nosolear.api.readiness_routes import router as readiness_router
 from nosolear.app.ensure_profile_pack import ensure_profile_pack
 from nosolear.domain.packs import PackError
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY
@@ -51,6 +52,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Nosolear", lifespan=_lifespan)
     app.state.settings = settings or Settings()
     app.include_router(profile_router)
+    app.include_router(readiness_router)
 
     @app.get("/api/health")
     def health() -> HealthResponse:  # pyright: ignore[reportUnusedFunction]

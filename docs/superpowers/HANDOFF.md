@@ -19,15 +19,16 @@ Phase 0b execution (open-source foundation). Gate 2 is passed: the phase plans P
 - 2026-11-12: Phase 0b Task 4: `scrub` (domain), log-record-factory secret scrubbing, private data dir (0700/0600, symlinks skipped, foreign owner refused) and `prepare_process` wired into the CLI and the app lifespan.
 - 2026-11-12: Phase 0b Task 5: language packs (`domain/packs.py`, `calibration_items.py`, `adapters/content_files.py`, `content/packs/{neutral,nepali}`, `content/calibration/items.toml`) with the Phase 0a hypothesis keys moved into the `nepali` pack.
 - 2026-11-12: Phase 0b Task 6: the active pack drives profile priors (`build_profile(..., pack=)`, `Profile.pack_id`, migration `0003_pack_id`, `ensure_profile_pack` on startup, `pack error:` exit 2 in the CLI); the taxonomy `hypothesis` flag is gone.
+- 2026-11-12: Phase 0b Task 7: readiness (`domain/readiness.py`, `check_readiness`, `SystemEnvironment`, `GET /api/readiness`, `nosolear doctor`; `doctor --probe` waits for Phase 0d). Keys enter only as booleans.
 
 ## In progress
 
-- Nothing open. Phase 0b Tasks 1–6 are merged (PRs #14–#19); `main` is at 690a8ad.
+- Task 7 is in review on `p0b/07-readiness`. Phase 0b Tasks 1–6 are merged (PRs #14–#19); `main` is at adb6f44.
 - The subagent-driven-development ledger for Phase 0b is at `.superpowers/sdd/2026-11-12-phase-0b-open-source-foundation/progress.md` (git-ignored, on the owner's machine). It holds the preflight scan, every controller ruling, and the deferred Minor findings that the phase-end review (Task 12) must triage. Read it before dispatching Task 7. Its `global-constraints.md`, `reviewer-instructions.md` and `rereview-instructions.md` are reusable dispatch inputs.
 
 ## Next
 
-1. Task 7: readiness (`nosolear doctor`, `GET /api/readiness`), then Tasks 8–12. The plan is `docs/superpowers/plans/2026-11-12-phase-0b-open-source-foundation.md`. Use `superpowers:subagent-driven-development` and resume the existing ledger (tasks with a `complete` line are done). One branch and one PR per task, with a fresh implementer subagent and a different reviewer subagent each time. Squash-merge on green CI.
+1. Task 8 (after Task 7 merges), then Tasks 9–12. The plan is `docs/superpowers/plans/2026-11-12-phase-0b-open-source-foundation.md`. Use `superpowers:subagent-driven-development` and resume the existing ledger (tasks with a `complete` line are done). One branch and one PR per task, with a fresh implementer subagent and a different reviewer subagent each time. Squash-merge on green CI.
 2. Any task that adds a dependency reruns `uv run --project apps/api python scripts/third_party_licences.py`.
 3. Correct `docs/ARCHITECTURE.md` §17/§18 for the licence discrepancy below.
 4. At the end of each phase: run `/security-review`, update this file, and hand off to a fresh session.

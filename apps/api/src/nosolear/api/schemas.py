@@ -24,3 +24,25 @@ class ProfileOut(BaseModel):
     taxonomy_version: int
     algo_version: int
     entries: list[ProfileEntryOut]
+
+
+class ReadinessRowOut(BaseModel):
+    component: Literal[
+        "azure_speech",
+        "azure_capabilities",
+        "anthropic",
+        "transcriber",
+        "phone_probe",
+        "language_pack",
+        "data_dir",
+        "usage",
+    ]
+    label: str
+    status: Literal["ready", "missing", "not_installed", "not_probed", "degraded"]
+    reason: str
+    fix: str | None
+
+
+class ReadinessOut(BaseModel):
+    ready: bool
+    rows: list[ReadinessRowOut]

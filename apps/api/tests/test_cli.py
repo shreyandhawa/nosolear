@@ -160,3 +160,68 @@ def test_path_like_pack_exits_2(
     monkeypatch.setenv("NOSOLEAR_PACK", "../x")
     assert main(["rebuild-profile"]) == 2
     assert "Traceback" not in capsys.readouterr().err
+
+
+AZURE_KEY = "AzurePlantedKey-0123456789abcdef"
+CLAUDE_KEY = "AnthropicPlantedKey-0123456789abcdef"
+
+
+def test_doctor_reports_missing_keys_and_exits_1(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    data = tmp_path / "data"
+    monkeypatch.setenv("NOSOLEAR_DATA_DIR", str(data))
+    assert main(["doctor"]) == 1
+    out = capsys.readouterr().out
+    assert "Azure Speech" in out and "NOSOLEAR_AZURE_SPEECH_KEY" in out
+    assert not data.exists()
+
+
+def test_doctor_exits_0_when_configured_and_never_prints_keys(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("NOSOLEAR_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("NOSOLEAR_AZURE_SPEECH_KEY", AZURE_KEY)
+    monkeypatch.setenv("NOSOLEAR_AZURE_SPEECH_REGION", "westus2")
+    monkeypatch.setenv("NOSOLEAR_ANTHROPIC_API_KEY", CLAUDE_KEY)
+    assert main(["doctor"]) == 0
+    captured = capsys.readouterr()
+    for key in (AZURE_KEY, CLAUDE_KEY):
+        assert key not in captured.out and key not in captured.err
+
+
+def test_doctor_probe_is_not_available_yet(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("NOSOLEAR_DATA_DIR", str(tmp_path / "data"))
+    assert main(["doctor", "--probe"]) == 2
+    assert "probes arrive in Phase 0d" in capsys.readouterr().err
+
+
+def test_doctor_with_an_unknown_pack_still_prints_every_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("NOSOLEAR_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("NOSOLEAR_PACK", "nosuchpack")
+    main(["doctor"])
+    out = capsys.readouterr().out
+    labels = [
+        "Azure Speech",
+        "Azure capabilities",
+        "Anthropic",
+        "Transcriber",
+        "Phone probe",
+        "Language pack",
+        "Data dir",
+        "Usage",
+    ]
+    assert all(label in out for label in labels)
+    assert "nosuchpack" in out
+
+
+def test_doctor_keeps_the_invalid_settings_exit(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("NOSOLEAR_HOST", "0.0.0.0")
+    assert main(["doctor"]) == 2
+    assert "NOSOLEAR_HOST" in capsys.readouterr().err

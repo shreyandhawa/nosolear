@@ -1,7 +1,8 @@
 """Shared test helpers. Import as `from factories import ...`."""
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime, timedelta, timezone
+from pathlib import Path
 
 from sqlalchemy import Engine, text
 
@@ -67,3 +68,31 @@ class FixedClock:
 def make_settings(**kw: object) -> Settings:
     """Settings that never read a `.env` file; environment variables still apply."""
     return Settings(_env_file=None, **kw)  # pyright: ignore[reportCallIssue,reportArgumentType]
+
+
+class FakeEnvironment:
+    """An `EnvironmentProbe` that reports exactly what it is given."""
+
+    def __init__(
+        self,
+        modules: Iterable[str] = (),
+        executables: Iterable[str] = (),
+        modes: Mapping[Path, int] | None = None,
+        platform: tuple[str, str] = ("linux", "x86_64"),
+    ) -> None:
+        self._modules = frozenset(modules)
+        self._executables = frozenset(executables)
+        self._modes = dict(modes or {})
+        self._platform = platform
+
+    def module_available(self, name: str) -> bool:
+        return name in self._modules
+
+    def executable_available(self, name: str) -> bool:
+        return name in self._executables
+
+    def path_mode(self, path: Path) -> int | None:
+        return self._modes.get(path)
+
+    def platform(self) -> tuple[str, str]:
+        return self._platform

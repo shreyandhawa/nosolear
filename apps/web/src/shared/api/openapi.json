@@ -134,6 +134,84 @@
         ],
         "title": "ProfileOut",
         "type": "object"
+      },
+      "ReadinessOut": {
+        "properties": {
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ReadinessRowOut"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ready",
+          "rows"
+        ],
+        "title": "ReadinessOut",
+        "type": "object"
+      },
+      "ReadinessRowOut": {
+        "properties": {
+          "component": {
+            "enum": [
+              "azure_speech",
+              "azure_capabilities",
+              "anthropic",
+              "transcriber",
+              "phone_probe",
+              "language_pack",
+              "data_dir",
+              "usage"
+            ],
+            "title": "Component",
+            "type": "string"
+          },
+          "fix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fix"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "missing",
+              "not_installed",
+              "not_probed",
+              "degraded"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "component",
+          "label",
+          "status",
+          "reason",
+          "fix"
+        ],
+        "title": "ReadinessRowOut",
+        "type": "object"
       }
     }
   },
@@ -177,6 +255,24 @@
           }
         },
         "summary": "Get Profile"
+      }
+    },
+    "/api/readiness": {
+      "get": {
+        "operationId": "getReadiness",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Readiness"
       }
     }
   }
