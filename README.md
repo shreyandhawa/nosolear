@@ -62,7 +62,7 @@ cp .env.example .env
 
 - `NOSOLEAR_AZURE_SPEECH_KEY` and `NOSOLEAR_AZURE_SPEECH_REGION`: from your Speech resource
 - `NOSOLEAR_ANTHROPIC_API_KEY`: from the Console
-- `NOSOLEAR_PACK`: optional language pack. The default is `neutral`; `nepali` adds weak starting guesses for a native Nepali speaker
+- `NOSOLEAR_PACK`: optional language pack. The default is `neutral`; `nepali` adds weak starting guesses for Nepali first-language speakers
 
 Every setting is listed, with its default, in `.env.example`. Keys and provider choices come only from the environment or `.env`.
 

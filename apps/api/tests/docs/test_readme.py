@@ -18,7 +18,7 @@ def _make_targets() -> set[str]:
 
 def _subcommands() -> set[str]:
     subparsers = next(a for a in _parser()._actions if hasattr(a, "choices") and a.choices)
-    return set(subparsers.choices)
+    return set(subparsers.choices or ())
 
 
 def test_every_make_target_in_readme_exists() -> None:
