@@ -104,6 +104,6 @@ class FakeEnvironment:
         return self._platform
 
 
-def loopback_client(app: FastAPI) -> TestClient:
+def loopback_client(app: FastAPI, *, port: int = 8000) -> TestClient:
     """A client the request guard accepts: loopback peer, loopback Host."""
-    return TestClient(app, base_url="http://127.0.0.1:8000", client=("127.0.0.1", 50000))
+    return TestClient(app, base_url=f"http://127.0.0.1:{port}", client=("127.0.0.1", 50000))

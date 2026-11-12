@@ -67,6 +67,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "serve":
         import uvicorn
 
+        try:
+            prepare_process(settings, create_data_dir=True)
+        except DataDirError as exc:
+            print(f"data directory problem: {exc}", file=sys.stderr)
+            return 2
+
         uvicorn.run(
             "nosolear.api.app:create_app",
             factory=True,

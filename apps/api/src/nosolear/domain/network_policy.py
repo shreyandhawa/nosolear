@@ -7,9 +7,10 @@ or `http://localhost:5173.evil.com` never pass.
 
 import ipaddress
 from collections.abc import Sequence
+from functools import cache
 from urllib.parse import urlsplit
 
-_CROSS_SITE = "cross-site"
+_SAME_SITE_VALUES = frozenset({"same-origin", "same-site", "none"})
 
 
 def peer_is_loopback(host: str | None) -> bool:
@@ -31,6 +32,11 @@ def allowed_hosts(port: int, app_origins: Sequence[str]) -> frozenset[str]:
     return frozenset(own | {urlsplit(origin).netloc.lower() for origin in app_origins})
 
 
+@cache
+def _allowed_hosts_cached(port: int, app_origins: tuple[str, ...]) -> frozenset[str]:
+    return allowed_hosts(port, app_origins)
+
+
 def host_is_allowed(header: str | None, allowed: frozenset[str]) -> bool:
     return header is not None and header.lower() in allowed
 
@@ -45,7 +51,8 @@ def origin_is_allowed(header: str | None, app_origins: Sequence[str]) -> bool:
 
 
 def fetch_site_is_allowed(header: str | None) -> bool:
-    return header != _CROSS_SITE
+    """Allow-list: no header, or a value that says the request is not cross-site."""
+    return header is None or header.strip().lower() in _SAME_SITE_VALUES
 
 
 def check_request(
@@ -60,7 +67,7 @@ def check_request(
     """None when the request is allowed, else the first failing reason code."""
     if not peer_is_loopback(peer):
         return "peer"
-    if not host_is_allowed(host, allowed_hosts(port, app_origins)):
+    if not host_is_allowed(host, _allowed_hosts_cached(port, tuple(app_origins))):
         return "host"
     if not origin_is_allowed(origin, app_origins):
         return "origin"

@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from nosolear.domain.network_policy import allowed_hosts, check_request
+from nosolear.domain.network_policy import check_request
 
 logger = logging.getLogger(__name__)
 
@@ -27,19 +27,23 @@ class RequestGuardMiddleware:
         self._app = app
         self._port = port
         self._app_origins = tuple(app_origins)
-        # built once so the per-request check stays cheap
-        self._allowed_hosts = allowed_hosts(port, self._app_origins)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] not in ("http", "websocket"):
+        if scope["type"] == "lifespan":
             await self._app(scope, receive, send)
+            return
+        if scope["type"] not in ("http", "websocket"):
+            logger.warning("dropped %r scope", str(scope["type"])[:40])
             return
         reason = self._refusal_reason(scope)
         if reason is None:
             await self._app(scope, receive, send)
             return
         # reason code and path only: never a header value or the peer address
-        logger.warning("refused %s request: %s (path %s)", scope["type"], reason, scope["path"])
+        # the path is attacker-chosen and percent-decoded: log it escaped and capped
+        logger.warning(
+            "refused %s request: %s (path %r)", scope["type"], reason, scope["path"][:100]
+        )
         if scope["type"] == "websocket":
             await send({"type": "websocket.close", "code": _WS_POLICY_VIOLATION})
             return

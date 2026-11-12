@@ -1,3 +1,4 @@
+import stat
 from pathlib import Path
 
 import pytest
@@ -298,7 +299,8 @@ def _spy_uvicorn(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
 
 
 def test_serve_runs_uvicorn_on_loopback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _env(tmp_path, monkeypatch)
+    data = tmp_path / "data"
+    monkeypatch.setenv("NOSOLEAR_DATA_DIR", str(data))
     calls = _spy_uvicorn(monkeypatch)
     assert main(["serve"]) == 0
     assert calls == [
@@ -311,7 +313,9 @@ def test_serve_runs_uvicorn_on_loopback(tmp_path: Path, monkeypatch: pytest.Monk
             "proxy_headers": False,
         }
     ]
-    assert list(tmp_path.iterdir()) == []  # serve itself creates nothing
+    # the data dir pre-flight runs, but serve does no database work itself
+    assert stat.S_IMODE(data.stat().st_mode) == 0o700
+    assert list(data.iterdir()) == []
 
 
 def test_serve_reload_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -333,3 +337,36 @@ def test_serve_refuses_a_non_loopback_host(
     monkeypatch.setattr("uvicorn.run", fail)
     assert main(["serve"]) == 2
     assert "NOSOLEAR_HOST" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "env,expected",
+    [({"NOSOLEAR_PORT": "9001"}, {"port": 9001}), ({"NOSOLEAR_HOST": "::1"}, {"host": "::1"})],
+)
+def test_serve_passes_configured_host_and_port(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    env: dict[str, str],
+    expected: dict[str, object],
+) -> None:
+    _env(tmp_path, monkeypatch)
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    calls = _spy_uvicorn(monkeypatch)
+    assert main(["serve"]) == 0
+    assert {k: calls[0][k] for k in expected} == expected
+
+
+def test_serve_reports_a_bad_data_dir_and_does_not_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    blocker = tmp_path / "data"
+    blocker.write_text("a file where the directory should be")
+    monkeypatch.setenv("NOSOLEAR_DATA_DIR", str(blocker))
+
+    def fail(*a: object, **k: object) -> None:
+        raise AssertionError("uvicorn.run must not be called")
+
+    monkeypatch.setattr("uvicorn.run", fail)
+    assert main(["serve"]) == 2
+    assert "data directory problem:" in capsys.readouterr().err

@@ -2,6 +2,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+from nosolear.domain import network_policy
 from nosolear.domain.network_policy import (
     allowed_hosts,
     check_request,
@@ -82,8 +83,13 @@ def test_origin_is_allowed(origin: str | None, ok: bool) -> None:
         ("same-origin", True),
         ("same-site", True),
         ("none", True),
+        (" Same-Origin ", True),
         (None, True),
         ("cross-site", False),
+        ("Cross-Site", False),
+        ("cross-site ", False),
+        ("bogus", False),
+        ("", False),
     ],
 )
 def test_fetch_site_is_allowed(value: str | None, ok: bool) -> None:
@@ -126,3 +132,32 @@ def test_host_with_any_suffix_is_refused(junk: str) -> None:
 
 def test_null_origin_is_refused_even_if_configured() -> None:
     assert origin_is_allowed("null", ("null", *DEFAULTS)) is False
+
+
+def test_allowed_hosts_for_a_custom_port_and_origins() -> None:
+    hosts = allowed_hosts(9001, ["http://LOCALHOST:3000", "http://[::1]:3000"])
+    assert hosts == {
+        "127.0.0.1:9001",
+        "localhost:9001",
+        "[::1]:9001",
+        "localhost:3000",
+        "[::1]:3000",
+    }
+
+
+def test_check_request_builds_the_allowed_set_once() -> None:
+    network_policy._allowed_hosts_cached.cache_clear()
+    for _ in range(3):
+        assert (
+            check_request(
+                peer="127.0.0.1",
+                host="localhost:8000",
+                origin=None,
+                fetch_site=None,
+                port=8000,
+                app_origins=list(DEFAULTS),
+            )
+            is None
+        )
+    info = network_policy._allowed_hosts_cached.cache_info()
+    assert (info.misses, info.hits) == (1, 2)
