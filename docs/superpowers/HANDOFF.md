@@ -27,12 +27,13 @@ Phase 0b execution (open-source foundation). Gate 2 is passed: the phase plans P
 
 ## In progress
 
-- Task 11 is in review on `p0b/11-planted-key-test`. Phase 0b Tasks 1–10 are merged (PRs #14–#24); `main` is at 1326dab. Task 9's last step, updating branch protection to require `audit` (the `api` check gates both matrix legs), is pending the owner's confirmation; the controller runs it.
+- Nothing open. Phase 0b Tasks 1–11 are merged (PRs #14–#25); `main` is at 222edbd. Task 12 is next.
+- Task 9's last step, updating branch protection to require `audit` (the `api` check gates both matrix legs), is still waiting for the owner's confirmation. It was asked on 2026-11-12 and no answer has come back yet. Run it only after an explicit yes from the owner.
 - The subagent-driven-development ledger for Phase 0b is at `.superpowers/sdd/2026-11-12-phase-0b-open-source-foundation/progress.md` (git-ignored, on the owner's machine). It holds the preflight scan, every controller ruling, and the deferred Minor findings that the phase-end review (Task 12) must triage. Read it before dispatching Task 12. Its `global-constraints.md`, `reviewer-instructions.md` and `rereview-instructions.md` are reusable dispatch inputs.
 
 ## Next
 
-1. Task 12 (after Task 11 merges). The plan is `docs/superpowers/plans/2026-11-12-phase-0b-open-source-foundation.md`. Use `superpowers:subagent-driven-development` and resume the existing ledger (tasks with a `complete` line are done). One branch and one PR per task, with a fresh implementer subagent and a different reviewer subagent each time. Squash-merge on green CI.
+1. Task 12: whole-phase checks, the §13 "done when" walk, `/security-review` over `391b639..main`, fixes in `p0b/12-security-fixes`, the final whole-phase review on opus with the ledger's deferred minors, and the §17 licence correction below. Then mark Phase 0b done with Next = Phase 0c. The plan is `docs/superpowers/plans/2026-11-12-phase-0b-open-source-foundation.md`. Use `superpowers:subagent-driven-development` and resume the existing ledger (tasks with a `complete` line are done). One branch and one PR per task, with a fresh implementer subagent and a different reviewer subagent each time. Squash-merge on green CI.
 2. Any task that adds a dependency reruns `uv run --project apps/api python scripts/third_party_licences.py`.
 3. Correct `docs/ARCHITECTURE.md` §17/§18 for the licence discrepancy below.
 4. At the end of each phase: run `/security-review`, update this file, and hand off to a fresh session.
@@ -83,13 +84,13 @@ The Alembic chain after `main`'s 0002:
 
 ## Open questions for the owner
 
-None right now.
+- Confirm the Task 9 branch-protection update: set main's required checks to `hygiene`, `api`, `web`, `contract` and `audit` (the command is in the plan's Task 9 Step 7).
 
 ## Branch and PR state
 
-- `main`: f5dda47 "Add CI audit job, macOS runner and the live pytest marker (#23)".
+- `main`: 222edbd "Add the planted-fake-key leak harness and clear exc_info after scrubbing (#25)".
 - `docs/phase-plans`: merged (#13) and kept.
-- `p0b/01-community-files` … `p0b/06-pack-in-profile`: merged (#14–#19) and kept.
+- `p0b/01-community-files` … `p0b/11-planted-key-test`: merged (#14–#25) and kept. #24's squash subject on `main` is the branch name "p0b/10 readme setup guide", because `--fill` on a multi-commit PR uses the branch name. Later merges pass `--subject`.
 - `docs/byok-architecture`: merged and kept (deleting branches needs the owner's approval).
 - `p0b/spikes`: unmerged and kept. Everything is under `spikes/`, with no audio and no data.
 
