@@ -72,3 +72,15 @@ def test_cli_reports_bad_settings_without_input(
     assert main(["rebuild-profile"]) == 2
     err = capsys.readouterr().err
     assert "NOSOLEAR_HOST" in err and "0.0.0.0" not in err
+
+
+def test_cli_short_key_exits_2_without_leaking(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    key = "Sh0rtKeyValue15!"[:15]
+    monkeypatch.setenv("NOSOLEAR_ANTHROPIC_API_KEY", key)
+    assert main(["rebuild-profile"]) == 2
+    captured = capsys.readouterr()
+    assert "NOSOLEAR_ANTHROPIC_API_KEY" in captured.err
+    assert key not in captured.err and key not in captured.out
+    assert captured.out == ""

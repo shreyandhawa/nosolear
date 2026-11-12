@@ -1,7 +1,8 @@
 import ipaddress
+import logging
 import os
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, get_args
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -11,10 +12,12 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 REPO_ROOT = Path(__file__).resolve().parents[4]
 CONTENT_DIR = REPO_ROOT / "content"  # packs, calibration items and (0e) the baseline protocol
 LOOPBACK_NAMES = frozenset({"localhost", "127.0.0.1", "::1"})
-TRANSCRIBERS = ("auto", "mlx_whisper", "faster_whisper", "azure_stt", "crisper_whisper")
 MIN_KEY_LENGTH = 16  # shorter keys are refused, so scrubbing never shreds ordinary text
 
 Transcriber = Literal["auto", "mlx_whisper", "faster_whisper", "azure_stt", "crisper_whisper"]
+TRANSCRIBERS: tuple[str, ...] = get_args(Transcriber)
+
+_log = logging.getLogger(__name__)
 
 _LOCALTIME = Path("/etc/localtime")
 _MODEL_ID = r"^[A-Za-z0-9._-]+$"
@@ -28,6 +31,14 @@ def _loads(name: str) -> bool:
     return True
 
 
+def _utc_fallback() -> str:
+    _log.warning(
+        "could not determine this machine's timezone; using UTC. Set NOSOLEAR_TIMEZONE to an IANA"
+        " name such as Asia/Kathmandu"
+    )
+    return "UTC"
+
+
 def _local_zone_name() -> str:
     """The machine's IANA zone: `TZ`, else the `/etc/localtime` link target, else UTC."""
     tz = os.environ.get("TZ", "").lstrip(":")
@@ -36,12 +47,12 @@ def _local_zone_name() -> str:
     try:
         parts = Path(os.readlink(_LOCALTIME)).parts
     except OSError:
-        return "UTC"
+        return _utc_fallback()
     if "zoneinfo" in parts:
         name = "/".join(parts[len(parts) - parts[::-1].index("zoneinfo") :])
         if name and _loads(name):
             return name
-    return "UTC"
+    return _utc_fallback()
 
 
 def _canonical_origin(origin: str) -> str:
@@ -50,6 +61,8 @@ def _canonical_origin(origin: str) -> str:
         host, port = parts.hostname, parts.port
     except ValueError as exc:
         raise ValueError("not a valid origin") from exc
+    if port == 0:
+        raise ValueError("not a valid origin")
     if (
         parts.scheme not in ("http", "https")
         or parts.username is not None
@@ -64,6 +77,8 @@ def _canonical_origin(origin: str) -> str:
             " token mode is not available until Phase 6"
         )
     shown = f"[{host}]" if ":" in host else host
+    if port == {"http": 80, "https": 443}[parts.scheme]:
+        port = None  # browsers omit the default port from `Origin`
     return f"{parts.scheme}://{shown}" + (f":{port}" if port is not None else "")
 
 
@@ -99,7 +114,7 @@ class Settings(BaseSettings):
     mlx_whisper_model: str = Field(default="whisper-large-v3-turbo", pattern=_MODEL_ID)
     pack: str = Field(default="neutral", pattern=r"^[a-z0-9_]+$")
     timezone: str = Field(default_factory=lambda: _local_zone_name())
-    cap_azure_audio_hours: float = Field(default=4.5, gt=0)
+    cap_azure_audio_hours: float = Field(default=4.5, gt=0, allow_inf_nan=False)
     cap_azure_tts_chars: int = Field(default=450000, gt=0)
     cap_claude_tokens: int = Field(default=100000, gt=0)
     job_workers: int = Field(default=1, ge=1)
@@ -131,19 +146,28 @@ class Settings(BaseSettings):
     @field_validator("app_origins")
     @classmethod
     def _loopback_origins(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if not value:
+            raise ValueError("at least one origin is required")
         return tuple(dict.fromkeys(_canonical_origin(origin) for origin in value))
 
     @field_validator("azure_speech_key", "anthropic_api_key")
     @classmethod
     def _key_long_enough(cls, value: SecretStr | None) -> SecretStr | None:
-        if value is not None and len(value.get_secret_value()) < MIN_KEY_LENGTH:
+        if value is None:
+            return value
+        key = value.get_secret_value()
+        if len(key) < MIN_KEY_LENGTH:
             raise ValueError("too short to be a real key")
+        if any(ch.isspace() for ch in key):
+            raise ValueError("must not contain whitespace (check for a stray space or newline)")
         return value
 
     @field_validator("timezone")
     @classmethod
     def _known_zone(cls, value: str) -> str:
         if not _loads(value):
+            if not _loads("UTC"):
+                raise ValueError("no timezone database was found; install tzdata")
             raise ValueError("not an IANA timezone name such as Asia/Kathmandu")
         return value
 
@@ -167,6 +191,6 @@ class Settings(BaseSettings):
 def settings_error_summary(exc: ValidationError) -> str:
     """One `NOSOLEAR_<FIELD>: <message>` line per error; never the input value."""
     return "\n".join(
-        f"NOSOLEAR_{str(err['loc'][0]).upper()}: {err['msg']}"
+        f"NOSOLEAR_{str(err['loc'][0] if err['loc'] else 'settings').upper()}: {err['msg']}"
         for err in exc.errors(include_input=False, include_url=False, include_context=False)
     )

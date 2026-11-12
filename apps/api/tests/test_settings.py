@@ -1,9 +1,10 @@
+import logging
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
 from factories import make_settings
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError, model_validator
 
 from nosolear import settings as settings_module
 from nosolear.settings import (
@@ -108,7 +109,9 @@ def test_short_key_rejected(field: str) -> None:
     assert "too short to be a real key" in summary
     assert short not in str(e.value) and short not in summary
     assert "15" not in summary
-    assert make_settings(**{field: "s" * 16})
+    ok = make_settings(**{field: "s" * 16})
+    stored = getattr(ok, field)
+    assert stored is not None and stored.get_secret_value() == "s" * 16
 
 
 @pytest.mark.parametrize("workers", [0, -1])
@@ -133,6 +136,40 @@ def test_numeric_bounds(field: str, value: float) -> None:
     with pytest.raises(ValidationError) as e:
         make_settings(**{field: value})
     assert f"NOSOLEAR_{field.upper()}" in _names(e.value)
+
+
+@pytest.mark.parametrize("value", ["inf", "-inf", "nan"])
+def test_float_caps_reject_inf_and_nan_via_kwarg(value: str) -> None:
+    with pytest.raises(ValidationError) as e:
+        make_settings(cap_azure_audio_hours=float(value))
+    assert "NOSOLEAR_CAP_AZURE_AUDIO_HOURS" in _names(e.value)
+
+
+@pytest.mark.parametrize("value", ["inf", "nan", "Infinity"])
+def test_float_caps_reject_inf_and_nan_via_env(value: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NOSOLEAR_CAP_AZURE_AUDIO_HOURS", value)
+    with pytest.raises(ValidationError) as e:
+        make_settings()
+    assert "NOSOLEAR_CAP_AZURE_AUDIO_HOURS" in _names(e.value)
+
+
+@pytest.mark.parametrize("field", ["azure_speech_key", "anthropic_api_key"])
+@pytest.mark.parametrize(
+    "key", [" " + "k" * 20, "k" * 20 + " ", "k" * 20 + "\n", "k" * 10 + " " + "k" * 10, " " * 16]
+)
+def test_key_with_whitespace_rejected(field: str, key: str) -> None:
+    with pytest.raises(ValidationError) as e:
+        make_settings(**{field: key})
+    summary = _names(e.value)
+    assert f"NOSOLEAR_{field.upper()}" in summary
+    assert "whitespace" in summary
+    assert "k" * 10 not in summary and "k" * 10 not in str(e.value)
+    assert "20" not in summary and "21" not in summary
+
+
+@pytest.mark.parametrize("transcriber", TRANSCRIBERS)
+def test_every_transcriber_accepted(transcriber: str) -> None:
+    assert make_settings(transcriber=transcriber).transcriber == transcriber
 
 
 def test_port_accepts_range_ends() -> None:
@@ -174,6 +211,58 @@ def test_machine_zone_lookup_failure_falls_back_to_utc(
     link.symlink_to(tmp_path)  # a target with no zoneinfo/ component
     monkeypatch.setattr(settings_module, "_LOCALTIME", link)
     assert settings_module._local_zone_name() == "UTC"
+
+
+def test_invalid_tz_variable_falls_through_to_localtime(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    target = tmp_path / "zoneinfo" / "Asia" / "Kathmandu"
+    target.parent.mkdir(parents=True)
+    target.write_text("")
+    link = tmp_path / "localtime"
+    link.symlink_to(target)
+    monkeypatch.setattr(settings_module, "_LOCALTIME", link)
+    monkeypatch.setenv("TZ", "Not/AZone")
+    with caplog.at_level(logging.WARNING):
+        assert settings_module._local_zone_name() == "Asia/Kathmandu"
+    assert not caplog.records
+
+
+def test_tz_variable_with_leading_colon(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TZ", ":Europe/Paris")
+    assert settings_module._local_zone_name() == "Europe/Paris"
+
+
+@pytest.mark.parametrize("tz", [None, "Secret/Bad_Zone_42"])
+def test_utc_fallback_logs_one_warning_without_the_tz_value(
+    tz: str | None,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    if tz is None:
+        monkeypatch.delenv("TZ", raising=False)
+    else:
+        monkeypatch.setenv("TZ", tz)
+    monkeypatch.setattr(settings_module, "_LOCALTIME", tmp_path / "missing")
+    with caplog.at_level(logging.WARNING, logger="nosolear.settings"):
+        assert settings_module._local_zone_name() == "UTC"
+    assert len(caplog.records) == 1
+    record = caplog.records[0]
+    assert record.levelno == logging.WARNING
+    assert "NOSOLEAR_TIMEZONE" in record.getMessage()
+    assert "Secret" not in record.getMessage()
+
+
+def test_missing_zone_database_says_install_tzdata(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _no_db(name: str) -> ZoneInfo:
+        raise settings_module.ZoneInfoNotFoundError(name)
+
+    monkeypatch.setattr(settings_module, "ZoneInfo", _no_db)
+    with pytest.raises(ValidationError) as e:
+        make_settings(timezone="UTC")
+    summary = _names(e.value)
+    assert "tzdata" in summary and "no timezone database" in summary
 
 
 def test_machine_zone_lookup_from_localtime_symlink(
@@ -221,6 +310,80 @@ def test_non_loopback_or_malformed_origin_rejected(origin: str) -> None:
     assert "NOSOLEAR_APP_ORIGINS" in summary
     assert "token mode is not available until Phase 6" in summary
     assert origin not in summary and origin not in str(e.value)
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "http://localhost.evil.com",
+        "http://127.0.0.1.evil.com",
+        "http://localhost@evil.com",
+        "http://0.0.0.0:5173",
+        "http://[::ffff:127.0.0.1]",
+        "http://localhost:abc",
+        "http://localhost:99999",
+        "http://localhost:0",
+        "http://[::1",
+    ],
+)
+def test_host_confusion_and_unparseable_origins_rejected(origin: str) -> None:
+    with pytest.raises(ValidationError) as e:
+        make_settings(app_origins=(origin,))
+    assert "NOSOLEAR_APP_ORIGINS" in _names(e.value)
+    assert origin not in _names(e.value) and origin not in str(e.value)
+
+
+def test_mixed_origin_list_rejected_via_kwarg() -> None:
+    with pytest.raises(ValidationError) as e:
+        make_settings(app_origins=("http://localhost:3000", "https://example.com"))
+    assert "NOSOLEAR_APP_ORIGINS" in _names(e.value)
+    assert "example.com" not in _names(e.value)
+
+
+def test_mixed_origin_list_rejected_via_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NOSOLEAR_APP_ORIGINS", "http://localhost:3000, https://example.com")
+    with pytest.raises(ValidationError) as e:
+        make_settings()
+    assert "NOSOLEAR_APP_ORIGINS" in _names(e.value)
+    assert "example.com" not in _names(e.value)
+
+
+@pytest.mark.parametrize("raw", [",", " , ,", "  "])
+def test_empty_origin_list_rejected(raw: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NOSOLEAR_APP_ORIGINS", raw)
+    with pytest.raises(ValidationError) as e:
+        make_settings()
+    assert "at least one origin is required" in _names(e.value)
+    with pytest.raises(ValidationError):
+        make_settings(app_origins=())
+
+
+def test_default_ports_are_dropped_and_others_kept() -> None:
+    s = make_settings(
+        app_origins=(
+            "http://localhost:80",
+            "https://localhost:443",
+            "https://localhost:80",
+            "http://127.0.0.1:443",
+        )
+    )
+    assert s.app_origins == (
+        "http://localhost",
+        "https://localhost",
+        "https://localhost:80",
+        "http://127.0.0.1:443",
+    )
+
+
+def test_error_summary_survives_an_empty_loc() -> None:
+    class M(BaseModel):
+        @model_validator(mode="after")
+        def _boom(self):
+            raise ValueError("whole-model failure")
+
+    with pytest.raises(ValidationError) as e:
+        M()
+    assert "whole-model failure" in settings_error_summary(e.value)
 
 
 def test_origins_parse_comma_list_and_normalise(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -289,6 +452,7 @@ def test_secret_fields_mask_in_repr_and_dump() -> None:
     assert "k" * 32 not in repr(s) and "k" * 32 not in str(s.model_dump())
     assert "a" * 40 not in s.model_dump_json()
     assert "a" * 40 not in repr(s) and "k" * 32 not in str(s)
+    assert "k" * 32 not in s.model_dump_json()
 
 
 def test_secret_values_lists_only_configured_keys() -> None:
