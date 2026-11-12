@@ -1,4 +1,4 @@
-.PHONY: setup api api-dev web seed test lint gen-api
+.PHONY: setup api api-dev web seed test test-live lint gen-api
 
 setup:
 	cd apps/api && uv sync
@@ -20,6 +20,9 @@ seed:
 test:
 	cd apps/api && uv run pytest -q
 	cd apps/web && pnpm test --run
+
+test-live:
+	cd apps/api && uv run pytest -q -m live
 
 lint:
 	cd apps/api && uv run ruff check && uv run ruff format --check && uv run pyright

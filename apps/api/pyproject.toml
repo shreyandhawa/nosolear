@@ -47,6 +47,8 @@ extraPaths = ["src", "tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "--strict-markers -m 'not live'"
+markers = ["live: calls real Azure or Claude, or loads real local models; run with make test-live"]
 pythonpath = ["tests"]
 filterwarnings = [
     # Revisit: httpx pinned at 0.28.1; drop this once starlette's testclient dependency is resolved.
