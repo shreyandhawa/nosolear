@@ -252,7 +252,7 @@ OpenAI's voices are ruled out because they shut down on 2027-01-06. ElevenLabs a
 - The key comes from `NOSOLEAR_ANTHROPIC_API_KEY` in the environment or `.env` (§14). It is passed to the SDK explicitly, together with the official API base URL, so neither a stray `ANTHROPIC_API_KEY` nor an `ANTHROPIC_BASE_URL` in the shell is ever used.
 - The model is a setting (`NOSOLEAR_COACH_MODEL`), default Opus 5.5 (`claude-opus-5-5`, decided 2026-11-11).
 - Usage is billed to the user's Anthropic account. The app's daily token cap (§11) is a second guard; the README recommends a spend limit in the Anthropic Console as well.
-- **Structured output:** every call uses a JSON schema. Error keys are an `enum` of the taxonomy keys the coach may report (§6.2). Any word the coach quotes must appear in the transcript, or that item is dropped. Coach output is untrusted text (§15).
+- **Structured output:** every call uses a JSON schema. Error keys are an `enum` of the taxonomy keys the coach may report (§6.2). A quoted word is required for grammar findings and optional for structure and clarity findings (a missing point has no quote). When a quote is present it must appear in the transcript, or that item is dropped. Coach output is untrusted text (§15).
 - **Rejected:** a local LLM (Ollama or MLX, about 8B parameters). Free and private, but noticeably weaker rewrites, and it competes for RAM with the speech models.
 
 | Model | Price per million tokens (in / out) | Estimated monthly cost at daily use |
@@ -434,7 +434,7 @@ erDiagram
 | `sessions` | `id, kind (baseline / daily / retest / conversation), protocol_version, started_at, completed_at` | Kind `calibration` (0e); `plan_id` (1) |
 | `attempts` | `id, session_id, step (speak / read_aloud / word_list / quick_answer / articulate / retell / drill / shadow), reference_text, scripted, created_at` | Step `calibration` and `content_item_id` (0e). One recording each |
 | `observations` | `id, attempt_id, error_key, outcome, weight, detector, context, observed_at, evidence_json, taxonomy_version, created_at` | `scoring_config_id`, `provisional` (0e). Append-only |
-| `profile_entries` | `error_key, a, b, updated_at, p_hat, ci_low, ci_high, n_eff, status, last_seen_at, priority, as_of, algo_version, taxonomy_version` | `pack_id` (0b), `provisional` (0e), `next_recheck_at` (1). Derived cache, can be rebuilt |
+| `profile_entries` | `error_key, a, b, updated_at, p_hat, ci_low, ci_high, n_eff, status, last_seen_at, priority, as_of, algo_version, taxonomy_version` | `pack_id` (0b), `provisional` (0e), `next_recheck_at` and `recheck_stage` (Phase 1). Derived cache, can be rebuilt |
 | `profile_snapshots` | `id, session_id, reason (rebuild / baseline / daily / retest), taken_at, as_of, algo_version, taxonomy_version, entries_json` | `pack_id` (0b). For trends and baseline comparison |
 
 **Planned:**
@@ -442,8 +442,8 @@ erDiagram
 | Table | Key columns | Phase | Notes |
 |---|---|---|---|
 | `recordings` | `id, attempt_id, path, duration_ms, sample_rate, sha256, created_at` | 0c | `path` is relative to the data dir and always `recordings/<uuid>.wav` |
-| `jobs` | `id, kind (analyze / rescore), attempt_id, status (queued / running / done / failed), step, progress, steps_json, tries, created_at, updated_at` | 0c | `steps_json` holds each step's state and its safe error message |
-| `usage_ledger` | `id, provider, unit (audio_seconds / tts_chars / tokens), state (reserved / recorded / released), estimate, actual, period, job_id, created_at, settled_at` | 0c | One row per paid call, reserved before it and settled after it. `job_id` is null for probes and other calls made outside a job |
+| `jobs` | `id, kind (analyze / rescore / calibrate), attempt_id, status (queued / running / done / failed), step, progress, steps_json, tries, created_at, updated_at` | 0c; `calibrate` kind 0e | `steps_json` holds each step's state and its safe error message |
+| `usage_ledger` | `id, provider, unit (audio_seconds / tts_chars / tokens), state (reserved / recorded / released), estimate, actual, period, job_id, created_at, settled_at` | 0c | `provider` is `azure` or `anthropic`. One row per paid call, reserved before it and settled after it. `job_id` is null for probes and other calls made outside a job |
 | `analyses` | `id, attempt_id, tts_hash, calibration_run_id, kind (pronunciation / transcript / phone_probe / coach), provider, provider_version, adapter, adapter_version, raw_json, created_at` | 0c; control rows 0e | One row per (attempt, kind). A TTS calibration control has no attempt, so its rows carry `tts_hash` and `calibration_run_id` instead, one per (control, kind, run); exactly one of the two keys is set. Raw results kept unchanged for re-scoring |
 | `provider_capabilities` | `id, provider, adapter, adapter_version, provider_version, region, locale, capabilities_json, probed_at` | 0d | n-best and prosody support, transcriber real-time factor. Never a key or anything derived from one |
 | `tts_cache` | `hash, text, voice, rate, path, word_timings_json, created_at` | 0d | Every model-voice clip, generated once; `path` is `tts/<hash>.wav` under the data dir |
@@ -451,8 +451,9 @@ erDiagram
 | `calibration_runs` | `id, session_id, status (running / done / skipped), scoring_config_id, started_at, completed_at` | 0e | A skipped run records that the user chose to skip |
 | `calibration_trials` | `id, run_id, error_key, detector, kind (error / control), attempt_id, tts_hash, flagged, evidence_json` | 0e | A user token has an `attempt_id`; a TTS control has a `tts_hash` |
 | `content_items` | `id, kind (prompt / passage_sentence / minimal_pair / drill_sentence / starter / quick_question / calibration_word), text, target_keys, source (seed / coach), retired_at` | 0e | Seed content is committed under `content/`; coach-written content is cached here and reused |
-| `skill_scores` | `session_id, skill, score, components_json` | 0e | Composite 0–100 plus its parts; first written by the baseline |
-| `feedback_items` | `id, session_id, skill, error_key, observation_id, message, model_text` | 1 | The three daily fixes |
+| `extractions` | `attempt_id, scoring_config_id, detector, observation_count, created_at` | 0e | Primary key is (attempt, scoring config, detector). One row per detector that extraction has run for an attempt under a config, even when it wrote no observations, so a re-score that writes none still replaces the older observations |
+| `skill_scores` | `session_id, skill, score, components_json` | 0e | Composite 0–100 plus its parts; written by the baseline in 0e. Daily scores come in Phase 5 (progress) |
+| `feedback_items` | `id, session_id, skill, error_key, observation_id, message, model_text, source (coach / template), fallback_reason, created_at` | 1 | The three daily fixes. `fallback_reason` says why a template replaced the coach: `cap_exceeded`, `provider_unavailable`, `capability_missing` or `invalid_output` |
 | `daily_plans` | `id, for_date, focus_json, prompt_item_id, drills_json, seed` | 1 | |
 
 **Skill scores** are composites and exist only for trend lines; the profile drives decisions.
@@ -551,7 +552,7 @@ Calibration measures, on the user's own voice, how well each detector catches ea
 - **Result:** a new calibrated scoring config, followed by a re-scoring job over every earlier recording (§6.8).
 - **Items:** a shared calibration set under `content/calibration/`, keyed by error key, seeded from the 78 items salvaged from the spike branch. The active pack decides which keys come first. The salvaged set has two to four words per key, so Phase 0e extends it to meet the minimum for every key it covers. Each word also has one attempted-correct take; calibration reports its flag rate next to the TTS false-alarm rate as a warning, without using it in the rule.
 - **Skippable and repeatable:** skipping records a skipped run, and the scores stay provisional. Calibration can be re-run at any time, for example after changing the Azure resource or installing the `local` extra.
-- **Prosody:** the salvaged items cover sound keys only. Phase 0e decides whether calibration covers prosody keys; until a key is covered, its observations stay provisional.
+- **Prosody:** the salvaged items cover sound keys only. Prosody keys are not calibrated in this plan set, so their observations stay provisional until a later phase adds a prosody calibration method.
 
 ### 9.3 Baseline (Phase 0e, about 5½ minutes)
 
@@ -623,7 +624,7 @@ On a paid Azure tier the same caps bound the bill. With `azure_stt` as the trans
 - **Reserve before the call:** `ledger.reserve(provider, unit, estimate)` returns a reservation or raises `CapExceeded`. A reservation passes only if recorded usage plus open reservations plus the estimate stays within the cap for the period. It runs in one `BEGIN IMMEDIATE` transaction, which takes SQLite's write lock before reading the totals, so two threads can't both pass the same cap.
 - **Estimates are upper bounds:** audio seconds from the file, TTS characters from the SSML, Claude input tokens bounded from the prompt plus `max_tokens` for output. Phase 0d writes each adapter's estimator.
 - **Record after the call:** the ledger records actual usage, such as the token counts in Claude's response. A call that fails before its request is sent releases its reservation; any other failure is recorded at the estimate.
-- **Periods:** Azure caps are per calendar month and the Claude cap per day, both in UTC. The 10% headroom on Azure absorbs a mismatch with Azure's own reset date.
+- **Periods:** Azure caps are per calendar month and the Claude cap per day, both in UTC, whatever `NOSOLEAR_TIMEZONE` is. The daily plan's "today" is different: it is the local date in `NOSOLEAR_TIMEZONE` (§14). The 10% headroom on Azure absorbs a mismatch with Azure's own reset date.
 - **Composition order:** `api/deps.py` builds every paid port (`azure_pa`, `azure_stt`, `azure_tts`, `claude_coach`) as cache → retry → metered → raw adapter, with the cache for TTS only. A cache hit costs nothing; the retry wrapper sits outside the meter, so every attempt reserves and records on its own; only the raw adapter imports a provider SDK. A test asserts this order for every paid port the composition root builds, and that only raw adapter modules import provider SDKs, so no unmetered path exists.
 - **Probes and live tests are metered too:** the capability probe and the speed check are built from the wrapped ports, never from raw adapters, and so are live tests (§12).
 
@@ -735,7 +736,7 @@ The intent is unchanged from the 2026-11-11 plan; the numbers follow the approve
 - **Phase 2: web UI** for onboarding, calibration, the baseline and the daily loop, with in-browser recording.
 - **Phase 3: targeted drills.** Drill families per key: minimal pairs; shadowing with slow TTS and word highlighting; rapid-fire questions with sentence starters; a point-reason-example builder and retell. The coach fills the content bank. **Research item:** a word-stress score from pitch, loudness and duration per syllable (Praat via `parselmouth`), aligned with Azure's syllable timings.
 - **Phase 4: live voice conversation.** A spike first, measuring latency of browser VAD → local Whisper → Claude streaming → Azure TTS. Each user turn is recorded and analyzed afterwards by the same pipeline. Gemini Live (Google uses free-tier data to improve its products) and OpenAI realtime (about $0.15–0.50 per 10 minutes) are noted, not planned.
-- **Phase 5: progress:** the weekly re-test (§9.4), comparison against the baseline, and trend charts with uncertainty bands.
+- **Phase 5: progress:** daily per-skill scores (`skill_scores` written each day; the baseline writes the first row in 0e), the weekly re-test (§9.4), comparison against the baseline, and trend charts with uncertainty bands.
 - **Phase 6: token mode and phone access** via Tailscale Serve (§10).
 
 ### Deliberately not building
@@ -748,7 +749,7 @@ Accounts or multi-user support; a hosted version, shared keys or a cloud databas
 
 ### Settings
 
-One pydantic-settings tree in `apps/api/src/nosolear/settings.py`, under the existing `NOSOLEAR_` prefix, read from the environment or the repo-root `.env` only: never from the database or an API request, and nothing changes it at runtime. Keys are `SecretStr`, so a repr shows a mask instead of the value. That stops once code calls `get_secret_value()`, so a logging filter installed at startup also scrubs every configured secret value from log messages, their arguments and formatted tracebacks. `.env.example` lists every setting with a comment and no key values.
+One pydantic-settings tree in `apps/api/src/nosolear/settings.py`, under the existing `NOSOLEAR_` prefix, read from the environment or the repo-root `.env` only: never from the database or an API request, and nothing changes it at runtime. Keys are `SecretStr`, so a repr shows a mask instead of the value. That stops once code calls `get_secret_value()`, so a logging filter installed at startup also scrubs every configured secret value from log messages, their arguments and formatted tracebacks. A configured key must be at least 16 characters; the validator rejects shorter ones so that scrubbing always applies. `.env.example` lists every setting with a comment and no key values.
 
 | Setting | Default | Notes |
 |---|---|---|
@@ -762,6 +763,10 @@ One pydantic-settings tree in `apps/api/src/nosolear/settings.py`, under the exi
 | `NOSOLEAR_ANTHROPIC_API_KEY` | none | `SecretStr` |
 | `NOSOLEAR_COACH_MODEL` | `claude-opus-5-5` | Any Claude model id the user's key can call |
 | `NOSOLEAR_TRANSCRIBER` | `auto` | `auto`, `mlx_whisper`, `faster_whisper`, `azure_stt` or `crisper_whisper` (§5.1) |
+| `NOSOLEAR_TIMEZONE` | the machine's local timezone | An IANA name, validated with `zoneinfo`. The daily plan's date is the local date in it, so the plan rolls over at local midnight; ledger cap periods stay UTC (§11) |
+| `NOSOLEAR_JOB_WORKERS` | `1` | Concurrent job workers; 1 because Azure F0 allows one concurrent request |
+| `NOSOLEAR_FASTER_WHISPER_MODEL` | `small.en` | faster-whisper model, on CPU by default; must name a model pinned in code (§5.1) |
+| `NOSOLEAR_MLX_WHISPER_MODEL` | `whisper-large-v3-turbo` | mlx-whisper model on Apple Silicon; must name a model pinned in code (§5.1) |
 | `NOSOLEAR_PACK` | `neutral` | An identifier (`^[a-z0-9_]+$`) naming a directory under `content/packs/` (§6.9), so it can't point anywhere else |
 | `NOSOLEAR_CAP_AZURE_AUDIO_HOURS` | `4.5` | Per calendar month |
 | `NOSOLEAR_CAP_AZURE_TTS_CHARS` | `450000` | Per calendar month |
@@ -817,14 +822,14 @@ Module names are the planned ones; the phase that builds each one fixes the exac
 | Keys leak through the repo | `.env` git-ignored; `.env.example` has no values; fixtures hold no keys, not even example values; GitHub push protection | `.gitignore`, CONTRIBUTING; `hygiene` CI job, push protection |
 | An oversized or malformed upload | Raw `audio/wav` body streamed into a temp file in the data dir, never the system temp dir; `Content-Length` checked up front and the 10 MB cap enforced while streaming; duration (120 s) from frames received, not the header; only RIFF with one `fmt` and one `data` chunk, 16-bit PCM, mono, whitelisted sample rates; failures become `InvalidAudio` | Upload route and `AudioStore` (0c); tests with truncated, huge, zero-rate, extra-chunk and wrong-format files |
 | Path traversal through uploads or ids | Client file names ignored; the server names every file `<uuid>.wav`; every path is resolved and refused if it falls outside the data dir | `AudioStore` (0c); traversal tests |
-| Prompt injection through the user's speech or the coach's output | Coach calls use structured output; error keys are an `enum` from the taxonomy and re-validated by `make_observation`; quoted words must appear in the transcript; the coach has no tools; its text is shown as text, never as HTML, and XML-escaped before it enters SSML | `claude_coach` (0d), domain extraction (0e); injection tests |
+| Prompt injection through the user's speech or the coach's output | Coach calls use structured output; error keys are an `enum` from the taxonomy and re-validated by `make_observation`; a quoted word, when present, must appear in the transcript; the coach has no tools; its text is shown as text, never as HTML, and XML-escaped before it enters SSML | `claude_coach` (0d), domain extraction (0e); injection tests |
 | Untrusted text reaching a path, SQL or a shell | Transcripts and coach output never build a file path or SQL string; all SQL is parameterized through SQLAlchemy; espeak-ng runs with a fixed argument list, text on stdin, no shell | `persistence`, `wav2vec2_espeak` (0d); tests |
 | A bug burns the user's quota or money | Ledger reserve before every paid call; caps; `api/deps.py` composes cache → retry → metered → raw, so every retry attempt reserves; probes use the wrapped ports | `budget/`, `api/deps.py` (0c–0d); composition-order test, ledger properties |
 | Supply chain: a malicious or vulnerable dependency | Exact pins and lockfiles, installed with `--locked` / `--frozen-lockfile`; every model fetched with `snapshot_download(revision=<SHA>)` and loaded from that local path, because the faster-whisper and mlx-whisper loaders take no revision; weights loaded from safetensors, or with `weights_only=True` where a repo ships a pickle `.bin` (as the wav2vec2 repo does); never `trust_remote_code`; CI audits both lockfiles | `pyproject.toml`, model loading in adapters (0d); `audit` CI job (0b) |
 | Data leaves the machine without the user knowing | No telemetry, analytics or crash reporting; Hugging Face telemetry off; Phase 0d checks each SDK for client telemetry and turns it off | adapters (0d); PRIVACY.md (0b) |
 | Personal data committed to the public repo | `data/` and audio git-ignored; a pre-commit hook and CI reject audio and database files | `scripts/check-no-personal-data.sh`; `hygiene` CI job |
 
-Recordings are stored unencrypted in the data dir; the README recommends full-disk encryption (FileVault or LUKS). `SECURITY.md` explains how to report a vulnerability privately.
+Recordings are stored unencrypted in the data dir; the README recommends full-disk encryption (FileVault or LUKS). `SECURITY.md` links to the repository's private advisory form (GitHub private vulnerability reporting is enabled) for reporting a vulnerability privately.
 
 ---
 
@@ -864,7 +869,7 @@ Everything else stays in the data dir: recordings, raw provider results, transcr
 - `README.md`: what the app does, per-platform prerequisites (macOS, Linux, WSL2), getting keys, extras, `nosolear doctor`, first run, expected costs.
 - `THIRD_PARTY_NOTICES`: the notices task, covering the table above and every locked dependency.
 - `CONTRIBUTING.md`: test-first work, branch and PR flow, commit style, no real voices or keys in fixtures, adding a language pack.
-- `SECURITY.md`: scope, the threat model in short (§15), and private vulnerability reporting.
+- `SECURITY.md`: scope, the threat model in short (§15), and private vulnerability reporting through the repository's private advisory form.
 - `PRIVACY.md`: what leaves the machine (§16).
 
 ---
@@ -884,7 +889,7 @@ Accepted with those decisions: the re-plan covers the old Phase 0 build plus the
 Still open, each with the phase that decides it:
 - Free-talk scoring: unscripted mode or transcribe-then-score (Phase 0d, §4).
 - `v0` margins and thresholds (Phase 0e, §6.8).
-- Whether calibration covers prosody keys (Phase 0e, §9.2).
+- A prosody calibration method; until a later phase adds one, prosody keys stay provisional (§9.2).
 - CrisperWhisper's exact licence terms and every model's licence (the notices task in Phase 0b, §17).
 
 ---
