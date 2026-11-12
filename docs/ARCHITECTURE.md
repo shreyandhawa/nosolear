@@ -1,6 +1,6 @@
 # Nosolear architecture
 
-Status: **approved 2026-11-11, revised 2026-11-12** for the open-source, bring-your-own-keys direction. Later changes go through PRs, like code.
+Status: approved 2026-11-11. This revision (2026-11-12, the open-source bring-your-own-keys direction) is **proposed, pending owner approval**. Later changes go through PRs, like code.
 Prices and limits were checked against official pages on 2026-11-11 (see [Sources](#20-sources)). Each user's own provider terms and prices apply.
 
 ---
@@ -17,8 +17,8 @@ An open-source English speaking coach that runs on the user's own machine. Anyon
   - **On the spot:** rapid questions, a short time limit to start answering, and sentence starters.
   - **Articulate:** point → reason → example, then hear a clearer version and say it back, shorter.
 - **First run:** check readiness → calibrate the detectors on the user's own voice (skippable) → record the baseline → daily practice (§9).
-- **Bring your own keys:** the user creates their own Azure Speech resource and Anthropic API key and puts them in a local `.env`. Keys and provider choices come only from local config (§14).
-- **Local only:** the API listens on 127.0.0.1 and refuses to start on anything else (§10).
+- **Bring your own keys:** the user creates their own Azure Speech resource and Anthropic API key and puts them in a local `.env` or the environment. Keys and provider choices come only from the environment or `.env` (§14).
+- **Local only:** the API listens on 127.0.0.1, refuses to start on anything else, and answers only loopback peers (§10).
 - **Platforms:** macOS on Apple Silicon and Linux on x86-64 (CPU, with optional NVIDIA CUDA) are first-class: documented in the README and tested in CI. Windows users run it under WSL2.
 - **Privacy:** audio goes to the user's own Azure resource and text goes to Anthropic. Nothing else leaves the machine (§16).
 - **Open source:** MIT licence, public GitHub repo, test-first work. Each task gets its own branch and PR, and merges only when CI is green (§12, §17).
@@ -26,7 +26,7 @@ An open-source English speaking coach that runs on the user's own machine. Anyon
 
 ### Assumptions
 
-- **One user per install:** no accounts, no multi-user support, no billing.
+- **One user per install:** no accounts, no multi-user support, no billing. Until token mode lands in Phase 6, that also means a single-user machine (§15).
 - **Success means two things:** the user actually practises most days, and the weekly re-test shows their top sound-error rates and their answer-start delay going down against the baseline.
 - **"Answer in 5 seconds"** means the user must *start* answering within 5 seconds. The answer itself can run 15–20 seconds.
 - **Each user pays their own providers.** Azure's free tier (F0) covers expected use. Claude API calls are billed to the user's own Anthropic account, about $7 a month at daily use on the default model (§11).
@@ -40,7 +40,7 @@ An open-source English speaking coach that runs on the user's own machine. Anyon
 | Licence | MIT for the project; third-party licences noted (§17) | $0 |
 | Distribution | Clone and run locally. No accounts, hosting or shared keys; the user brings their own keys | $0 |
 | Platforms | macOS (Apple Silicon) and Linux (x86-64 CPU, optional CUDA), both in CI. Windows via WSL2 | $0 |
-| Network | Localhost only: bind 127.0.0.1, Host and Origin checks. A per-install token mode is designed now and built later (§10) | $0 |
+| Network | Localhost only: bind 127.0.0.1, loopback peers and origins only, Host and Origin checks. A per-install token mode is designed now and built later (§10) | $0 |
 | Frontend | React + TypeScript SPA (Vite), feature modules, XState for session flow. UI work resumes in Phase 2 | $0 |
 | Backend | Python + FastAPI, ports and adapters. One package with optional extras `local` and `apple` (approach A, §3) | $0 |
 | Pronunciation scoring | Azure AI Speech pronunciation assessment on the user's own resource; F0 recommended | $0 on F0: about 1.5–2.5 of 5 free audio hours a month |
@@ -107,13 +107,14 @@ apps/api/src/nosolear/
   domain/        pure logic: taxonomy, observations, profile math, extraction, scoring configs,
                  calibration rule, cap arithmetic, readiness report, pack validation, selection
   ports/         Protocol interfaces (table below)
-  adapters/      provider adapters, filesystem audio store, system clock
+  adapters/      raw provider adapters (the only code that imports provider SDKs), retry wrapper,
+                 filesystem audio store, system clock
   persistence/   SQLite tables, migrations, repositories, SQLite job queue and usage ledger
   budget/        metered decorator and per-adapter usage estimators
   app/           use cases: upload_recording, run_job, probe_capabilities, calibrate, rescore,
                  rebuild_profile, run_baseline, onboarding_state, build_daily_plan
   api/           FastAPI app, routers, schemas (→ OpenAPI), network guards
-  api/deps.py    composition root: the only place adapters are chosen, wrapped and wired
+  api/deps.py    composition root: chooses adapters and composes cache → retry → metered → raw
   cli.py         the `nosolear` command; builds its adapters through api/deps.py
   settings.py    the configuration tree (§14)
 ```
@@ -223,7 +224,7 @@ apps/api/src/nosolear/
 
 **Speed check.** It replaces the old local-transcription spike. `nosolear doctor --probe` times each installed local transcriber on a synthetic 60-second clip generated once through the TTS cache. A transcriber slower than about 1/3 real time (more than about 20 seconds for the clip) is skipped by `auto`, which falls back to the next option. The result is stored in `provider_capabilities`. `azure_stt` is the last fallback and is not timed.
 
-Whenever the transcript comes from an adapter that drops fillers, the filler counts are flagged as undercounted in the report. Model sizes and revisions are pinned in Phase 0d. OpenAI's transcription models are ruled out: all of them stop working on 2027-02-26.
+Whenever the transcript comes from an adapter that drops fillers, the filler counts are flagged as undercounted in the report. Model sizes and revisions are pinned in Phase 0d, and every download goes through a pinned revision SHA (§15). OpenAI's transcription models are ruled out: all of them stop working on 2027-02-26.
 
 ### 5.2 Model voice (text-to-speech)
 
@@ -236,7 +237,8 @@ Whenever the transcript comes from an adapter that drops fillers, the filler cou
 | C. Browser or OS built-in voices | Free. | The voice differs by device, can't be cached, and word-boundary support is uneven. |
 
 **`azure_tts` behind a disk cache:**
-- The cache key is a hash of (text, voice, rate), so each phrase at each speed is generated once. Word-boundary events are captured and cached with each clip.
+- The cache key is a hash of (text, voice, rate), so each phrase at each speed is generated once. Clips live at `data/tts/<hash>.wav`, with their word-boundary events in `tts_cache`.
+- All text inserted into SSML is XML-escaped, as the salvaged code already does, so coach-written text can't inject elements such as `<audio src>`. The voice name comes only from settings and is validated.
 - The voice is a setting (`NOSOLEAR_TTS_VOICE`, default `en-US-JennyNeural`). If Azure rejects it, the adapter falls back once to `en-US-AvaNeural`, as the salvaged spike code did.
 - Cached clips also serve as the correct-pronunciation controls for calibration (§9.2) and as the audio for live tests (§12).
 
@@ -247,7 +249,7 @@ OpenAI's voices are ruled out because they shut down on 2027-01-06. ElevenLabs a
 **Requirements:** about four small calls a day, JSON output that follows a fixed shape, and good judgment when rewriting the user's sentences.
 
 **Chosen: `claude_coach`, the Claude API with the user's own Anthropic API key.**
-- The key comes from `.env` only and is passed to the SDK explicitly, so a stray `ANTHROPIC_API_KEY` in the shell is never used.
+- The key comes from `NOSOLEAR_ANTHROPIC_API_KEY` in the environment or `.env` (§14). It is passed to the SDK explicitly, together with the official API base URL, so neither a stray `ANTHROPIC_API_KEY` nor an `ANTHROPIC_BASE_URL` in the shell is ever used.
 - The model is a setting (`NOSOLEAR_COACH_MODEL`), default Opus 5.5 (`claude-opus-5-5`, decided 2026-11-11).
 - Usage is billed to the user's Anthropic account. The app's daily token cap (§11) is a second guard; the README recommends a spend limit in the Anthropic Console as well.
 - **Structured output:** every call uses a JSON schema. Error keys are an `enum` of the taxonomy keys the coach may report (§6.2). Any word the coach quotes must appear in the transcript, or that item is dropped. Coach output is untrusted text (§15).
@@ -441,10 +443,10 @@ erDiagram
 |---|---|---|---|
 | `recordings` | `id, attempt_id, path, duration_ms, sample_rate, sha256, created_at` | 0c | `path` is relative to the data dir and always `recordings/<uuid>.wav` |
 | `jobs` | `id, kind (analyze / rescore), attempt_id, status (queued / running / done / failed), step, progress, steps_json, tries, created_at, updated_at` | 0c | `steps_json` holds each step's state and its safe error message |
-| `usage_ledger` | `id, provider, unit (audio_seconds / tts_chars / tokens), state (reserved / recorded / released), estimate, actual, period, job_id, created_at, settled_at` | 0c | One row per paid call, reserved before it and settled after it |
-| `analyses` | `id, attempt_id, kind (pronunciation / transcript / phone_probe / coach), provider, provider_version, adapter, adapter_version, raw_json, created_at` | 0c | One row per (attempt, kind). Raw results kept unchanged for re-scoring |
+| `usage_ledger` | `id, provider, unit (audio_seconds / tts_chars / tokens), state (reserved / recorded / released), estimate, actual, period, job_id, created_at, settled_at` | 0c | One row per paid call, reserved before it and settled after it. `job_id` is null for probes and other calls made outside a job |
+| `analyses` | `id, attempt_id, tts_hash, calibration_run_id, kind (pronunciation / transcript / phone_probe / coach), provider, provider_version, adapter, adapter_version, raw_json, created_at` | 0c; control rows 0e | One row per (attempt, kind). A TTS calibration control has no attempt, so its rows carry `tts_hash` and `calibration_run_id` instead, one per (control, kind, run); exactly one of the two keys is set. Raw results kept unchanged for re-scoring |
 | `provider_capabilities` | `id, provider, adapter, adapter_version, provider_version, region, locale, capabilities_json, probed_at` | 0d | n-best and prosody support, transcriber real-time factor. Never a key or anything derived from one |
-| `tts_cache` | `hash, text, voice, rate, path, word_timings_json, created_at` | 0d | Every model-voice clip, generated once |
+| `tts_cache` | `hash, text, voice, rate, path, word_timings_json, created_at` | 0d | Every model-voice clip, generated once; `path` is `tts/<hash>.wav` under the data dir |
 | `scoring_configs` | `id, kind (v0 / calibrated), calibration_run_id, rules_json, capabilities_json, created_at` | 0e | `rules_json`: per (detector, key), enabled or not, thresholds, and the calibration counts behind it |
 | `calibration_runs` | `id, session_id, status (running / done / skipped), scoring_config_id, started_at, completed_at` | 0e | A skipped run records that the user chose to skip |
 | `calibration_trials` | `id, run_id, error_key, detector, kind (error / control), attempt_id, tts_hash, flagged, evidence_json` | 0e | A user token has an `attempt_id`; a TTS control has a `tts_hash` |
@@ -478,8 +480,8 @@ sequenceDiagram
   participant P as Adapters (Azure, transcriber, phone probe, Claude)
   participant DB as SQLite + data/recordings
 
-  U->>API: POST /api/attempts/{id}/recording (WAV)
-  API->>API: Check size, duration and RIFF/PCM16 mono header; resample to 16 kHz
+  U->>API: POST /api/attempts/{id}/recording (raw audio/wav body)
+  API->>API: Stream to a temp file in the data dir; check caps and WAV chunks; resample to 16 kHz
   API->>DB: Write recordings/<uuid>.wav, recording row, queued job
   API-->>U: 202 + job id
   Q->>DB: Claim the job
@@ -495,14 +497,17 @@ sequenceDiagram
   API-->>U: State, current step, progress, safe error messages
 ```
 
-1. **Upload.** The server checks the size cap (10 MB) and the duration cap (120 s), and accepts only a RIFF header with 16-bit PCM mono audio. It resamples to 16 kHz with the salvaged resampler, writes `data/recordings/<uuid>.wav` under a name it generates, and returns 202 with a job id. Bad audio fails with `InvalidAudio` before anything is stored.
+1. **Upload.** The client posts the WAV as a raw `audio/wav` body, not a multipart form, so FastAPI never spools it to the system temp dir.
+   - A `Content-Length` over the 10 MB cap is refused up front. The server then reads `request.stream()` into a temp file inside the data dir and stops as soon as the byte count passes the cap.
+   - It accepts only RIFF with exactly one `fmt` chunk and one `data` chunk, 16-bit PCM, mono, at a whitelisted sample rate (16, 22.05, 24, 32, 44.1 or 48 kHz; a rate of 0 would crash the salvaged resampler). The duration, at most 120 s, is computed from the frames actually received, never from the header.
+   - It resamples to 16 kHz with the salvaged resampler, moves the file to `data/recordings/<uuid>.wav` under a name it generates, and returns 202 with a job id. Bad audio fails with `InvalidAudio`, and the temp file is deleted.
 2. **Job.** A `jobs` row run by the in-process thread pool. Its steps are score, transcribe, probe (the phone probe) and coach, then extract. A step that doesn't apply to the attempt, such as the phone probe on free talk, is skipped. `GET /api/jobs/{id}` returns the state, the current step and progress.
 3. **Ledger.** Every paid or quota-limited call first reserves its estimated usage (§11). A denial fails the step with `CapExceeded` and no call is made. After the call, the ledger records actual usage.
 4. **Raw results** are stored unchanged in `analyses`, with provider and adapter versions.
 5. **Extraction** is a pure domain function: raw results + item + scoring config + pack → observations, each stamped with `scoring_config_id` and `provisional`. The existing profile rebuild follows.
 
 **Errors.** Every failure surfaces in the job status as one of four typed errors with a safe message: `InvalidAudio`, `CapExceeded`, `ProviderUnavailable`, `CapabilityMissing`. Provider error bodies are never passed through.
-- 429 and 5xx responses are retried with backoff (1, 2, 4, 8 s, salvaged from the spike code), then the step fails with `ProviderUnavailable`.
+- 429 and 5xx responses are retried with backoff (1, 2, 4, 8 s, salvaged from the spike code) by the retry wrapper, which sits outside the meter so each attempt reserves on its own (§11). Then the step fails with `ProviderUnavailable`.
 - A failed step keeps the raw results of earlier steps. Steps that don't need its output still run, and extraction uses whatever raw results exist.
 - A job with a failed step ends `failed` and can be resumed, which re-runs only the failed step and the steps that needed it.
 
@@ -574,17 +579,20 @@ Calibration measures, on the user's own voice, how well each detector catches ea
 
 ### Now: localhost only (Phase 0b)
 
-- **Bind:** `nosolear serve`, which `make api` switches to in Phase 0b, binds 127.0.0.1 and refuses to start if `NOSOLEAR_HOST` is not a loopback address.
+- **Bind:** `nosolear serve` binds 127.0.0.1 and refuses to start if `NOSOLEAR_HOST` is not a loopback address. Phase 0b moves the Makefile's `api` and `api-dev` targets from bare `uvicorn` to `nosolear serve`.
+- **Peer address:** `api/guards.py` refuses every request whose peer address is not loopback, so a server started some other way (say, `uvicorn --host 0.0.0.0`) still answers no one else. This is the network boundary; the Host check below defends browsers, since a remote client can forge `Host: 127.0.0.1`.
 - **Host allowlist:** a request is refused unless its `Host` header is `127.0.0.1`, `localhost` or `[::1]` on the API port, or the host of an allowed app origin. This blocks DNS rebinding.
-- **Origin and CORS:** a request that carries an `Origin` header must match an allowed app origin (`NOSOLEAR_APP_ORIGINS`), or it is refused. CORS allows only those origins and never `*`. The API uses no cookies, so a page can't ride on ambient credentials.
-- **The web dev server:** Vite proxies `/api` to 127.0.0.1:8000 (`apps/web/vite.config.ts`) without rewriting the Host header, so both allowlists include the dev origin (Vite's default `http://localhost:5173`).
-- **The CLI** talks to the same API. It sends no `Origin`, which is allowed; the Host check still applies.
+- **Origin and CORS:** a request that carries an `Origin` header must match an allowed app origin (`NOSOLEAR_APP_ORIGINS`), or it is refused; so is `Origin: null`, and so is any request with `Sec-Fetch-Site: cross-site`. CORS allows only the allowed origins and never `*`. The API uses no cookies, so a page can't ride on ambient credentials.
+- **Origins are loopback only:** a settings validator rejects any origin whose host isn't `localhost`, `127.0.0.1` or `[::1]` unless token mode is on. Without it, a tailnet origin plus `tailscale serve`, whose proxied requests arrive from loopback, would expose the API with no auth.
+- **GETs are safe:** `<img>`, `<audio>` and similar tags send GETs with no `Origin`, so no GET changes state or triggers a paid call. A TTS cache miss, for example, goes through a POST that queues a job.
+- **The web app** always reaches the API same-origin: through the Vite proxy in development (`apps/web/vite.config.ts` proxies `/api` to 127.0.0.1:8000 without rewriting the Host header), and Phase 2 keeps the built app same-origin. The default origins are Vite's `http://localhost:5173` and `http://127.0.0.1:5173`.
+- **The CLI** talks to the same API. It sends no `Origin`, which is allowed; the peer and Host checks still apply.
 
 ### Designed now, built in Phase 6: per-install token mode
 
 - On first start in token mode, the server generates a 256-bit random token and stores it in the data dir with owner-only permissions. The user pastes it into the web app once, from `nosolear token show`; `nosolear token rotate` replaces it.
 - Every request must send it as `Authorization: Bearer <token>`. It is never put in a URL, a cookie or a log, and it is compared in constant time.
-- Only token mode may add a name other than loopback and the dev origin to the Host and Origin allowlists.
+- Only token mode lifts the loopback-only rule on `NOSOLEAR_APP_ORIGINS`.
 
 ### Phone access via Tailscale Serve (Phase 6, requires token mode)
 
@@ -612,12 +620,12 @@ Each user sets their own caps; the defaults protect a user on Azure F0 and bound
 On a paid Azure tier the same caps bound the bill. With `azure_stt` as the transcriber, daily use comes close to the Azure cap, so the README recommends a local transcriber.
 
 **How the ledger works:**
-- **Reserve before the call:** `ledger.reserve(provider, unit, estimate)` returns a reservation or raises `CapExceeded`. A reservation passes only if recorded usage plus open reservations plus the estimate stays within the cap for the period. It runs in one SQLite write transaction, so two threads can't both pass the same cap.
+- **Reserve before the call:** `ledger.reserve(provider, unit, estimate)` returns a reservation or raises `CapExceeded`. A reservation passes only if recorded usage plus open reservations plus the estimate stays within the cap for the period. It runs in one `BEGIN IMMEDIATE` transaction, which takes SQLite's write lock before reading the totals, so two threads can't both pass the same cap.
 - **Estimates are upper bounds:** audio seconds from the file, TTS characters from the SSML, Claude input tokens bounded from the prompt plus `max_tokens` for output. Phase 0d writes each adapter's estimator.
 - **Record after the call:** the ledger records actual usage, such as the token counts in Claude's response. A call that fails before its request is sent releases its reservation; any other failure is recorded at the estimate.
 - **Periods:** Azure caps are per calendar month and the Claude cap per day, both in UTC. The 10% headroom on Azure absorbs a mismatch with Azure's own reset date.
-- **The metered decorator:** the composition root wraps every paid adapter (`azure_pa`, `azure_stt`, `azure_tts`, `claude_coach`) in it, so no unmetered path exists. A test enumerates the paid adapters the composition root builds and asserts each one is wrapped. The TTS cache sits in front of the metered adapter, so cache hits cost nothing.
-- **Probes and live tests are metered too:** the capability probe and the speed check's TTS clip go through the same wrapped adapters, and so do live tests (§12).
+- **Composition order:** `api/deps.py` builds every paid port (`azure_pa`, `azure_stt`, `azure_tts`, `claude_coach`) as cache → retry → metered → raw adapter, with the cache for TTS only. A cache hit costs nothing; the retry wrapper sits outside the meter, so every attempt reserves and records on its own; only the raw adapter imports a provider SDK. A test asserts this order for every paid port the composition root builds, and that only raw adapter modules import provider SDKs, so no unmetered path exists.
+- **Probes and live tests are metered too:** the capability probe and the speed check are built from the wrapped ports, never from raw adapters, and so are live tests (§12).
 
 **Coach estimate for one daily session:**
 
@@ -649,15 +657,16 @@ On Opus 5.5 that is 16k × $4/M + 8k × $20/M ≈ **$0.22 a day, about $7 a mont
     - extraction: misses never exceed opportunities for any key;
     - the selection policy: exactly one focus per skill, the same plan for the same seed, and the variety rule.
   - **Adapters:** contract tests on synthetic, hand-written provider responses. They don't import the optional libraries, so they run on the base install.
-  - **Security:** a test plants fake keys and checks they never appear in logs, API responses or the OpenAPI schema; Host, Origin and upload guard tests; the metered-wrapper test (§11, §15).
+  - **Security:** a test plants fake keys, drives the real adapters' error paths through fake transports, and checks the keys never appear in logs, tracebacks, API responses, jobs' `steps_json` or the OpenAPI schema. Also peer, Host, Origin and upload guard tests, and the composition-order test (§11, §15).
   - **API:** FastAPI test client, with fakes behind every port.
   - **Frontend:** Vitest plus Testing Library for components, MSW for the API, and direct tests of the XState machines.
   - **End to end (Phase 2, a few):** Playwright runs Chromium with a fake microphone fed from TTS-generated audio (`--use-file-for-fake-audio-capture`).
-- **No real voices.** The repo is public. Contract-test fixtures are hand-written; live-test audio is generated with TTS; no audio file is ever committed.
-- **Live tests:** tests that call real Azure or Claude, or load real local models, are marked `@pytest.mark.live` and excluded by default. `make test-live` runs them with the user's own `.env`, on TTS-generated audio, never a real voice. They go through the metered adapters, so they count against the user's caps. CI never has API keys. `HANDOFF.md` records which adapters are unverified against the live service, and on which platform.
+- **No real voices.** The repo is public. Contract-test fixtures are hand-written; live-test audio is generated with Azure TTS and CI audio with espeak-ng; no audio file is ever committed.
+- **Live tests:** tests that call real Azure or Claude, or load real local models, are marked `@pytest.mark.live` and excluded by default. `make test-live` runs them with the user's own keys, on TTS-generated audio, never a real voice. They run against a temporary data dir, so nothing reaches the user's profile or recordings, but share the user's real ledger, so caps still apply. CI never has API keys. `HANDOFF.md` records which adapters are unverified against the live service, and on which platform.
 - **CI (GitHub Actions)** on every PR:
   - `hygiene`: no audio, databases or `data/` paths in the tree.
-  - `api` on a matrix of Ubuntu and macOS (Apple Silicon): `uv sync --locked` on the base install, `ruff`, `pyright`, then `pytest`. The extras are verified with `make test-live` on each platform.
+  - `api` on a matrix of Ubuntu and macOS (Apple Silicon): `uv sync --locked` on the base install, `ruff`, `pyright`, then `pytest`.
+  - `local-models`, keyless, on Ubuntu and macOS: installs the `local` extra (plus `apple` on macOS) and espeak-ng, synthesizes speech with espeak-ng, and runs the tests marked `local_models` (`faster_whisper`, `mlx_whisper` on macOS, and the phone probe) on it. Models come from pinned revisions and are cached between runs. CrisperWhisper is left to `make test-live`.
   - `web`: ESLint and `tsc`, then Vitest and a production build.
   - `contract`: the generated TS types must match the API's OpenAPI schema.
   - `audit`: `pip-audit` on `uv export` (base install and both extras) and `pnpm audit`.
@@ -683,7 +692,7 @@ The old spike questions became runtime features: S1 (what Azure's tier returns) 
 
 | File on `p0b/spikes` | What is salvaged | Goes to |
 |---|---|---|
-| `spikes/common.py` | 16 kHz resampling and WAV writing; 429 backoff | `AudioStore` (0c); the adapters' retry helper (0d) |
+| `spikes/common.py` | 16 kHz resampling and WAV writing; 429 backoff | `AudioStore` (0c); the retry wrapper (0d) |
 | `spikes/phones.py` | espeak / wav2vec2 → Azure en-US IPA map that fails on unknown symbols | `wav2vec2_espeak` phone probe (0d) |
 | `spikes/tts_controls.py` | Azure TTS with voice fallback and word-boundary capture | `azure_tts` (0d) |
 | `spikes/items.py` | 78 calibration items keyed by error key | `content/calibration/` and the `nepali` pack (0b); used by calibration (0e) |
@@ -691,9 +700,9 @@ The old spike questions became runtime features: S1 (what Azure's tier returns) 
 
 ### Phase 0b: open-source foundation
 
-`LICENSE` (MIT), README setup guide, third-party notices, `CONTRIBUTING`, `SECURITY.md` and `PRIVACY.md` (§17). The configuration tree and readiness: `nosolear doctor` and `GET /api/readiness` (§14). Network guards and `nosolear serve` (§10). CI: dependency audit, macOS runner, the `live` marker and `make test-live`. Language packs, with `neutral` as the default and `nepali` from today's priors (§6.9).
+`LICENSE` (MIT), README setup guide, third-party notices, `CONTRIBUTING`, `SECURITY.md` and `PRIVACY.md` (§17). The configuration tree and readiness: `nosolear doctor` and `GET /api/readiness` (§14). Network guards, `nosolear serve`, and the Makefile `api` targets moved to it (§10). CI: dependency audit, macOS runner, the `live` marker and `make test-live`. Language packs, with `neutral` as the default and `nepali` from today's priors (§6.9).
 
-**Done when:** a fresh clone on macOS or Linux follows the README to a `nosolear doctor` report that shows what is configured and missing without revealing any key, the server refuses a non-loopback bind and foreign Host or Origin headers, and CI is green on Ubuntu and macOS with the audit.
+**Done when:** a fresh clone on macOS or Linux follows the README to a `nosolear doctor` report that shows what is configured and missing without revealing any key, the server refuses a non-loopback bind, non-loopback peers and origins, and foreign Host or Origin headers, and CI is green on Ubuntu and macOS with the audit.
 
 ### Phase 0c: audio, jobs, ledger
 
@@ -703,9 +712,9 @@ The old spike questions became runtime features: S1 (what Azure's tier returns) 
 
 ### Phase 0d: provider adapters
 
-Every port with its real adapter and fake: `azure_pa`, `azure_tts` with its cache, the four transcribers, the phone probe and `claude_coach`. Capability probes and the speed check (`nosolear doctor --probe`). Python 3.14 wheels checked for every extra on both platforms (§19 R9).
+Every port with its real adapter and fake: `azure_pa`, `azure_tts` with its cache, the four transcribers, the phone probe and `claude_coach`. Capability probes and the speed check (`nosolear doctor --probe`). The keyless `local-models` CI job. Python 3.14 wheels checked for every extra on both platforms (§19 R9).
 
-**Done when:** contract tests pass for every adapter in CI, and `make test-live` passes on TTS audio on macOS and Linux, with any adapter not yet verified live listed in `HANDOFF.md`.
+**Done when:** contract tests pass for every adapter, the `local-models` job is green on Ubuntu and macOS, and `make test-live` passes on TTS audio on each platform the implementer holds keys on, with every adapter not yet verified live, and on which platform, listed in `HANDOFF.md`.
 
 ### Phase 0e: scoring, calibration, baseline
 
@@ -739,21 +748,21 @@ Accounts or multi-user support; a hosted version, shared keys or a cloud databas
 
 ### Settings
 
-One pydantic-settings tree in `apps/api/src/nosolear/settings.py`, under the existing `NOSOLEAR_` prefix, read from the environment or the repo-root `.env` only: never from the database or an API request, and nothing changes it at runtime. Keys are `SecretStr`, so a repr, log line or traceback shows a mask instead of the value. `.env.example` lists every setting with a comment and no key values.
+One pydantic-settings tree in `apps/api/src/nosolear/settings.py`, under the existing `NOSOLEAR_` prefix, read from the environment or the repo-root `.env` only: never from the database or an API request, and nothing changes it at runtime. Keys are `SecretStr`, so a repr shows a mask instead of the value. That stops once code calls `get_secret_value()`, so a logging filter installed at startup also scrubs every configured secret value from log messages, their arguments and formatted tracebacks. `.env.example` lists every setting with a comment and no key values.
 
 | Setting | Default | Notes |
 |---|---|---|
 | `NOSOLEAR_DATA_DIR` | `<repo>/data` | In code since Phase 0a. Relative paths resolve against the repo root |
 | `NOSOLEAR_HOST`, `NOSOLEAR_PORT` | `127.0.0.1`, `8000` | The host must be loopback (§10) |
-| `NOSOLEAR_APP_ORIGINS` | `http://localhost:5173` | Browser origins allowed by the Host, Origin and CORS checks |
+| `NOSOLEAR_APP_ORIGINS` | `http://localhost:5173`, `http://127.0.0.1:5173` | Browser origins allowed by the Host, Origin and CORS checks. Loopback hosts only, unless token mode is on (§10) |
 | `NOSOLEAR_AZURE_SPEECH_KEY` | none | `SecretStr` |
-| `NOSOLEAR_AZURE_SPEECH_REGION` | none | The Speech resource's region |
+| `NOSOLEAR_AZURE_SPEECH_REGION` | none | The Speech resource's region, validated as `^[a-z0-9]+$` because it becomes part of the endpoint host name |
 | `NOSOLEAR_AZURE_LOCALE` | `en-US` | Target accent for scoring and TTS |
 | `NOSOLEAR_TTS_VOICE` | `en-US-JennyNeural` | A standard neural voice; falls back once to `en-US-AvaNeural` |
 | `NOSOLEAR_ANTHROPIC_API_KEY` | none | `SecretStr` |
 | `NOSOLEAR_COACH_MODEL` | `claude-opus-5-5` | Any Claude model id the user's key can call |
 | `NOSOLEAR_TRANSCRIBER` | `auto` | `auto`, `mlx_whisper`, `faster_whisper`, `azure_stt` or `crisper_whisper` (§5.1) |
-| `NOSOLEAR_PACK` | `neutral` | A directory name under `content/packs/` (§6.9) |
+| `NOSOLEAR_PACK` | `neutral` | An identifier (`^[a-z0-9_]+$`) naming a directory under `content/packs/` (§6.9), so it can't point anywhere else |
 | `NOSOLEAR_CAP_AZURE_AUDIO_HOURS` | `4.5` | Per calendar month |
 | `NOSOLEAR_CAP_AZURE_TTS_CHARS` | `450000` | Per calendar month |
 | `NOSOLEAR_CAP_CLAUDE_TOKENS` | `100000` | Per day, input plus output |
@@ -796,20 +805,22 @@ Module names are the planned ones; the phase that builds each one fixes the exac
 
 | Threat | Mitigation | Enforced in |
 |---|---|---|
-| Another machine on the network reaches the API | Bind 127.0.0.1 only; refuse to start on a non-loopback host | `nosolear serve` and a settings validator (0b); test in `api` CI job |
+| Another machine on the network reaches the API | Bind 127.0.0.1 only and refuse to start on a non-loopback host; refuse every request from a non-loopback peer, even if the server was started another way; the Makefile uses `nosolear serve` | `nosolear serve`, a settings validator, `api/guards.py` (0b); guard tests |
+| A non-loopback origin exposes the API, for example a tailnet name behind `tailscale serve` | Settings validator rejects non-loopback origins unless token mode is on | `settings.py` (0b); settings tests |
 | A malicious web page uses DNS rebinding to reach 127.0.0.1 | Host allowlist of loopback names and the configured app origins | `api/guards.py` middleware (0b); guard tests |
-| A malicious web page sends cross-site requests (CSRF) | Requests with a foreign `Origin` are refused; CORS lists only the app origins; no cookies or other ambient credentials | `api/guards.py` (0b); guard tests |
-| Another user on the machine reads the data or keys | Data dir and recordings created with owner-only permissions; `doctor` warns if `.env` is readable by others | `AudioStore` and `persistence` (0c); readiness (0b) |
-| Another local process calls the API | Accepted for now: anything on the machine can reach 127.0.0.1, and a process running as the same user can read the data dir anyway. Token mode (§10) closes the API to processes without the token | Phase 6 |
-| Keys leak through logs, errors or job status | `SecretStr`; typed errors with safe messages; provider error bodies never passed through or logged | `settings.py`, adapters, job runner (0b–0d); planted-key test |
+| A malicious web page sends cross-site requests (CSRF) | Requests with a foreign `Origin`, `Origin: null` or `Sec-Fetch-Site: cross-site` are refused; CORS lists only the app origins; no cookies or other ambient credentials; no GET changes state or triggers a paid call, since tag-driven GETs carry no `Origin` | `api/guards.py`, route design (0b onward); guard tests and a test that every GET route is side-effect free |
+| Another user on the machine reads the data or keys | The data dir is owner-only (0700), including one that already exists from Phase 0a, which startup tightens; recordings and TTS clips are 0600; `doctor` warns if `.env` is readable by others | startup and readiness (0b); `AudioStore` (0c) |
+| Another local process or user calls the API | Not mitigated until token mode (§10): on a shared machine, any local user could play back recordings and spend the owner's quota. So until Phase 6, Nosolear supports single-user machines only, and SECURITY.md and the README say so | SECURITY.md, README (0b); token mode (Phase 6) |
+| Keys leak through logs, errors or job status | `SecretStr`; a logging filter that scrubs secret values, tracebacks included; typed errors with safe messages; provider error bodies never passed through or logged | `settings.py`, logging setup, adapters, job runner (0b–0d); planted-key test over adapter error paths, logs and `steps_json` |
+| A key is sent to another host | Anthropic `base_url` passed explicitly, so `ANTHROPIC_BASE_URL` is ignored; the Azure endpoint is built from a region validated as `^[a-z0-9]+$` | `claude_coach`, `azure_*` adapters, `settings.py` (0b–0d); tests |
 | Keys leak through the API or OpenAPI | Settings are never serialized; readiness shows only yes or no; no key in OpenAPI examples | `api/` (0b); planted-key test checks responses and the schema |
 | Keys leak through the repo | `.env` git-ignored; `.env.example` has no values; fixtures hold no keys, not even example values; GitHub push protection | `.gitignore`, CONTRIBUTING; `hygiene` CI job, push protection |
-| An oversized or malformed upload | 10 MB cap enforced while the body streams in; 120 s duration cap; only RIFF, 16-bit PCM, mono; parse failures become `InvalidAudio` | `AudioStore` (0c); upload tests with truncated, huge and wrong-format files |
+| An oversized or malformed upload | Raw `audio/wav` body streamed into a temp file in the data dir, never the system temp dir; `Content-Length` checked up front and the 10 MB cap enforced while streaming; duration (120 s) from frames received, not the header; only RIFF with one `fmt` and one `data` chunk, 16-bit PCM, mono, whitelisted sample rates; failures become `InvalidAudio` | Upload route and `AudioStore` (0c); tests with truncated, huge, zero-rate, extra-chunk and wrong-format files |
 | Path traversal through uploads or ids | Client file names ignored; the server names every file `<uuid>.wav`; every path is resolved and refused if it falls outside the data dir | `AudioStore` (0c); traversal tests |
-| Prompt injection through the user's speech or the coach's output | Coach calls use structured output; error keys are an `enum` from the taxonomy and re-validated by `make_observation`; quoted words must appear in the transcript; the coach has no tools; its text is shown as text, never as HTML | `claude_coach` (0d), domain extraction (0e); injection tests |
+| Prompt injection through the user's speech or the coach's output | Coach calls use structured output; error keys are an `enum` from the taxonomy and re-validated by `make_observation`; quoted words must appear in the transcript; the coach has no tools; its text is shown as text, never as HTML, and XML-escaped before it enters SSML | `claude_coach` (0d), domain extraction (0e); injection tests |
 | Untrusted text reaching a path, SQL or a shell | Transcripts and coach output never build a file path or SQL string; all SQL is parameterized through SQLAlchemy; espeak-ng runs with a fixed argument list, text on stdin, no shell | `persistence`, `wav2vec2_espeak` (0d); tests |
-| A bug burns the user's quota or money | Ledger reserve before every paid call; caps; the metered decorator on every paid adapter; bounded retries that also reserve | `budget/`, `api/deps.py` (0c); metered-wrapper test, ledger properties |
-| Supply chain: a malicious or vulnerable dependency | Exact pins and lockfiles, installed with `--locked` / `--frozen-lockfile`; Hugging Face downloads pinned to a revision SHA; never `trust_remote_code`; CI audits both lockfiles | `pyproject.toml`, adapters (0d); `audit` CI job (0b) |
+| A bug burns the user's quota or money | Ledger reserve before every paid call; caps; `api/deps.py` composes cache → retry → metered → raw, so every retry attempt reserves; probes use the wrapped ports | `budget/`, `api/deps.py` (0c–0d); composition-order test, ledger properties |
+| Supply chain: a malicious or vulnerable dependency | Exact pins and lockfiles, installed with `--locked` / `--frozen-lockfile`; every model fetched with `snapshot_download(revision=<SHA>)` and loaded from that local path, because the faster-whisper and mlx-whisper loaders take no revision; weights loaded from safetensors, or with `weights_only=True` where a repo ships a pickle `.bin` (as the wav2vec2 repo does); never `trust_remote_code`; CI audits both lockfiles | `pyproject.toml`, model loading in adapters (0d); `audit` CI job (0b) |
 | Data leaves the machine without the user knowing | No telemetry, analytics or crash reporting; Hugging Face telemetry off; Phase 0d checks each SDK for client telemetry and turns it off | adapters (0d); PRIVACY.md (0b) |
 | Personal data committed to the public repo | `data/` and audio git-ignored; a pre-commit hook and CI reject audio and database files | `scripts/check-no-personal-data.sh`; `hygiene` CI job |
 
@@ -934,9 +945,6 @@ Checked 2026-11-11.
 - [Kokoro](https://github.com/hexgrad/kokoro)
 
 **Claude:**
-- [API credits for Max and Team plans](https://support.claude.com/en/articles/17154008-api-credits-for-max-and-team-plans)
-- [Agent SDK with your Claude plan](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan)
-- [Claude Code legal and compliance](https://code.claude.com/docs/en/legal-and-compliance.md)
 - Model prices: Claude API reference, cached 2026-11-03
 
 **Other speech services:**
