@@ -1,0 +1,6 @@
+id = "neutral"
+name = "Neutral"
+description = "No first-language assumptions. Every key starts at the same weak prior."
+
+[calibration]
+emphasis = []
