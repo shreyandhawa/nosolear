@@ -56,10 +56,6 @@ class LanguagePack:
         return self.default_prior
 
 
-def _is_number(value: object) -> bool:
-    return isinstance(value, int | float) and not isinstance(value, bool)
-
-
 def _mapping(value: object, field: str, problems: list[str]) -> Mapping[str, object] | None:
     if isinstance(value, Mapping):
         return cast(Mapping[str, object], value)
@@ -75,6 +71,16 @@ def _string(raw: Mapping[str, object], key: str, field: str, problems: list[str]
     return ""
 
 
+def _as_float(value: object) -> float | None:
+    """A TOML number as a float; None for non-numbers, bools and ints too big for a float."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    try:
+        return float(value)
+    except OverflowError:
+        return None
+
+
 def _prior(value: object, field: str, default: Prior, problems: list[str]) -> Prior:
     if value is None:
         return default
@@ -84,11 +90,11 @@ def _prior(value: object, field: str, default: Prior, problems: list[str]) -> Pr
     numbers: dict[str, float] = {}
     for name, fallback in (("a0", default.a0), ("b0", default.b0)):
         item = table.get(name, fallback)
-        if _is_number(item):
-            numbers[name] = float(item)  # type: ignore[arg-type]
-        else:
-            problems.append(f"{field}.{name}: must be a number")
-            numbers[name] = fallback
+        number = _as_float(item)
+        if number is None:
+            problems.append(f"{field}.{name}: must be a finite number")
+            number = fallback
+        numbers[name] = number
     return Prior(numbers["a0"], numbers["b0"])
 
 

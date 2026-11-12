@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from nosolear.adapters.content_files import list_pack_ids, load_pack
+from nosolear.adapters.content_files import list_pack_ids, load_calibration_specs, load_pack
 from nosolear.domain.packs import PackError
 
 VALID = """\
@@ -91,3 +91,94 @@ def test_list_pack_ids_sorted_and_filtered(tmp_path: Path):
 
 def test_list_pack_ids_missing_dir(tmp_path: Path):
     assert list_pack_ids(tmp_path / "none") == ()
+
+
+def test_symlinked_pack_file_outside_packs_dir(tmp_path: Path):
+    outside = make_pack(tmp_path / "elsewhere", "demo") / "pack.toml"
+    packs = tmp_path / "packs"
+    (packs / "demo").mkdir(parents=True)
+    os.symlink(outside, packs / "demo" / "pack.toml")
+    with pytest.raises(PackError) as err:
+        load_pack(packs, "demo")
+    assert "\n" not in str(err.value)
+
+
+CALIBRATION = """\
+[[specs]]
+error_key = "sound.sub.v.w"
+description = "W instead of V"
+words = [["vest", "west"]]
+"""
+
+# Bad bytes for both file kinds: not UTF-8, nesting deep enough to exhaust the parser's
+# recursion, and an integer too big for a float.
+NESTED = "x = " + "[" * 20_000 + "]" * 20_000 + "\n"
+
+
+def _pack_file(tmp_path: Path, data: bytes) -> object:
+    directory = tmp_path / "demo"
+    directory.mkdir()
+    (directory / "pack.toml").write_bytes(data)
+    return lambda: load_pack(tmp_path, "demo")
+
+
+def _calibration_file(tmp_path: Path, data: bytes) -> object:
+    path = tmp_path / "items.toml"
+    path.write_bytes(data)
+    return lambda: load_calibration_specs(path)
+
+
+LOADERS = [_pack_file, _calibration_file]
+HUGE = b"1" + b"0" * 400
+
+
+@pytest.mark.parametrize("loader", LOADERS)
+@pytest.mark.parametrize(
+    "data",
+    [
+        VALID.encode() + b"# \xff\xfe\n",
+        NESTED.encode(),
+        b"id = [",
+    ],
+    ids=["not_utf8", "deeply_nested", "malformed"],
+)
+def test_unreadable_toml_is_a_one_line_pack_error(tmp_path: Path, loader, data: bytes):
+    call = loader(tmp_path, data)
+    with pytest.raises(PackError) as err:
+        call()  # type: ignore[operator]
+    message = str(err.value)
+    assert "\n" not in message and "invalid TOML" in message
+    assert "0x" not in message and "position" not in message
+
+
+def test_huge_integer_prior_is_a_pack_error(tmp_path: Path):
+    text = VALID.replace("[[hypotheses]]", f"[default_prior]\na0 = {HUGE.decode()}\n[[hypotheses]]")
+    make_pack(tmp_path, text=text)
+    with pytest.raises(PackError, match=r"default_prior\.a0"):
+        load_pack(tmp_path, "demo")
+
+
+def test_calibration_oversized_file(tmp_path: Path):
+    path = tmp_path / "items.toml"
+    path.write_text(CALIBRATION + "# " + "x" * 300_000 + "\n", encoding="utf-8")
+    with pytest.raises(PackError, match="large"):
+        load_calibration_specs(path)
+
+
+def test_calibration_missing_file(tmp_path: Path):
+    with pytest.raises(PackError):
+        load_calibration_specs(tmp_path / "nope.toml")
+
+
+def test_calibration_unknown_key_is_a_pack_error(tmp_path: Path):
+    path = tmp_path / "items.toml"
+    path.write_text(CALIBRATION.replace("sound.sub.v.w", "grammar.artcle"), encoding="utf-8")
+    with pytest.raises(PackError, match="error_key"):
+        load_calibration_specs(path)
+
+
+def test_calibration_wrong_structure_is_a_pack_error(tmp_path: Path):
+    path = tmp_path / "items.toml"
+    path.write_text('specs = "no"\n', encoding="utf-8")
+    with pytest.raises(PackError, match="specs"):
+        load_calibration_specs(path)

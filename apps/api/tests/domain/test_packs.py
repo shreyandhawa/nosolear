@@ -107,9 +107,46 @@ BAD_PACKS: list[dict[str, Any]] = [
 ]
 
 
-@pytest.mark.parametrize("bad", BAD_PACKS, ids=range(len(BAD_PACKS)))
-def test_parse_or_validate_reports(bad: dict[str, Any]):
-    assert problems_for(bad)
+# The field each BAD_PACKS case must name in its report, in the same order.
+BAD_FIELDS: list[str] = [
+    "id",
+    "id",
+    "id",
+    "id",
+    "name",
+    "name",
+    "hypotheses[0].reason",
+    "hypotheses[0].key",
+    "hypotheses[0].key",
+    "hypotheses[1].key",
+    "default_prior.a0",
+    "default_prior.b0",
+    "default_prior",
+    "default_prior",
+    "default_prior",
+    "default_prior.a0",
+    "default_prior.a0",
+    "hypotheses[0].prior",
+    "calibration.emphasis[0]",
+    "calibration.emphasis[1]",
+    "calibration.extras[0].word",
+    "calibration.extras[0].word",
+    "calibration.extras[0].word",
+    "calibration.extras[0].key",
+    "name",
+    "hypotheses",
+    "calibration.emphasis",
+    "calibration",
+]
+
+
+@pytest.mark.parametrize(
+    ("bad", "field"), list(zip(BAD_PACKS, BAD_FIELDS, strict=True)), ids=range(len(BAD_PACKS))
+)
+def test_parse_or_validate_reports(bad: dict[str, Any], field: str):
+    reported = problems_for(bad)
+    assert reported
+    assert any(field in problem for problem in reported)
 
 
 def test_validate_returns_every_problem_not_just_the_first():
@@ -140,10 +177,11 @@ def _pack_with_prior(a0: float, b0: float) -> LanguagePack:
     return parse_pack(raw_pack(default_prior={"a0": a0, "b0": b0}))
 
 
-_positive = st.floats(min_value=1e-6, max_value=MAX_PRIOR_MASS, allow_nan=False)
+_positive = st.floats(min_value=1e-6, max_value=MAX_PRIOR_MASS * 3, allow_nan=False)
 
 
 @given(a0=_positive, b0=_positive)
 def test_prior_mass_boundary(a0: float, b0: float):
+    # Includes single values above MAX_PRIOR_MASS, which must always be rejected.
     ok = validate_pack(_pack_with_prior(a0, b0), DEFAULT_TAXONOMY) == ()
     assert ok == (a0 + b0 <= MAX_PRIOR_MASS)
