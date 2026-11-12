@@ -14,15 +14,24 @@ Phase 0b execution (open-source foundation). Gate 2 is passed: the phase plans P
 - 2026-11-12: Wrote the five phase plans, reconciled across plans; merged as [PR #13](https://github.com/shreyandhawa/nosolear/pull/13), 391b639 (Gate 2).
 - 2026-11-12: Turned on GitHub private vulnerability reporting for the repo. `gh api repos/shreyandhawa/nosolear/private-vulnerability-reporting -q .enabled` prints `true`.
 - 2026-11-12: Phase 0b Task 1: `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, `PRIVACY.md` and their test.
+- 2026-11-12: Phase 0b Task 2: `THIRD_PARTY_NOTICES`, `scripts/third_party_licences.py` (`--check` for drift) and `test_notices.py`. Licences verified against upstream on 2026-11-12.
 
 ## In progress
 
-- Branch `p0b/01-community-files`: Task 1, awaiting review and merge (PR open).
+- Branch `p0b/02-third-party-notices`: Task 2, awaiting review and merge (PR open). Task 1 (`p0b/01-community-files`) is in review or merged; check `gh pr list`.
 
 ## Next
 
-1. Task 2: THIRD_PARTY_NOTICES. The plan is `docs/superpowers/plans/2026-11-12-phase-0b-open-source-foundation.md`. One branch and one PR per task, with a fresh implementer subagent and a different reviewer subagent each time. Squash-merge on green CI.
-2. At the end of each phase: run `/security-review`, update this file, and hand off to a fresh session.
+1. Task 3: settings tree and `.env.example`. The plan is `docs/superpowers/plans/2026-11-12-phase-0b-open-source-foundation.md`. One branch and one PR per task, with a fresh implementer subagent and a different reviewer subagent each time. Squash-merge on green CI.
+2. Any task that adds a dependency reruns `uv run --project apps/api python scripts/third_party_licences.py`.
+3. Correct `docs/ARCHITECTURE.md` §17/§18 for the licence discrepancy below.
+4. At the end of each phase: run `/security-review`, update this file, and hand off to a fresh session.
+
+## Licence discrepancies found in Task 2
+
+- CrisperWhisper: the code is MIT, but the weights are CC BY-NC 4.0 (`nyralabs/CrisperWhisper`, moved from `nyrahealth/`). Newer Nyra releases use a custom non-commercial research licence. §17 says only "non-commercial"; it should distinguish code (MIT) from weights.
+- `mlx-community/whisper-large-v3-turbo` declares no licence on its card; it is a conversion of OpenAI's MIT `large-v3-turbo`. §17 says "confirm"; recorded as such.
+- espeak-ng is GPL-3.0 or later (release 1.52.0 at check time), as expected.
 
 ## Plans, in execution order
 
@@ -71,6 +80,7 @@ None right now.
 - `main`: 391b639 "Add phase plans 0b–1 for the open-source BYOK backend (#13)".
 - `docs/phase-plans`: merged (#13) and kept.
 - `p0b/01-community-files`: Task 1 PR.
+- `p0b/02-third-party-notices`: Task 2 PR.
 - `docs/byok-architecture`: merged and kept (deleting branches needs the owner's approval).
 - `p0b/spikes`: unmerged and kept. Everything is under `spikes/`, with no audio and no data.
 

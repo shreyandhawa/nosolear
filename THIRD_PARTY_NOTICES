@@ -1,0 +1,438 @@
+# Third-party notices
+
+Nosolear's own code is MIT-licensed (see `LICENSE`). That licence covers only this
+project's code. This repository ships no model weights, binaries or audio. Users install
+or download the components below themselves, and each keeps its own licence.
+
+Licences below were checked against the upstream sources on the date shown. Where a
+component has a code licence and a separate weights licence, both are given.
+
+## CrisperWhisper
+
+Used only as an opt-in transcriber, never chosen by `auto`.
+
+- Code: MIT (Nyra Health GmbH).
+- Model weights (`nyralabs/CrisperWhisper`, formerly `nyrahealth/CrisperWhisper`):
+  CC BY-NC 4.0. The upstream README says the weights are not MIT and are free for research
+  and non-commercial use only; commercial use needs a licence from Nyra. Newer Nyra
+  releases use a separate non-commercial research licence.
+- The MIT licence does not cover these weights. Enable CrisperWhisper only if your use is
+  non-commercial. It is off unless you turn it on, because it is opt-in.
+
+Source: https://huggingface.co/nyralabs/CrisperWhisper
+Source: https://github.com/nyrahealth/CrisperWhisper/blob/main/LICENSE
+Verified: 2026-11-12
+
+## espeak-ng
+
+Used for phoneme output. It is a separate executable that you install (Homebrew, apt) and
+that Nosolear runs as a subprocess. It is not linked, bundled or loaded as a library, and
+the app does not use `phonemizer`, which loads libespeak-ng into the Python process.
+
+- Licence: GPL-3.0 or later (upstream README: "GPL version 3 or later"). Latest release
+  seen at verification: 1.52.0.
+
+Source: https://github.com/espeak-ng/espeak-ng/blob/master/COPYING
+Source: https://github.com/espeak-ng/espeak-ng#license-information
+Verified: 2026-11-12
+
+## wav2vec2-lv-60-espeak-cv-ft
+
+`facebook/wav2vec2-lv-60-espeak-cv-ft` weights, downloaded from Hugging Face at a pinned
+revision.
+
+- Licence: Apache-2.0, as declared on the model card. The card does not state the licences
+  of the Common Voice data or the base checkpoint it was fine-tuned from.
+
+Source: https://huggingface.co/facebook/wav2vec2-lv-60-espeak-cv-ft
+Verified: 2026-11-12
+
+## Whisper
+
+Whisper weights as used by `mlx-whisper` and `faster-whisper`, downloaded at pinned
+revisions. Defaults: `whisper-large-v3-turbo` on MLX, `small.en` on faster-whisper.
+
+- OpenAI Whisper code and `openai/whisper-large-v3-turbo`: MIT.
+- `Systran/faster-whisper-small.en` (faster-whisper): MIT, as declared on the model card.
+- `mlx-community/whisper-large-v3-turbo` (MLX): the model card declares no licence. It is
+  a conversion of OpenAI's `large-v3-turbo`, which is MIT.
+
+Source: https://huggingface.co/Systran/faster-whisper-small.en
+Source: https://huggingface.co/mlx-community/whisper-large-v3-turbo
+Source: https://huggingface.co/openai/whisper-large-v3-turbo
+Source: https://github.com/openai/whisper/blob/main/LICENSE
+Verified: 2026-11-12
+
+## Python dependencies
+
+Generated from `apps/api/uv.lock` and the project environment by
+`scripts/third_party_licences.py`. Do not edit by hand.
+
+<!-- python-dependencies:start -->
+| Name | Version | Licence |
+|---|---|---|
+| alembic | 1.20.1 | MIT |
+| annotated-doc | 0.0.6 | MIT |
+| annotated-types | 0.8.0 | MIT |
+| anyio | 4.16.0 | MIT |
+| certifi | 2026.10.23 | MPL-2.0 |
+| click | 8.5.1 | BSD-3-Clause |
+| colorama | 0.4.6 | BSD-3-Clause |
+| fastapi | 0.162.4 | MIT |
+| h11 | 0.16.0 | MIT |
+| httpcore | 1.0.9 | BSD-3-Clause |
+| httpx | 0.28.1 | BSD-3-Clause |
+| hypothesis | 6.170.15 | MPL-2.0 |
+| idna | 3.20 | BSD-3-Clause |
+| iniconfig | 2.3.1 | MIT |
+| mako | 1.4.3 | MIT |
+| markupsafe | 3.0.4 | BSD-3-Clause |
+| nodeenv | 1.12.0 | BSD |
+| numpy | 2.5.4 | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 |
+| numpy-typing-compat | 20260602.2.5 | BSD-3-Clause |
+| opentelemetry-api | 1.45.2 | Apache-2.0 |
+| optype | 0.19.0 | BSD-3-Clause |
+| packaging | 26.3 | Apache-2.0 OR BSD-2-Clause |
+| pluggy | 1.7.0 | MIT |
+| pydantic | 2.14.3 | MIT |
+| pydantic-core | 2.50.4 | MIT |
+| pydantic-settings | 2.16.2 | MIT |
+| pygments | 2.21.0 | BSD-2-Clause |
+| pyright | 1.1.414 | MIT |
+| pytest | 9.2.0 | MIT |
+| python-dotenv | 1.2.4 | BSD-3-Clause |
+| ruff | 0.17.4 | MIT |
+| scipy | 1.18.1 | BSD License |
+| scipy-stubs | 1.18.1.1 | BSD-3-Clause |
+| sortedcontainers | 2.4.0 | Apache 2.0 |
+| sqlalchemy | 2.1.8 | MIT |
+| starlette | 1.10.0 | BSD-3-Clause |
+| typing-extensions | 4.16.0 | PSF-2.0 |
+| typing-inspection | 0.4.5 | MIT |
+| uvicorn | 0.54.0 | BSD-3-Clause |
+<!-- python-dependencies:end -->
+
+## Web dependencies
+
+Generated from `pnpm licenses list --json` in `apps/web` by the same script.
+
+<!-- web-dependencies:start -->
+| Name | Version | Licence |
+|---|---|---|
+| @adobe/css-tools | 4.5.0 | MIT |
+| @babel/code-frame | 7.29.7 | MIT |
+| @babel/helper-validator-identifier | 7.29.7 | MIT |
+| @babel/runtime | 7.29.13 | MIT |
+| @boundaries/config | 1.0.1 | MIT |
+| @boundaries/elements | 3.3.2 | MIT |
+| @boundaries/policies | 1.0.1 | MIT |
+| @cacheable/memory | 2.2.0 | MIT |
+| @cacheable/utils | 2.5.0 | MIT |
+| @eslint-community/eslint-utils | 4.10.1 | MIT |
+| @eslint-community/regexpp | 4.12.3 | MIT |
+| @eslint/config-array | 0.23.5 | Apache-2.0 |
+| @eslint/config-helpers | 0.7.0 | Apache-2.0 |
+| @eslint/core | 1.2.1 | Apache-2.0 |
+| @eslint/js | 10.0.1 | MIT |
+| @eslint/object-schema | 3.0.5 | Apache-2.0 |
+| @eslint/plugin-kit | 0.7.3 | Apache-2.0 |
+| @exodus/bytes | 1.16.0 | MIT |
+| @humanfs/core | 0.19.2 | Apache-2.0 |
+| @humanfs/node | 0.16.8 | Apache-2.0 |
+| @humanfs/types | 0.15.0 | Apache-2.0 |
+| @humanwhocodes/module-importer | 1.0.1 | Apache-2.0 |
+| @humanwhocodes/retry | 0.4.3 | Apache-2.0 |
+| @inquirer/ansi | 2.0.10 | MIT |
+| @inquirer/confirm | 6.3.5 | MIT |
+| @inquirer/core | 12.0.6 | MIT |
+| @inquirer/figures | 2.0.10 | MIT |
+| @inquirer/type | 4.2.1 | MIT |
+| @jridgewell/gen-mapping | 0.3.13 | MIT |
+| @jridgewell/remapping | 2.3.5 | MIT |
+| @jridgewell/resolve-uri | 3.1.2 | MIT |
+| @jridgewell/sourcemap-codec | 1.6.0 | MIT |
+| @jridgewell/trace-mapping | 0.3.31 | MIT |
+| @keyv/bigmap | 1.3.1 | MIT |
+| @keyv/serialize | 1.1.1 | MIT |
+| @msw/url | 0.1.2 | MIT |
+| @mswjs/interceptors | 0.45.11 | MIT |
+| @open-draft/until | 3.0.1 | MIT |
+| @oxc-project/types | 0.156.0 | MIT |
+| @redocly/ajv | 8.11.2 | MIT |
+| @redocly/config | 0.22.0 | MIT |
+| @redocly/openapi-core | 1.34.24 | MIT |
+| @rolldown/binding-darwin-arm64 | 1.2.18 | MIT |
+| @rolldown/pluginutils | 1.1.0 | MIT |
+| @tailwindcss/node | 4.3.5 | MIT |
+| @tailwindcss/oxide | 4.3.5 | MIT |
+| @tailwindcss/oxide-darwin-arm64 | 4.3.5 | MIT |
+| @tailwindcss/oxide-wasm32-wasi | 4.3.5 | MIT |
+| @tailwindcss/vite | 4.3.5 | MIT |
+| @tanstack/history | 1.162.5 | MIT |
+| @tanstack/query-core | 5.107.1 | MIT |
+| @tanstack/react-query | 5.107.1 | MIT |
+| @tanstack/react-router | 1.170.46 | MIT |
+| @tanstack/react-store | 0.11.2 | MIT |
+| @tanstack/router-core | 1.171.39 | MIT |
+| @tanstack/store | 0.11.2 | MIT |
+| @testing-library/dom | 10.4.2 | MIT |
+| @testing-library/jest-dom | 7.0.1 | MIT |
+| @testing-library/react | 16.3.3 | MIT |
+| @types/aria-query | 5.0.4 | MIT |
+| @types/chai | 5.2.3 | MIT |
+| @types/debug | 4.1.13 | MIT |
+| @types/deep-eql | 4.0.2 | MIT |
+| @types/esrecurse | 4.3.1 | MIT |
+| @types/estree | 1.0.10 | MIT |
+| @types/json-schema | 7.0.15 | MIT |
+| @types/ms | 2.1.0 | MIT |
+| @types/node | 26.6.6 | MIT |
+| @types/react | 19.3.0 | MIT |
+| @types/react-dom | 19.3.0 | MIT |
+| @types/set-cookie-parser | 2.4.10 | MIT |
+| @typescript-eslint/eslint-plugin | 8.72.2 | MIT |
+| @typescript-eslint/parser | 8.72.2 | MIT |
+| @typescript-eslint/project-service | 8.72.2 | MIT |
+| @typescript-eslint/scope-manager | 8.72.2 | MIT |
+| @typescript-eslint/tsconfig-utils | 8.72.2 | MIT |
+| @typescript-eslint/type-utils | 8.72.2 | MIT |
+| @typescript-eslint/types | 8.72.2 | MIT |
+| @typescript-eslint/typescript-estree | 8.72.2 | MIT |
+| @typescript-eslint/utils | 8.72.2 | MIT |
+| @typescript-eslint/visitor-keys | 8.72.2 | MIT |
+| @unrs/resolver-binding-darwin-arm64 | 1.13.0 | MIT |
+| @vitejs/plugin-react | 6.3.0 | MIT |
+| @vitest/mocker | 5.1.0 | MIT |
+| @vitest/spy | 5.1.0 | MIT |
+| acorn | 8.19.0 | MIT |
+| acorn-jsx | 5.3.2 | MIT |
+| agent-base | 7.1.4 | MIT |
+| ajv | 6.15.0 | MIT |
+| ansi-colors | 4.1.3 | MIT |
+| ansi-regex | 5.0.1 | MIT |
+| ansi-regex | 6.6.0 | MIT |
+| ansi-styles | 4.3.0 | MIT |
+| ansi-styles | 5.2.0 | MIT |
+| ansi-styles | 6.2.3 | MIT |
+| argparse | 2.0.1 | Python-2.0 |
+| aria-query | 5.3.0 | Apache-2.0 |
+| aria-query | 5.3.2 | Apache-2.0 |
+| assertion-error | 2.0.1 | MIT |
+| balanced-match | 1.0.2 | MIT |
+| balanced-match | 4.0.4 | MIT |
+| bcp-47 | 2.1.2 | MIT |
+| bcp-47-match | 2.0.3 | MIT |
+| brace-expansion | 2.1.7 | MIT |
+| brace-expansion | 5.0.12 | MIT |
+| cacheable | 2.5.0 | MIT |
+| chai | 6.3.0 | MIT |
+| chalk | 4.1.2 | MIT |
+| change-case | 5.4.4 | MIT |
+| cli-width | 4.1.0 | ISC |
+| cliui | 9.0.1 | ISC |
+| color-convert | 2.0.1 | MIT |
+| color-name | 1.1.4 | MIT |
+| colorette | 1.4.0 | MIT |
+| cookie | 2.0.2 | MIT |
+| cookie-es | 3.1.1 | MIT |
+| cross-spawn | 7.0.6 | MIT |
+| css.escape | 1.5.1 | MIT |
+| csstype | 3.2.3 | MIT |
+| data-urls | 8.0.0 | MIT |
+| debug | 3.2.7 | MIT |
+| debug | 4.4.3 | MIT |
+| decimal.js | 10.6.0 | MIT |
+| deep-is | 0.1.4 | MIT |
+| dequal | 2.0.3 | MIT |
+| detect-libc | 2.1.2 | Apache-2.0 |
+| dom-accessibility-api | 0.5.16 | MIT |
+| dom-accessibility-api | 0.6.3 | MIT |
+| emoji-regex | 10.6.0 | MIT |
+| enhanced-resolve | 5.26.1 | MIT |
+| entities | 9.0.0 | BSD-2-Clause |
+| es-errors | 1.3.0 | MIT |
+| es-module-lexer | 2.3.2 | MIT |
+| escalade | 3.2.0 | MIT |
+| escape-string-regexp | 4.0.0 | MIT |
+| eslint | 10.14.0 | MIT |
+| eslint-import-context | 0.1.9 | MIT |
+| eslint-import-resolver-node | 0.3.9 | MIT |
+| eslint-import-resolver-typescript | 4.4.5 | ISC |
+| eslint-module-utils | 2.14.0 | MIT |
+| eslint-plugin-boundaries | 7.4.2 | MIT |
+| eslint-scope | 9.1.2 | BSD-2-Clause |
+| eslint-visitor-keys | 3.4.3 | Apache-2.0 |
+| eslint-visitor-keys | 5.0.1 | Apache-2.0 |
+| espree | 11.2.0 | BSD-2-Clause |
+| esquery | 1.7.0 | BSD-3-Clause |
+| esrecurse | 4.3.0 | BSD-2-Clause |
+| estraverse | 5.3.0 | BSD-2-Clause |
+| estree-walker | 3.0.3 | MIT |
+| esutils | 2.0.3 | BSD-2-Clause |
+| expect-type | 1.4.0 | Apache-2.0 |
+| fast-deep-equal | 3.1.3 | MIT |
+| fast-json-stable-stringify | 2.1.0 | MIT |
+| fast-levenshtein | 2.0.6 | MIT |
+| fast-string-truncated-width | 3.0.3 | MIT |
+| fast-string-width | 3.0.2 | MIT |
+| fast-wrap-ansi | 0.2.2 | MIT |
+| fdir | 6.5.0 | MIT |
+| file-entry-cache | 11.1.5 | MIT |
+| find-up | 5.0.0 | MIT |
+| flat-cache | 6.1.23 | MIT |
+| flatted | 3.4.4 | ISC |
+| fsevents | 2.3.3 | MIT |
+| function-bind | 1.1.2 | MIT |
+| get-caller-file | 2.0.5 | ISC |
+| get-east-asian-width | 1.7.0 | MIT |
+| get-tsconfig | 4.14.3 | MIT |
+| glob-parent | 6.0.2 | ISC |
+| graceful-fs | 4.2.11 | ISC |
+| handlebars | 4.7.10 | MIT |
+| has-flag | 4.0.0 | MIT |
+| hashery | 1.5.1 | MIT |
+| hasown | 2.0.4 | MIT |
+| headers-polyfill | 5.0.1 | MIT |
+| hookified | 1.15.1 | MIT |
+| hookified | 2.2.0 | MIT |
+| html-encoding-sniffer | 7.0.0 | MIT |
+| https-proxy-agent | 7.0.6 | MIT |
+| ignore | 5.3.2 | MIT |
+| ignore | 7.0.14 | MIT |
+| imurmurhash | 0.1.4 | MIT |
+| indent-string | 4.0.0 | MIT |
+| index-to-position | 1.2.0 | MIT |
+| is-alphabetical | 2.0.1 | MIT |
+| is-alphanumerical | 2.0.1 | MIT |
+| is-bun-module | 2.0.0 | MIT |
+| is-core-module | 2.17.0 | MIT |
+| is-core-module | 2.18.0 | MIT |
+| is-decimal | 2.0.1 | MIT |
+| is-extglob | 2.1.1 | MIT |
+| is-glob | 4.0.3 | MIT |
+| is-node-process | 1.2.0 | MIT |
+| is-potential-custom-element-name | 1.0.1 | MIT |
+| isbot | 5.2.3 | Unlicense |
+| isexe | 2.0.0 | ISC |
+| jiti | 2.7.0 | MIT |
+| js-levenshtein | 1.1.6 | MIT |
+| js-tokens | 4.0.0 | MIT |
+| js-yaml | 4.3.2 | MIT |
+| jsdom | 31.0.0 | MIT |
+| json-schema-traverse | 0.4.1 | MIT |
+| json-schema-traverse | 1.0.0 | MIT |
+| json-stable-stringify-without-jsonify | 1.0.1 | MIT |
+| keyv | 5.6.0 | MIT |
+| levn | 0.4.1 | MIT |
+| lightningcss | 1.33.0 | MPL-2.0 |
+| lightningcss-darwin-arm64 | 1.33.0 | MPL-2.0 |
+| locate-path | 6.0.0 | MIT |
+| lru-cache | 11.5.3 | BlueOak-1.0.0 |
+| lz-string | 1.5.0 | MIT |
+| magic-string | 1.4.5 | MIT |
+| min-indent | 1.0.1 | MIT |
+| minimatch | 10.2.6 | BlueOak-1.0.0 |
+| minimatch | 5.1.9 | ISC |
+| minimist | 1.2.8 | MIT |
+| ms | 2.1.3 | MIT |
+| msw | 3.0.5 | MIT |
+| mute-stream | 3.0.0 | ISC |
+| nanoid | 3.3.20 | MIT |
+| napi-postinstall | 0.3.8 | MIT |
+| natural-compare | 1.4.0 | MIT |
+| neo-async | 2.6.2 | MIT |
+| obug | 3.0.0 | MIT |
+| openapi-fetch | 0.17.0 | MIT |
+| openapi-typescript | 7.13.0 | MIT |
+| openapi-typescript-helpers | 0.1.0 | MIT |
+| optionator | 0.9.4 | MIT |
+| outvariant | 1.4.3 | MIT |
+| p-limit | 3.1.0 | MIT |
+| p-locate | 5.0.0 | MIT |
+| parse-json | 8.3.0 | MIT |
+| parse5 | 8.1.1 | MIT |
+| parse5-parser-stream | 8.1.1 | MIT |
+| path-exists | 4.0.0 | MIT |
+| path-key | 3.1.1 | MIT |
+| path-parse | 1.0.7 | MIT |
+| picocolors | 1.1.1 | ISC |
+| picomatch | 4.0.7 | MIT |
+| pluralize | 8.0.0 | MIT |
+| postcss | 8.5.32 | MIT |
+| prelude-ls | 1.2.1 | MIT |
+| pretty-format | 27.5.1 | MIT |
+| punycode | 2.3.1 | MIT |
+| qified | 0.10.1 | MIT |
+| react | 19.3.1 | MIT |
+| react-dom | 19.3.1 | MIT |
+| react-is | 17.0.2 | MIT |
+| redent | 3.0.0 | MIT |
+| require-from-string | 2.0.2 | MIT |
+| resolve | 1.22.14 | MIT |
+| resolve-pkg-maps | 1.0.0 | MIT |
+| rettime | 0.11.12 | MIT |
+| rolldown | 1.2.18 | MIT |
+| saxes | 6.0.0 | ISC |
+| scheduler | 0.28.0 | MIT |
+| semver | 7.8.6 | ISC |
+| seroval | 1.8.0 | MIT |
+| seroval-plugins | 1.8.0 | MIT |
+| set-cookie-parser | 3.2.2 | MIT |
+| shebang-command | 2.0.0 | MIT |
+| shebang-regex | 3.0.0 | MIT |
+| signal-exit | 4.1.0 | ISC |
+| source-map | 0.6.1 | BSD-3-Clause |
+| source-map-js | 1.2.2 | BSD-3-Clause |
+| stable-hash-x | 0.2.0 | MIT |
+| std-env | 4.3.0 | MIT |
+| string-width | 7.2.0 | MIT |
+| string-width | 8.3.0 | MIT |
+| strip-ansi | 7.2.0 | MIT |
+| strip-indent | 3.0.0 | MIT |
+| supports-color | 10.2.2 | MIT |
+| supports-color | 7.2.0 | MIT |
+| supports-preserve-symlinks-flag | 1.0.0 | MIT |
+| tagged-tag | 1.0.0 | MIT |
+| tailwindcss | 4.3.5 | MIT |
+| tapable | 2.3.3 | MIT |
+| tinybench | 6.2.3 | MIT |
+| tinyexec | 1.3.1 | MIT |
+| tinyglobby | 0.2.17 | MIT |
+| tldts | 7.4.19 | MIT |
+| tldts-core | 7.4.19 | MIT |
+| tough-cookie | 6.1.0 | BSD-3-Clause |
+| tr46 | 7.0.0 | MIT |
+| ts-api-utils | 2.5.0 | MIT |
+| type-check | 0.4.0 | MIT |
+| type-fest | 4.41.0 | (MIT OR CC0-1.0) |
+| type-fest | 5.10.0 | (MIT OR CC0-1.0) |
+| typescript | 5.9.3 | Apache-2.0 |
+| typescript-eslint | 8.72.2 | MIT |
+| uglify-js | 3.19.3 | BSD-2-Clause |
+| undici | 8.12.4 | MIT |
+| undici-types | 8.9.0 | MIT |
+| unrs-resolver | 1.13.0 | MIT |
+| until-async | 3.0.2 | MIT |
+| uri-js | 4.4.1 | BSD-2-Clause |
+| uri-js-replace | 1.0.2 | MIT |
+| use-sync-external-store | 1.7.0 | MIT |
+| vite | 8.3.8 | MIT |
+| vitest | 5.1.0 | MIT |
+| w3c-xmlserializer | 6.0.0 | MIT |
+| webidl-conversions | 8.0.1 | BSD-2-Clause |
+| whatwg-mimetype | 5.0.0 | MIT |
+| whatwg-url | 17.3.0 | MIT |
+| which | 2.0.2 | ISC |
+| why-is-node-running | 3.2.1 | MIT |
+| word-wrap | 1.2.5 | MIT |
+| wordwrap | 1.0.0 | MIT |
+| wrap-ansi | 9.0.2 | MIT |
+| xml-name-validator | 5.0.0 | Apache-2.0 |
+| xmlchars | 2.2.0 | MIT |
+| y18n | 5.0.8 | ISC |
+| yaml-ast-parser | 0.0.43 | Apache-2.0 |
+| yargs | 18.2.0 | MIT |
+| yargs-parser | 21.1.1 | ISC |
+| yargs-parser | 22.0.0 | ISC |
+| yocto-queue | 0.1.0 | MIT |
+<!-- web-dependencies:end -->
