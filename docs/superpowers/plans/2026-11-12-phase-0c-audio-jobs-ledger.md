@@ -26,6 +26,8 @@
 - **apps/web:** the only permitted change is regenerating API types with `make gen-api` (commit the regenerated files) in any task that changes the OpenAPI schema, so CI's `contract` check stays green.
 - **Git:** one branch and one PR per task, named `p0c/NN-<slug>`, branched from up-to-date `origin/main`. Imperative commit messages, no Co-Authored-By trailer, no "Generated with Claude Code" footer. Never push to `main`. Squash-merge only when CI is green: `gh pr merge --squash`, without `--delete-branch` (the owner approves branch deletions).
 - **HANDOFF:** every task's PR updates `docs/superpowers/HANDOFF.md` (done / in progress / next, and adapters still unverified against the live service; Phase 0c builds no live adapters, so that list does not change).
+- **Built on 0b:** tests build settings with `make_settings(...)` (`Settings(_env_file=None, ...)`, so a developer's `.env` never leaks in) and API clients with `loopback_client(app)` (0b's guards refuse TestClient's default host and peer). Every new `GET /api/...` route is added to `READ_ONLY_GET_ROUTES` in `tests/api/test_guards.py`. `create_app` keeps 0b's guard and CORS middleware; this phase adds parameters and lifespan steps, never replaces them.
+- **Migration:** `0004_recordings_jobs_ledger` (`revision = "0004"`, `down_revision = "0003"`). The chain across phases is 0003 (0b), 0004 (0c), 0005–0006 (0d), 0007 (0e), 0008–0011 (Phase 1).
 
 ## Review Focus
 
@@ -48,7 +50,7 @@ Inputs and failure modes the spec implies that the obvious tests skip. Each has 
 ```
 apps/api/pyproject.toml                       + numpy, httpx moved to runtime deps (exact pins)
 apps/api/src/nosolear/
-  domain/errors.py                            NosolearError, InvalidAudio, CapExceeded, ProviderUnavailable, CapabilityMissing
+  domain/errors.py                            NosolearError, InvalidAudio, CapExceeded, ProviderUnavailable, RequestNotSent, CapabilityMissing
   domain/audio.py                             limits, parse_wav, resample_to_16k, to_16k, encode_wav, check_declared_length
   domain/budget.py                            Provider, Unit, Caps, period_for, headroom, ceil_seconds, Usage
   domain/jobs.py                              JobKind, JobStatus, StepState, StepSpec, JOB_PLANS, StepRecord, Job, resume_plan
@@ -59,9 +61,9 @@ apps/api/src/nosolear/
   ports/analyses.py                           AnalysisStore
   adapters/filesystem_audio_store.py          FilesystemAudioStore
   adapters/thread_pool_runner.py              ThreadPoolJobRunner
-  budget/meter.py                             Meter, RequestNotSent, metered_method
+  budget/meter.py                             Meter, metered_method
   budget/compose.py                           PortWrapper, compose_paid_port, layers_of
-  app/steps.py                                Step, StepContext, StepRegistry
+  app/steps.py                                Step, StepContext, StepRegistry, current_job_id
   app/run_job.py                              run_job use case
   app/upload_recording.py                     upload_recording use case
   persistence/models.py                       + recordings, jobs, usage_ledger, analyses
@@ -70,15 +72,17 @@ apps/api/src/nosolear/
   persistence/ledger.py                       SqliteUsageLedger
   persistence/job_queue.py                    SqliteJobQueue
   persistence/repositories.py                 + RecordingRepository, AnalysisRepository, AttemptRepository
-  api/deps.py                                 + Services, build_services, build_paid_ports, getters
+  api/deps.py                                 + Services, build_services, build_ledger, build_paid_ports, getters
   api/app.py                                  lifespan starts/stops the runner; includes new routers
   api/errors.py                               NosolearError -> HTTP mapping
   api/recording_routes.py                     POST /api/attempts/{attempt_id}/recording
   api/job_routes.py                           GET /api/jobs/{job_id}, POST /api/jobs/{job_id}/resume
   api/schemas.py                              + UploadAcceptedOut, JobOut, StepOut, ErrorOut
-  cli.py                                      + upload, job commands
+  cli_client.py                               ApiClient (httpx), CliError
+  cli.py                                      + upload, job commands; main(argv, *, client=None)
 apps/api/tests/
-  fakes.py                                    FakeAudioStore, FakeUsageLedger, FakeJobQueue, FakeAnalysisStore, FakePaidPort, wav builders
+  wavs.py                                     make_wav, raw_wav (synthetic WAV factory every later phase uses)
+  fakes.py                                    FakeAudioStore, FakeUsageLedger, FakeJobQueue, FakeAnalysisStore, FakePaidPort, FakeStep
   domain/test_audio.py, test_audio_properties.py, test_budget.py, test_jobs.py, test_jobs_properties.py
   adapters/test_filesystem_audio_store.py, test_thread_pool_runner.py
   persistence/test_ledger.py, test_ledger_properties.py, test_job_queue.py, test_schema.py (extended)
@@ -102,14 +106,16 @@ Each task starts with `git fetch origin && git switch -c p0c/NN-<slug> origin/ma
 **Files:**
 - Create: `apps/api/src/nosolear/domain/errors.py`, `apps/api/src/nosolear/domain/audio.py`
 - Modify: `apps/api/pyproject.toml` (add `numpy==<the version already in uv.lock>` as a direct dependency; run `uv lock`)
-- Test: `apps/api/tests/domain/test_audio.py`, `apps/api/tests/domain/test_audio_properties.py`, `apps/api/tests/fakes.py` (create with the WAV builders only)
+- Test: `apps/api/tests/domain/test_audio.py`, `apps/api/tests/domain/test_audio_properties.py`, `apps/api/tests/domain/test_errors.py`, `apps/api/tests/wavs.py` (create with the WAV builders)
 
 **Interfaces:**
 - **Consumes:** nothing. Salvage source: `git show p0b/spikes:spikes/common.py` (`_lowpass_kernel`, `_fft_filter`, `resample_to_16k`, `write_wav16k`).
-- **Produces** (`nosolear.domain.errors`):
-  - `class NosolearError(ValueError)` with class attribute `code: ClassVar[str]` and property `safe_message -> str` (a fixed, key-free sentence; never built from provider text).
+- **Produces** (`nosolear.domain.errors`, the one module for every typed error the job runner and the API map):
+  - `class NosolearError(ValueError)` with class attributes `code: ClassVar[str]` and `default_message: ClassVar[str]`, constructor `__init__(self, message: str | None = None)`, and property `safe_message -> str` (the given message, else `default_message`); `str(e) == e.safe_message`. A message is always a literal sentence written in Nosolear's code (for example "Azure Speech rejected the key or region; check NOSOLEAR_AZURE_SPEECH_KEY and NOSOLEAR_AZURE_SPEECH_REGION"), never built from provider text or a key.
   - `class InvalidAudio(NosolearError)`: `code = "invalid_audio"`, constructor `InvalidAudio(reason: AudioReason)` where `AudioReason = Literal["too_large", "too_long", "empty", "not_wav", "bad_chunks", "unsupported_format", "bad_sample_rate", "bad_content_type"]`; attribute `reason`.
-  - `class CapExceeded(NosolearError)`: `code = "cap_exceeded"`; `class ProviderUnavailable(NosolearError)`: `code = "provider_unavailable"`; `class CapabilityMissing(NosolearError)`: `code = "capability_missing"`. All three take no required arguments and have fixed safe messages.
+  - `class CapExceeded(NosolearError)`: `code = "cap_exceeded"`; `class ProviderUnavailable(NosolearError)`: `code = "provider_unavailable"`; `class CapabilityMissing(NosolearError)`: `code = "capability_missing"`. Each has a fixed default message, so it can be raised with no argument.
+  - `class RequestNotSent(ProviderUnavailable)`: raised by a raw adapter when it fails before any request left the machine (missing key or region, bad local input). The meter releases its reservation; the job shows `provider_unavailable` with the adapter's message naming the setting to fix. 0d adds `RetryableProviderError` and `MalformedProviderResponse` (both `ProviderUnavailable` subclasses) to this module, because domain parsers raise them.
+  - `tests/domain/test_errors.py`: default and given messages, `str(e) == e.safe_message`, `RequestNotSent` is a `ProviderUnavailable` with code `provider_unavailable`.
 - **Produces** (`nosolear.domain.audio`):
   - `TARGET_RATE = 16_000`; `ALLOWED_SAMPLE_RATES: frozenset[int] = frozenset({16000, 22050, 24000, 32000, 44100, 48000})`.
   - `@dataclass(frozen=True, slots=True) class AudioLimits: max_bytes: int = 10 * 1024 * 1024; max_duration_s: int = 120`; `DEFAULT_LIMITS = AudioLimits()`.
@@ -121,7 +127,7 @@ Each task starts with `git fetch origin && git switch -c p0c/NN-<slug> origin/ma
   - `encode_wav(samples: np.ndarray, rate: int = TARGET_RATE) -> bytes` (canonical 44-byte header, 16-bit PCM mono).
   - `duration_ms(frames: int, rate: int) -> int` (rounded down).
 
-- [ ] **Step 1: Write the failing example tests** in `tests/domain/test_audio.py`, with builders in `tests/fakes.py`: `make_wav(seconds: float, rate: int = 16000, freq: float = 440.0) -> bytes` (sine, via `encode_wav` for 16 kHz is not allowed for other rates, so build the header by hand with `struct`) and `raw_wav(*, rate: int, pcm: bytes, declared_data: int | None = None, riff_size: int | None = None, extra_chunks: bytes = b"", fmt_tag: int = 1, channels: int = 1, bits: int = 16) -> bytes` so tests can make lying or malformed headers. Tests (names and key assertions):
+- [ ] **Step 1: Write the failing example tests** in `tests/domain/test_audio.py`, with builders in `tests/wavs.py` (the one synthetic WAV factory; 0d adds `write_wav` and `wav_info` to it): `make_wav(seconds: float, rate: int = 16000, freq: float | None = 440.0) -> bytes` (a sine, or silence when `freq` is `None`; the header is built by hand with `struct` so any rate works) and `raw_wav(*, rate: int, pcm: bytes, declared_data: int | None = None, riff_size: int | None = None, extra_chunks: bytes = b"", fmt_tag: int = 1, channels: int = 1, bits: int = 16) -> bytes` so tests can make lying or malformed headers. Tests (names and key assertions):
   - `test_parses_valid_wav`: 1 s at 16 kHz gives `sample_rate == 16000`, `len(samples) == 16000`.
   - `test_duration_uses_frames_received`: header declares 100 s of data, body holds 2 s: `len(samples) == 2 * rate`. Same with `declared_data=0xFFFFFFFF`.
   - `test_declared_smaller_than_file_ignores_trailing_junk_chunk`: a `LIST` chunk after `data` is skipped; trailing bytes shorter than a chunk header are ignored.
@@ -145,7 +151,7 @@ Each task starts with `git fetch origin && git switch -c p0c/NN-<slug> origin/ma
 
 - [ ] **Step 4: Run to verify pass.** Run: `uv run pytest tests/domain/test_audio.py -q`. Expected: PASS.
 
-- [ ] **Step 5: Write the Hypothesis properties** in `tests/domain/test_audio_properties.py` (strategies build headers from `raw_wav`):
+- [ ] **Step 5: Write the Hypothesis properties** in `tests/domain/test_audio_properties.py` (strategies build headers from `tests/wavs.py::raw_wav`):
   - `test_parse_never_raises_anything_but_invalid_audio`: arbitrary `bytes` (and arbitrary bytes after a valid RIFF/WAVE prefix) either parse or raise `InvalidAudio`; no other exception type.
   - `test_header_lies_never_crash`: valid PCM with arbitrary `declared_data` (0 to 2**32-1), arbitrary `riff_size`, and arbitrary rate (0 to 200000): result is a `WavAudio` whose frame count equals `min(declared, actual) // 2` when the rate is whitelisted, else `InvalidAudio`.
   - `test_frames_never_exceed_bytes_received`: `len(samples) <= len(data) // 2` always.
@@ -239,12 +245,12 @@ Each task starts with `git fetch origin && git switch -c p0c/NN-<slug> origin/ma
 - Test: `apps/api/tests/persistence/test_schema.py` (extend), `apps/api/tests/persistence/test_db.py` (extend)
 
 **Interfaces:**
-- **Consumes:** existing `metadata`, `UTCDateTime`, `_in_list`; migration head from Phase 0b (assumed `0003`; set `down_revision` to the actual current head, check with `ls versions/` after rebasing on `origin/main`).
+- **Consumes:** existing `metadata`, `UTCDateTime`, `_in_list`; 0b's migration `0003` is the head (`down_revision = "0003"`; confirm with `uv run alembic heads` after rebasing on `origin/main`).
 - **Produces:** tables per ARCHITECTURE.md §7, as SQLAlchemy Core `Table`s in `models.py`:
   - `recordings(id TEXT pk, attempt_id TEXT NOT NULL UNIQUE FK attempts.id, path TEXT NOT NULL UNIQUE, duration_ms INTEGER NOT NULL, sample_rate INTEGER NOT NULL, sha256 TEXT NOT NULL, created_at)`; CHECK `path GLOB 'recordings/*.wav'`, `duration_ms >= 0`, `sample_rate = 16000`.
   - `jobs(id TEXT pk, kind, attempt_id TEXT NULL FK attempts.id, status, step TEXT NULL, progress REAL NOT NULL, steps_json TEXT NOT NULL, tries INTEGER NOT NULL, created_at, updated_at)`; CHECKs `kind IN ('analyze','rescore')`, `status IN ('queued','running','done','failed')`, `progress BETWEEN 0 AND 1`, `tries >= 0`; index `ix_jobs_status_created (status, created_at)`.
   - `usage_ledger(id INTEGER pk autoincrement, provider, unit, state, estimate INTEGER NOT NULL, actual INTEGER NULL, period TEXT NOT NULL, job_id TEXT NULL FK jobs.id, created_at, settled_at NULL)`; CHECKs `provider IN ('azure','anthropic')`, `unit IN ('audio_seconds','tts_chars','tokens')`, `state IN ('reserved','recorded','released')`, `estimate >= 0`, `(state = 'recorded') = (actual IS NOT NULL)`; index `ix_ledger_totals (provider, unit, period, state)`. Quantities are integers: audio seconds are rounded up to whole seconds, so estimates stay upper bounds and sums are exact.
-  - `analyses(id INTEGER pk autoincrement, attempt_id NULL FK attempts.id, tts_hash NULL, calibration_run_id NULL, kind, provider, provider_version, adapter, adapter_version, raw_json TEXT NOT NULL, created_at)`; CHECK `kind IN ('pronunciation','transcript','phone_probe','coach')`; CHECK exactly one key shape: `(attempt_id IS NOT NULL AND tts_hash IS NULL AND calibration_run_id IS NULL) OR (attempt_id IS NULL AND tts_hash IS NOT NULL AND calibration_run_id IS NOT NULL)`; partial unique index on `(attempt_id, kind) WHERE attempt_id IS NOT NULL` and on `(tts_hash, kind, calibration_run_id) WHERE attempt_id IS NULL`. `calibration_run_id` has no foreign key yet (the `calibration_runs` table arrives in 0e).
+  - `analyses(id INTEGER pk autoincrement, attempt_id NULL FK attempts.id, tts_hash NULL, calibration_run_id NULL, kind, provider, provider_version, adapter, adapter_version INTEGER, raw_json TEXT NOT NULL, created_at)`; CHECK `kind IN ('pronunciation','transcript','phone_probe','coach')`; CHECK exactly one key shape: `(attempt_id IS NOT NULL AND tts_hash IS NULL AND calibration_run_id IS NULL) OR (attempt_id IS NULL AND tts_hash IS NOT NULL AND calibration_run_id IS NOT NULL)`; partial unique index on `(attempt_id, kind) WHERE attempt_id IS NOT NULL` and on `(tts_hash, kind, calibration_run_id) WHERE attempt_id IS NULL`. `tts_hash` and `calibration_run_id` have no foreign keys yet; 0e's migration adds them when `calibration_runs` exists (0d creates `tts_cache`). This table is complete for 0e's control rows: 0e adds only the two foreign keys.
   - `_set_pragmas` also runs `PRAGMA busy_timeout=5000`.
 
 - [ ] **Step 1: Write the failing tests** extending `test_schema.py` (keep its `test_models_match_migrations` drift guard; it fails until models and migration agree) and the CHECK style already used there:
@@ -354,11 +360,9 @@ Each task starts with `git fetch origin && git switch -c p0c/NN-<slug> origin/ma
 - Test: `apps/api/tests/budget/test_meter.py`, `apps/api/tests/budget/test_compose.py`, `apps/api/tests/budget/test_no_unmetered_sdk_imports.py`, `apps/api/tests/api/test_deps_composition.py`
 
 **Interfaces:**
-- **Consumes:** Task 4 (`UsageLedger`, `Reservation`, `Provider`, `Unit`, `FakeUsageLedger`, `SqliteUsageLedger`); `CapExceeded`.
+- **Consumes:** Task 4 (`UsageLedger`, `Reservation`, `Provider`, `Unit`, `FakeUsageLedger`, `SqliteUsageLedger`); `CapExceeded`, `RequestNotSent` (Task 1).
 - **Produces** (`nosolear.budget.meter`):
   ```python
-  class RequestNotSent(Exception): ...   # raised by a raw adapter when it fails before any request left the machine (bad local input, missing config)
-
   class Meter:
       def __init__(self, ledger: UsageLedger, *, job_id: Callable[[], str | None] = lambda: None) -> None
       def call[R](self, provider: Provider, unit: Unit, estimate: int, fn: Callable[[], R], actual: Callable[[R], int]) -> R
@@ -366,7 +370,7 @@ Each task starts with `git fetch origin && git switch -c p0c/NN-<slug> origin/ma
   def metered_method[**P, R](meter: Meter, *, provider: Provider, unit: Unit,
                              estimate: Callable[P, int], actual: Callable[[R], int]) -> Callable[[Callable[P, R]], Callable[P, R]]
   ```
-  `Meter.call` semantics: `ledger.reserve(...)` (propagates `CapExceeded`, `fn` is never called); then `fn()`; success records `actual(result)`; `RequestNotSent` releases and re-raises; any other exception records at the estimate and re-raises. `metered_method` wraps one bound method so a port wrapper written in Phase 0d is a few lines per method.
+  `Meter.call` semantics: `ledger.reserve(...)` with `job_id=self.job_id()` (propagates `CapExceeded`, `fn` is never called); then `fn()`; success records `actual(result)`; `RequestNotSent` releases and re-raises; any other exception records at the estimate and re-raises. `metered_method` wraps one bound method so a port wrapper written in Phase 0d is a few lines per method. The composition root builds `Meter(ledger, job_id=current_job_id)` (Task 7), so every reservation made inside a job carries its id.
 - **Produces** (`nosolear.budget.compose`):
   ```python
   class PortWrapper[T]:
@@ -377,7 +381,7 @@ Each task starts with `git fetch origin && git switch -c p0c/NN-<slug> origin/ma
                            cache: Callable[[T], T] | None = None) -> T   # returns cache(retry(metered(raw)))
   def layers_of(port: object) -> list[str]   # outermost first, following `.inner`; the last item is the raw adapter's own `layer` ("raw")
   ```
-- **Produces** (`api/deps.py`): `build_paid_ports(settings: Settings, *, ledger: UsageLedger, clock: Clock) -> dict[str, object]`, returning `{}` in this phase. Phase 0d adds one entry per paid port (`pronunciation_scorer`, `transcriber_azure`, `synthesizer`, `coach`) built only through `compose_paid_port`.
+- **Produces** (`api/deps.py`): `build_paid_ports(settings: Settings, *, ledger: UsageLedger, clock: Clock) -> dict[str, object]`, returning `{}` in this phase. Phase 0d replaces it with `build_providers(...) -> Providers`, whose `paid_ports()` returns the same dict (`pronunciation_scorer`, `transcriber_azure`, `synthesizer`, `coach`, each built only through `compose_paid_port`), and points `test_deps_composition.py` at that.
 - **Produces** (`tests/fakes.py`): `FakePaidPort` with `layer = "raw"`, `calls: int`, `def run(self, units: int) -> int` (returns `units`) and a `fail_with: Exception | None`.
 
 - [ ] **Step 1: Write the failing tests** (`test_meter.py`, with `FakeUsageLedger` and `FakePaidPort`):
@@ -389,7 +393,7 @@ Each task starts with `git fetch origin && git switch -c p0c/NN-<slug> origin/ma
   - `test_each_retry_attempt_reserves_on_its_own`: a retry wrapper (test double, `layer = "retry"`) that calls a failing metered inner twice then succeeds yields three ledger rows (two recorded at the estimate, one at actual).
 - `test_compose.py`: `test_compose_order_is_cache_retry_metered_raw` builds recording wrappers (subclasses of `PortWrapper` with the four layer names) and asserts `layers_of(compose_paid_port(raw, metered=..., retry=..., cache=...)) == ["cache", "retry", "metered", "raw"]`; `test_without_cache_order_is_retry_metered_raw`; `test_layers_of_raw_only`.
 - `test_deps_composition.py`: `test_every_paid_port_the_composition_root_builds_is_ordered`: iterates `build_paid_ports(...)` and, for each port, asserts `layers_of(port)` ends with `["retry", "metered", "raw"]`, has `"cache"` only as the outermost layer and only for the key `synthesizer`, and that no port is a bare raw adapter. It is vacuous in this phase (empty dict); add `test_the_check_has_teeth` which feeds a deliberately mis-ordered stack (metered outside retry) and a bare raw port into the same assertion helper and expects each to fail. Phase 0d must keep this test non-vacuous.
-- `test_no_unmetered_sdk_imports.py`: AST-scans every `.py` under `src/nosolear` for imports whose top-level module is in `{"azure", "anthropic", "faster_whisper", "mlx_whisper", "mlx", "torch", "transformers", "huggingface_hub", "parselmouth"}` and asserts the importing file is in `RAW_ADAPTER_MODULES: frozenset[str]` (empty now; 0d adds each raw adapter module path). A second test plants a fake offending file in `tmp_path` to show the scanner flags it.
+- `test_no_unmetered_sdk_imports.py`: AST-scans every `.py` under `src/nosolear` for imports whose top-level module is in `{"azure", "anthropic", "faster_whisper", "mlx_whisper", "mlx", "torch", "transformers", "huggingface_hub", "parselmouth"}` and asserts the importing file is in `RAW_ADAPTER_MODULES: frozenset[str]` (empty now; 0d turns it into a module → allowed-SDKs mapping and adds a lazy-import rule, in this same file). A second test plants a fake offending file in `tmp_path` to show the scanner flags it.
 
 - [ ] **Step 2: Run to verify failure.** Run: `uv run pytest tests/budget tests/api/test_deps_composition.py -q`. Expected: FAIL (modules missing).
 
@@ -501,7 +505,7 @@ Each task starts with `git fetch origin && git switch -c p0c/NN-<slug> origin/ma
   @dataclass(frozen=True, slots=True)
   class NewAnalysis:
       attempt_id: str; kind: AnalysisKind; provider: str; provider_version: str
-      adapter: str; adapter_version: str; raw: Mapping[str, object]
+      adapter: str; adapter_version: int; raw: Mapping[str, object]
 
   @dataclass(frozen=True, slots=True)
   class StoredAnalysis:   # same fields as NewAnalysis plus id: int and created_at: datetime
@@ -521,6 +525,10 @@ Each task starts with `git fetch origin && git switch -c p0c/NN-<slug> origin/ma
       job_id: str
       kind: JobKind
       attempt_id: str | None
+      progress: Callable[[float], None]   # fraction 0..1 within this step; run_job persists
+                                          # (settled steps + fraction) / len(plan). 0e's rescore and calibration use it.
+
+  def current_job_id() -> str | None      # a ContextVar run_job sets around each step's run(); the Meter reads it
 
   class Step(Protocol):
       name: str                                    # one of the names in JOB_PLANS[kind]
@@ -547,6 +555,8 @@ Each task starts with `git fetch origin && git switch -c p0c/NN-<slug> origin/ma
   - `test_resumed_job_does_not_repeat_done_steps` (Review Focus 4): after a run where `coach` failed, `jobs.resume(id)` then `run_job` again runs only `coach` and `extract`; `score`, `transcribe`, `probe` `runs` stay at 1.
   - `test_cap_exceeded_step_fails_without_calling_provider` (the done-when cap sentence, end to end through the runner): a step calling `FakePaidPort.run` via `Meter.call` over a `FakeUsageLedger` with cap 10 and estimate 100 ends FAILED with `error_code == "cap_exceeded"` and `port.calls == 0`.
   - `test_registry_rejects_unknown_or_duplicate_step_names`.
+  - `test_step_progress_within_step_is_reported`: a RESCORE `FakeStep` calling `ctx.progress(0.5)` leaves an `update` with progress 0.5 before the final 1.0.
+  - `test_current_job_id_is_set_only_while_a_step_runs`: inside `run`, `current_job_id() == job.id`; before and after, `None`.
 - Repository tests: `put` then `get` round-trips `raw`; a second `put` for the same `(attempt_id, kind)` returns the first row and leaves one row (`test_put_is_idempotent`); `for_attempt` lists all kinds; a `NewAnalysis` for an unknown attempt raises `IntegrityError`.
 
 - [ ] **Step 2: Run to verify failure.** Run: `uv run pytest tests/app/test_run_job.py tests/persistence/test_repositories.py -q`. Expected: FAIL (modules missing).
@@ -565,37 +575,43 @@ Each task starts with `git fetch origin && git switch -c p0c/NN-<slug> origin/ma
 
 **Files:**
 - Create: `apps/api/src/nosolear/adapters/thread_pool_runner.py`, `apps/api/src/nosolear/api/job_routes.py`, `apps/api/src/nosolear/api/errors.py`
-- Modify: `apps/api/src/nosolear/api/deps.py` (add `Services`, `build_services`, getters), `apps/api/src/nosolear/api/app.py` (lifespan, routers, `create_app` parameters), `apps/api/src/nosolear/api/schemas.py` (add `StepOut`, `JobOut`, `ErrorOut`), regenerated `apps/web/src/shared/api/openapi.json` and `schema.d.ts`
+- Modify: `apps/api/src/nosolear/api/deps.py` (add `Services`, `build_ledger`, `build_services`, `read_usage`, getters), `apps/api/src/nosolear/api/app.py` (lifespan, routers, `create_app` parameters), `apps/api/src/nosolear/api/schemas.py` (add `StepOut`, `JobOut`, `ErrorOut`), `apps/api/src/nosolear/app/check_readiness.py` and `cli.py` (usage figures), `tests/api/test_guards.py` (`READ_ONLY_GET_ROUTES`), regenerated `apps/web/src/shared/api/openapi.json` and `schema.d.ts`
 - Test: `apps/api/tests/adapters/test_thread_pool_runner.py`, `apps/api/tests/api/test_job_api.py`, `apps/api/tests/api/test_restart.py`
 
 **Interfaces:**
-- **Consumes:** Tasks 3 to 7; `Settings` from Phase 0b with `cap_azure_audio_hours: float`, `cap_azure_tts_chars: int`, `cap_claude_tokens: int` (see Cross-phase assumptions); the existing `create_app`, `_lifespan`.
+- **Consumes:** Tasks 3 to 7; 0b's `Settings` (`cap_azure_audio_hours`, `cap_azure_tts_chars`, `cap_claude_tokens`, `job_workers`), `check_readiness`, `UsageSnapshot`, `get_readiness_report`; the existing `create_app`, `_lifespan`.
 - **Produces** (`nosolear.adapters.thread_pool_runner`):
   ```python
   class ThreadPoolJobRunner:
-      def __init__(self, jobs: JobQueue, run: Callable[[str], object], *, workers: int = 1, poll_seconds: float = 0.5) -> None
+      def __init__(self, jobs: JobQueue, run: Callable[[str], object], *, workers: int, poll_seconds: float = 0.5) -> None
       def start(self) -> None
       def wake(self) -> None                       # tell idle workers to look for work now
-      def wait_idle(self, timeout: float = 10.0) -> bool   # test helper: True once no job is queued or running
+      def run_pending(self) -> int                 # the synchronous test hook: claims and runs queued jobs in the calling
+                                                   # thread until none is queued; returns how many ran (used with start_runner=False)
+      def wait_idle(self, timeout: float = 10.0) -> bool   # True once no job is queued or running (threaded tests)
       def stop(self, timeout: float = 5.0) -> None
   ```
-  Workers loop: `jobs.claim_next()`; if a job, `run(job.id)` (exceptions are logged by type and swallowed so a worker never dies); otherwise wait on an event for `poll_seconds`.
+  Workers loop: `jobs.claim_next()`; if a job, `run(job.id)` (exceptions are logged by type and swallowed so a worker never dies); otherwise wait on an event for `poll_seconds`. `workers` comes from `settings.job_workers` (default 1: Azure F0 allows one concurrent request).
 - **Produces** (`api/deps.py`):
   ```python
-  JOB_WORKERS = 1   # Azure F0 allows one concurrent request
-
   @dataclass(frozen=True, slots=True)
   class Services:
       audio_store: AudioStore; jobs: JobQueue; ledger: UsageLedger; analyses: AnalysisStore
-      registry: StepRegistry; runner: ThreadPoolJobRunner; paid_ports: dict[str, object]
-      # Task 9 adds: recordings: RecordingStore; attempts: AttemptReader
+      registry: StepRegistry; runner: ThreadPoolJobRunner; paid_ports: dict[str, object]; clock: Clock
+      # Task 9 adds: recordings: RecordingStore; attempts: AttemptReader. 0d replaces paid_ports with providers: Providers.
 
-  def build_services(settings: Settings, engine: Engine, *, registry: StepRegistry | None = None, clock: Clock | None = None) -> Services
+  def build_ledger(settings: Settings, engine: Engine, *, clock: Clock | None = None) -> UsageLedger   # SqliteUsageLedger with caps from settings
+  def build_services(settings: Settings, engine: Engine, *, registry: StepRegistry | None = None, clock: Clock | None = None,
+                     ledger: UsageLedger | None = None) -> Services
   def get_services(request: Request) -> Services
   def get_job_queue(request: Request) -> JobQueue
+  def get_clock(request: Request) -> Clock       # every later use case reads time through this, so tests can move it
+  def read_usage(settings: Settings) -> UsageSnapshot | None   # None when the database file or the usage_ledger table doesn't exist;
+                                                               # never creates or migrates the database (doctor stays offline)
   ```
-  `build_services` builds `Caps.from_hours_chars_tokens(...)` from settings, `SqliteUsageLedger`, `SqliteJobQueue`, `FilesystemAudioStore(settings.data_dir)`, `AnalysisRepository`, `build_paid_ports`, an empty `StepRegistry` unless one is passed, and the runner.
-- **Produces** (`create_app`): `create_app(settings: Settings | None = None, *, step_registry: StepRegistry | None = None) -> FastAPI`. Lifespan on startup: `upgrade_to_head`, `ledger.settle_open_reservations()`, `jobs.requeue_running()`, `runner.start()`, `runner.wake()`; on shutdown: `runner.stop()`, `engine.dispose()`. `app.state.services` holds the `Services`.
+  `build_services` builds `build_ledger(...)` unless a ledger is passed (0e's live first run passes the user's real ledger), `SqliteJobQueue`, `FilesystemAudioStore(settings.data_dir)`, `AnalysisRepository`, `build_paid_ports`, an empty `StepRegistry` unless one is passed, and `ThreadPoolJobRunner(..., workers=settings.job_workers)`.
+- **Produces** (`create_app`): `create_app(settings: Settings | None = None, *, step_registry: StepRegistry | None = None, start_runner: bool = True, ledger: UsageLedger | None = None, clock: Clock | None = None) -> FastAPI` (`clock` defaults to `SystemClock()`). Lifespan on startup: `upgrade_to_head`, `ledger.settle_open_reservations()`, `jobs.requeue_running()`, then `runner.start()` and `runner.wake()` only when `start_runner`; on shutdown: `runner.stop()`, `engine.dispose()`. `app.state.services` holds the `Services`. Tests that need determinism pass `start_runner=False` and call `app.state.services.runner.run_pending()`.
+- **Produces** (readiness usage, the 0b row's real figures): `check_readiness(settings, env, *, usage: UsageSnapshot | None = None)`; `get_readiness_report` and `nosolear doctor` pass `read_usage(settings)`.
 - **Produces** (HTTP):
   - `GET /api/jobs/{job_id}` → `JobOut` (`operationId getJob`); 404 `ErrorOut` for an unknown id. Side-effect free.
   - `POST /api/jobs/{job_id}/resume` → `JobOut` (`operationId resumeJob`); 404 unknown, 409 if not FAILED; wakes the runner.
@@ -607,9 +623,12 @@ Each task starts with `git fetch origin && git switch -c p0c/NN-<slug> origin/ma
   - `test_worker_survives_a_raising_run`: the first job's `run` raises, the second still runs.
   - `test_stop_joins_workers`: after `stop()` no runner thread is alive.
   - `test_jobs_enqueued_after_start_are_picked_up_within_poll_interval` (with `poll_seconds=0.05`).
+  - `test_run_pending_runs_every_queued_job_in_the_calling_thread`: without `start()`, three queued jobs run in the test's thread and the call returns 3; a second call returns 0.
+  - `test_workers_come_from_settings`: `build_services(make_settings(data_dir=tmp_path, job_workers=2), ...)` starts two worker threads; the default starts one.
+  - In `tests/test_cli.py` and `tests/app/test_check_readiness.py`: with a ledger row recorded, the usage row shows the used figures; `doctor` on a data dir without a database still prints the caps-only row and creates no file.
 
-- [ ] **Step 2: Write the failing API tests.** `test_job_api.py` uses `create_app(Settings(data_dir=tmp_path), step_registry=registry)` with `FakeStep`s registered for all five analyze steps inside `TestClient`:
-  - `test_get_job_shows_progress_and_steps`: enqueue through `app.state.services.jobs`, `runner.wake()`, `runner.wait_idle()`, `GET /api/jobs/{id}` returns `status == "done"`, `progress == 1.0`, five steps all `done`.
+- [ ] **Step 2: Write the failing API tests.** `test_job_api.py` uses `loopback_client(create_app(make_settings(data_dir=tmp_path), step_registry=registry, start_runner=False))` with `FakeStep`s registered for all five analyze steps:
+  - `test_get_job_shows_progress_and_steps`: enqueue through `app.state.services.jobs`, `runner.run_pending()`, `GET /api/jobs/{id}` returns `status == "done"`, `progress == 1.0`, five steps all `done`.
   - `test_get_unknown_job_is_404_with_error_body`.
   - `test_failed_job_shows_only_safe_messages`: a step raising `ProviderUnavailable` shows `error_code == "provider_unavailable"` and the fixed message; a step raising `RuntimeError("sk-planted-secret")` shows `internal_error` and the planted text appears nowhere in the response body or in the OpenAPI JSON.
   - `test_resume_endpoint`: a failed job returns to `done` after the step is fixed and `POST .../resume`; resuming a done job is 409.
@@ -620,7 +639,7 @@ Each task starts with `git fetch origin && git switch -c p0c/NN-<slug> origin/ma
 
 - [ ] **Step 3: Run to verify failure.** Run: `uv run pytest tests/adapters/test_thread_pool_runner.py tests/api/test_job_api.py tests/api/test_restart.py -q`. Expected: FAIL.
 
-- [ ] **Step 4: Implement the runner, schemas, errors handler, routes, `build_services`, lifespan changes.** Merge with Phase 0b's changes to `create_app` (guards, middleware order) rather than overwriting them. Run `make gen-api` from the repo root and commit the regenerated web files.
+- [ ] **Step 4: Implement the runner, schemas, errors handler, routes, `build_ledger`, `build_services`, `read_usage`, lifespan changes.** Merge with Phase 0b's changes to `create_app` (guards, middleware order) rather than overwriting them. Add `/api/jobs/{job_id}` to `READ_ONLY_GET_ROUTES`. Run `make gen-api` from the repo root and commit the regenerated web files.
 
 - [ ] **Step 5: Run to verify pass.** Run: `uv run pytest -q` from `apps/api`, then `make gen-api` and `git diff --stat apps/web` shows only `openapi.json` and `schema.d.ts`. Expected: PASS.
 
@@ -644,8 +663,12 @@ Each task starts with `git fetch origin && git switch -c p0c/NN-<slug> origin/ma
   @dataclass(frozen=True, slots=True)
   class NewRecording: attempt_id: str; stored: StoredRecording
 
+  @dataclass(frozen=True, slots=True)
+  class AttemptInfo: id: str; session_id: str; step: str; reference_text: str | None; scripted: bool
+
   class AttemptReader(Protocol):
       def exists(self, attempt_id: str) -> bool
+      def get(self, attempt_id: str) -> AttemptInfo | None   # 0d's analysis steps read step, reference_text and scripted
 
   class RecordingStore(Protocol):
       def add_and_enqueue(self, new: NewRecording) -> tuple[Recording, Job]   # recordings row + queued ANALYZE job in ONE transaction; raises RecordingExists if the attempt already has one
@@ -661,8 +684,9 @@ Each task starts with `git fetch origin && git switch -c p0c/NN-<slug> origin/ma
   - `test_second_upload_for_attempt_is_rejected_and_first_file_survives`: `RecordingExists`; the new file is deleted; the first remains.
   - `test_database_failure_deletes_stored_file`: a `RecordingStore` raising `OperationalError` leaves `FakeAudioStore.files` empty.
 
-- [ ] **Step 2: Write the failing API tests** (`test_recording_api.py`, real `FilesystemAudioStore` via `create_app(Settings(data_dir=tmp_path), step_registry=fake_registry)`; the attempt comes from `AttemptRepository.create_attempt`):
-  - `test_upload_happy_path_end_to_end`: `POST` a 48 kHz WAV with `Content-Type: audio/wav` returns 202; the file exists at `tmp_path/<path>` with a generated name and is 16 kHz; the response `job_id` polls to `done` through `GET /api/jobs/{id}` with the fake steps (this is the Phase 0c done-when through the API).
+- [ ] **Step 2: Write the failing API tests** (`test_recording_api.py`, real `FilesystemAudioStore` via `loopback_client(create_app(make_settings(data_dir=tmp_path), step_registry=fake_registry, start_runner=False))`; the attempt comes from `AttemptRepository.create_attempt`):
+  - `test_upload_happy_path_end_to_end`: `POST` a 48 kHz WAV with `Content-Type: audio/wav` returns 202; the file exists at `tmp_path/<path>` with a generated name and is 16 kHz; after `runner.run_pending()` the response `job_id` reads `done` through `GET /api/jobs/{id}` with the fake steps (this is the Phase 0c done-when through the API).
+  - `test_attempt_reader_get_returns_step_and_reference`: `AttemptRepository.get` returns the `AttemptInfo` of a created attempt, `None` for an unknown id.
   - `test_rejects_non_wav_content_types`: `multipart/form-data`, `application/octet-stream` and a missing header give 415 and write nothing.
   - `test_unknown_attempt_is_404_and_body_is_not_read`.
   - `test_oversize_content_length_is_413_up_front`: a header of 10 MB + 1 with a tiny body gives 413 and no file in `recordings/.incoming`.
@@ -695,30 +719,39 @@ Each task starts with `git fetch origin && git switch -c p0c/NN-<slug> origin/ma
 - Test: `apps/api/tests/test_cli_upload.py`
 
 **Interfaces:**
-- **Consumes:** Task 8 and 9 endpoints; Phase 0b `Settings.host`/`Settings.port` (assumed); `AttemptRepository.create_attempt` (Task 9); the existing `main(argv) -> int`.
-- **Produces** (`nosolear.cli_client`):
+- **Consumes:** Task 8 and 9 endpoints; 0b's `Settings.host`/`Settings.port`; `AttemptRepository.create_attempt` (Task 9); the existing `main(argv) -> int`.
+- **Produces** (`nosolear.cli_client`, the one HTTP client every later CLI command uses):
   ```python
-  def upload_wav(client: httpx.Client, attempt_id: str, path: Path) -> UploadAcceptedOut-like dict   # POST audio/wav, streaming the file; raises CliError(message) on non-202 (message from the ErrorOut body only)
-  def get_job(client: httpx.Client, job_id: str) -> dict
-  def resume_job(client: httpx.Client, job_id: str) -> dict
-  def follow_job(client: httpx.Client, job_id: str, *, out: TextIO, sleep: Callable[[float], None] = time.sleep, timeout_s: float = 600.0, interval_s: float = 0.5) -> int   # prints one line per change; returns 0 done, 1 failed, 3 timed out
-  class CliError(Exception)
+  class CliError(Exception)          # message comes from an ErrorOut body only, or a generic sentence; never response text
+  class CliTimeout(CliError)
+
+  class ApiClient:
+      def __init__(self, http: httpx.Client) -> None     # tests pass loopback_client(app), which is an httpx.Client
+      def get_json(self, path: str) -> Any               # non-2xx -> CliError
+      def post_json(self, path: str, body: Mapping[str, object] | None = None) -> Any
+      def upload_wav(self, attempt_id: str, path: Path) -> str     # POST audio/wav, streaming the file; returns the job id
+      def get_job(self, job_id: str) -> dict[str, Any]
+      def resume_job(self, job_id: str) -> dict[str, Any]
+      def follow_job(self, job_id: str, *, out: TextIO | None = None, sleep: Callable[[float], None] = time.sleep,
+                     timeout_s: float = 600.0, interval_s: float = 0.5) -> dict[str, Any]
+          # blocks until done or failed and returns the final JobOut body; prints one line per change to `out` when given;
+          # raises CliTimeout
   ```
+  `cli.main(argv: Sequence[str] | None = None, *, client: ApiClient | None = None) -> int`: commands that talk to the API use `client`, or build `ApiClient(httpx.Client(base_url=...))` when it is `None`. 0e and Phase 1 add their commands through the same hook.
 - **Produces** (CLI): `nosolear upload FILE (--attempt-id ID | --new-attempt) [--no-follow] [--base-url URL]` and `nosolear job JOB_ID [--resume] [--follow]`. Default base URL `http://{settings.host}:{settings.port}`. `--new-attempt` creates a session and attempt directly in the database and, like `dev-seed`, refuses the real `data/` directory (exit 2) so ad-hoc attempts never reach a real profile. Exit codes: 0 job done, 1 job failed, 2 usage or upload error, 3 timeout. Output lines look like `score        running  20%` and a final `job <id> done` or `job <id> failed: coach: provider_unavailable (The provider is unavailable.)`. Only job-status fields and `ErrorOut` messages are printed; the CLI sends no `Origin` header.
 
-- [ ] **Step 1: Write the failing tests** (`test_cli_upload.py`; the HTTP client is an `httpx.Client(transport=httpx.MockTransport(...))` for unit tests, and one end-to-end test uses `fastapi.testclient.TestClient` as the client, which is an `httpx.Client`):
-  - `test_upload_wav_posts_audio_wav_body`: MockTransport asserts method, path `/api/attempts/<id>/recording`, `Content-Type: audio/wav`, and that the body equals the file bytes.
+- [ ] **Step 1: Write the failing tests** (`test_cli_upload.py`; the client is `ApiClient(httpx.Client(transport=httpx.MockTransport(...)))` for unit tests, and the end-to-end test passes `ApiClient(loopback_client(app))` to `main`):
+  - `test_upload_wav_posts_audio_wav_body`: MockTransport asserts method, path `/api/attempts/<id>/recording`, `Content-Type: audio/wav`, and that the body equals the file bytes; the return value is the job id.
   - `test_upload_error_surfaces_error_body_only`: a 413 `{"code":"invalid_audio","message":"..."}` becomes `CliError` with that message; a 500 with arbitrary text becomes a generic message without the response text.
-  - `test_follow_job_prints_progress_and_returns_zero_when_done`: scripted responses queued, running 20%, running 60%, done; output has one line per distinct change, no duplicates; returns 0.
-  - `test_follow_job_returns_one_and_prints_safe_errors_when_failed`.
-  - `test_follow_job_times_out_with_exit_3` (fake `sleep` advancing a fake clock).
+  - `test_follow_job_prints_progress_and_returns_the_final_body`: scripted responses queued, running 20%, running 60%, done; output has one line per distinct change, no duplicates; the returned body has `status == "done"`.
+  - `test_main_exit_codes`: `main(["job", ID, "--follow"], client=...)` exits 0 for done, 1 for failed (printing the safe step errors), 3 on `CliTimeout` (fake `sleep` advancing a fake clock).
   - `test_main_upload_refuses_new_attempt_on_real_data_dir` (exit 2, message on stderr), and `test_main_upload_missing_file_exits_2`.
-  - `test_cli_upload_end_to_end_with_fake_steps`: build `create_app(Settings(data_dir=tmp_path), step_registry=fakes)` in a `TestClient`, call the same `upload_wav` + `follow_job` the command uses with that client and a synthesized WAV file in `tmp_path`; the output ends with `done` and exit 0 (Phase 0c done-when through the CLI).
+  - `test_cli_upload_end_to_end_with_fake_steps`: build `create_app(make_settings(data_dir=tmp_path), step_registry=fakes)` (runner started), and `main(["upload", str(wav), "--attempt-id", id], client=ApiClient(loopback_client(app)))` with a synthesized WAV in `tmp_path` prints a final `done` line and exits 0 (Phase 0c done-when through the CLI).
   - `test_job_command_resume_posts_resume`.
 
 - [ ] **Step 2: Run to verify failure.** Run: `uv run pytest tests/test_cli_upload.py -q`. Expected: FAIL.
 
-- [ ] **Step 3: Implement `cli_client.py` and the two subcommands.** Stream the file with `httpx.Client.post(url, content=<file iterator>, headers={"Content-Type": "audio/wav"})` so a 10 MB file is not copied twice; set `Content-Length` from `Path.stat().st_size`.
+- [ ] **Step 3: Implement `cli_client.py`, the `client` hook on `main` and the two subcommands.** Stream the file with `httpx.Client.post(url, content=<file iterator>, headers={"Content-Type": "audio/wav"})` so a 10 MB file is not copied twice; set `Content-Length` from `Path.stat().st_size`.
 
 - [ ] **Step 4: Run to verify pass.** Run: `uv run pytest -q`. Expected: PASS, and `uv lock --check` is clean.
 
@@ -751,31 +784,21 @@ Each task starts with `git fetch origin && git switch -c p0c/NN-<slug> origin/ma
 ## Self-review notes
 
 - **Spec coverage:** §13 Phase 0c items map to Tasks 1 to 2 (AudioStore, upload checks), 3 and 6 to 8 (jobs, progress, restart, `GET /api/jobs/{id}`), 4 to 5 (ledger, caps, metered decorator, composition order), 9 (endpoint), 10 (CLI). §8.1 resume semantics are in Tasks 6 and 7; §11 ledger rules in Task 4; §15 upload and traversal rows in Tasks 1, 2 and 9. §7 tables `recordings`, `jobs`, `usage_ledger`, `analyses` are Task 3. The `provider_capabilities`, `tts_cache` tables are 0d; `scoring_configs` and calibration tables 0e.
-- **Decisions the spec left open, made here:** ledger quantities are integers (audio seconds rounded up) so cap arithmetic is exact; a worker count of 1 (F0 allows one concurrent request); step dependencies (`needs`, `uses`) and the analyze plan live in `domain/jobs.py`; unregistered steps are SKIPPED `not_available` so the pipeline runs end to end before 0d; `--new-attempt` is a development convenience restricted to non-default data dirs.
+- **Decisions the spec left open, made here:** ledger quantities are integers (audio seconds rounded up) so cap arithmetic is exact; the worker count is `NOSOLEAR_JOB_WORKERS` (default 1, owner decision; F0 allows one concurrent request); step dependencies (`needs`, `uses`) and the per-kind plans live in `domain/jobs.py`; unregistered steps are SKIPPED `not_available` so the pipeline runs end to end before 0d; `--new-attempt` is a development convenience restricted to non-default data dirs; `create_app(start_runner=False)` plus `run_pending()` is the synchronous test hook every later phase uses.
 
 ## Produces for later phases
 
-- `nosolear.domain.errors`: `NosolearError(code, safe_message)`, `InvalidAudio(reason)`, `CapExceeded`, `ProviderUnavailable`, `CapabilityMissing`.
-- `nosolear.ports.audio`: `AudioStore.begin_upload() / read(path) -> bytes / resolve(path) -> Path / delete(path)`; `Recording`, `StoredRecording`; `RecordingStore.for_attempt(attempt_id) -> Recording | None` (steps in 0d/0e find the audio with this, then `AudioStore.resolve`). Audio on disk is always 16 kHz mono 16-bit.
-- `nosolear.domain.budget`: `Provider` (`azure`, `anthropic`), `Unit` (`audio_seconds`, `tts_chars`, `tokens`), `Caps`, `ceil_seconds`. `nosolear.ports.ledger.UsageLedger.reserve / record / release / settle_open_reservations / usage`.
-- `nosolear.budget.meter`: `Meter(ledger, job_id=callable).call(provider, unit, estimate, fn, actual)`, `metered_method(meter, provider=, unit=, estimate=, actual=)`, `RequestNotSent` (raw adapters raise it for failures before the request leaves the machine). `nosolear.budget.compose`: `PortWrapper` (class attribute `layer`, attribute `inner`), `compose_paid_port(raw, metered=, retry=, cache=None)`, `layers_of(port)`. `api/deps.py`: `build_paid_ports(settings, *, ledger, clock) -> dict[str, object]` where 0d adds `pronunciation_scorer`, `transcriber_azure`, `synthesizer`, `coach`; `test_deps_composition.py` and `RAW_ADAPTER_MODULES` in `test_no_unmetered_sdk_imports.py` must be extended by 0d.
-- Jobs: `JobQueue.enqueue(JobKind.ANALYZE | JobKind.RESCORE, attempt_id | None)` (0e enqueues `RESCORE` with `None`), `resume`; `JOB_PLANS` (analyze: `score, transcribe, probe, coach, extract`; rescore: `extract`; `coach` needs `transcribe`; `extract` uses all analysis steps).
-- Step interface (`nosolear.app.steps`): `Step.name`, `Step.applies(ctx) -> bool`, `Step.run(ctx) -> None`, `StepContext(job_id, kind, attempt_id)`, `StepRegistry.register(kind, step)`; `Services.registry` is filled in `build_services(settings, engine, registry=...)` or by `create_app(step_registry=...)`. Steps must be idempotent, look up their own analysis first, and write results with `AnalysisStore.put(NewAnalysis(...))`.
-- `nosolear.ports.analyses.AnalysisStore.get / put / for_attempt` over the `analyses` table (control rows keyed by `tts_hash` and `calibration_run_id` are supported by the schema; 0e adds the port methods).
-- API: `POST /api/attempts/{attempt_id}/recording`, `GET /api/jobs/{job_id}`, `POST /api/jobs/{job_id}/resume`. Test fakes in `tests/fakes.py`: `FakeAudioStore`, `FakeUsageLedger`, `FakeJobQueue`, `FakeAnalysisStore`, `FakePaidPort`, `FakeStep`, `make_wav`, `raw_wav`. Migration `0004_recordings_jobs_ledger`.
-- CLI: `nosolear upload`, `nosolear job`; `AttemptRepository.create_attempt(...)`.
+- `nosolear.domain.errors`: `NosolearError(message=None)` (`code`, `safe_message`, `str(e) == e.safe_message`), `InvalidAudio(reason)`, `CapExceeded`, `ProviderUnavailable`, `RequestNotSent(ProviderUnavailable)`, `CapabilityMissing`. 0d adds `RetryableProviderError` and `MalformedProviderResponse` here.
+- `nosolear.ports.audio`: `AudioStore.begin_upload() / read(path) -> bytes / resolve(path) -> Path / delete(path)`; `Recording`, `StoredRecording`; `RecordingStore.for_attempt(attempt_id) -> Recording | None`; `AttemptReader.exists / get(attempt_id) -> AttemptInfo | None` (steps in 0d/0e find the audio with `for_attempt`, then `AudioStore.resolve`). Audio on disk is always 16 kHz mono 16-bit.
+- `nosolear.domain.budget`: `Provider` (`azure`, `anthropic`: the provider ids every phase uses), `Unit` (`audio_seconds`, `tts_chars`, `tokens`), `Caps`, `ceil_seconds`, `Usage`. `nosolear.ports.ledger.UsageLedger.reserve / record / release / settle_open_reservations / usage`. `api/deps.py`: `build_ledger(settings, engine, *, clock=None)`, `read_usage(settings)`.
+- `nosolear.budget.meter`: `Meter(ledger, job_id=current_job_id).call(provider, unit, estimate, fn, actual)`, `metered_method(meter, provider=, unit=, estimate=, actual=)`. `nosolear.budget.compose`: `PortWrapper` (class attribute `layer`, attribute `inner`; raw adapters declare `layer = "raw"`), `compose_paid_port(raw, metered=, retry=, cache=None)`, `layers_of(port)`. `build_paid_ports` is replaced by 0d's `build_providers(...).paid_ports()`; `test_deps_composition.py` and `RAW_ADAPTER_MODULES` in `test_no_unmetered_sdk_imports.py` are extended by 0d.
+- Jobs: `JobKind` (`analyze`, `rescore`; 0e adds `calibrate` with its plan), `JobQueue.enqueue(kind, attempt_id | None) -> Job`, `resume`; `JOB_PLANS` (analyze: `score, transcribe, probe, coach, extract`; rescore: `extract`; `coach` needs `transcribe`; `extract` uses all analysis steps).
+- Step interface (`nosolear.app.steps`): `Step.name`, `Step.applies(ctx) -> bool`, `Step.run(ctx) -> None`, `StepContext(job_id, kind, attempt_id, progress)`, `StepRegistry.register(kind, step)`, `current_job_id()`. Steps must be idempotent, look up their own analysis first, and write results with `AnalysisStore.put(NewAnalysis(...))`.
+- `nosolear.ports.analyses.AnalysisStore.get / put / for_attempt` over the `analyses` table; `NewAnalysis.adapter_version` is an int. Control rows keyed by `tts_hash` and `calibration_run_id` are supported by the schema; 0e adds their port methods and foreign keys.
+- API: `POST /api/attempts/{attempt_id}/recording`, `GET /api/jobs/{job_id}`, `POST /api/jobs/{job_id}/resume`, `ErrorOut{code, message}` for every typed error (later phases use the same body); `create_app(settings, *, step_registry=None, start_runner=True, ledger=None, clock=None)`; `Services`, `build_services`, `get_services`, `get_clock`; `ThreadPoolJobRunner.run_pending()`.
+- Test helpers: `tests/fakes.py` (`FakeAudioStore`, `FakeUsageLedger`, `FakeJobQueue`, `FakeAnalysisStore`, `FakePaidPort`, `FakeStep`) and `tests/wavs.py` (`make_wav`, `raw_wav`). Migration `0004_recordings_jobs_ledger`.
+- CLI: `nosolear.cli_client.ApiClient` (`get_json`, `post_json`, `upload_wav -> job id`, `get_job`, `resume_job`, `follow_job -> final body`), `CliError`, `CliTimeout`; `cli.main(argv, *, client=None)`; `nosolear upload`, `nosolear job`; `AttemptRepository.create_attempt(...)` (dev convenience; 0e and Phase 1 create their own sessions and attempts).
 
 ## Cross-phase assumptions
 
-- Phase 0b: `Settings` has `host: str`, `port: int`, `cap_azure_audio_hours: float`, `cap_azure_tts_chars: int`, `cap_claude_tokens: int` (names from the §14 env vars minus the `NOSOLEAR_` prefix, defaults 4.5, 450000, 100000).
-- Phase 0b: the migration head before 0c is `0003` (profile `pack_id` columns); Task 3 uses whatever the head is after rebasing.
-- Phase 0b: `nosolear serve` exists and `create_app` gains guard middleware; Task 8 merges with it. 0b's startup also tightens the data dir to 0700; `FilesystemAudioStore` creates only `recordings/` (0700) and `.incoming/`.
-- Phase 0b: the `live` pytest marker and `make test-live` exist (0c adds no live tests); the logging scrub filter is installed at startup (0c logs exception type names only).
-- Phase 0b: `nosolear doctor` readiness takes usage from `UsageLedger.usage(provider, unit)` (0b may stub a zero-usage function until this lands).
-- Phase 0d: provides the real raw adapters, estimators, retry wrapper subclasses of `PortWrapper`, and registers `score`, `transcribe`, `probe`, `coach` steps in the `StepRegistry`.
-- Phase 0e: registers the `extract` step (both kinds), adds calibration-control methods to `AnalysisStore`, and enqueues `RESCORE` jobs.
-- Phase 1/0e: create sessions and attempts (only `AttemptRepository.create_attempt` exists in 0c, as a dev convenience) and decide when recordings upload.
-
-## Questions for the owner
-
-- Is a single worker thread acceptable (Azure F0 allows one concurrent request), or should the pool default to 2 for local transcribers and fakes?
+None open: 0b's settings tree (including `job_workers`), `make_settings`, `loopback_client`, readiness and `make test-live` are named as 0b produces them.

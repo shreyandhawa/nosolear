@@ -4,7 +4,7 @@
 
 **Goal:** Turn stored provider results into scored observations under versioned scoring configs, calibrate the detectors on the user's own voice, re-score history without provider calls, and run the baseline through to a report. Together these let a first run work end to end through the API and the CLI.
 
-**Architecture:** Every decision is a pure domain function: the scoring configs and their `v0` rules, extraction (raw results + item + scoring config + pack → observations), the calibration rule, skill scores, the baseline report and the onboarding step. One migration adds the §7 tables and columns that 0e owns. Use cases plug into 0c's job registry: an `extract` step on analyze jobs, plus `calibrate` and `rescore` job kinds. They read 0d's decoded provider results. Routes and CLI commands map HTTP and the terminal onto the use cases.
+**Architecture:** Every decision is a pure domain function: the scoring configs and their `v0` rules, extraction (raw results + item + scoring config + pack → observations), the calibration rule, skill scores, the baseline report and the onboarding step. One migration adds the §7 tables and columns that 0e owns. Use cases plug into 0c's job registry: the `extract` step on analyze and rescore jobs, plus a new `calibrate` job kind. They re-parse stored provider results with 0d's pure parsers (`domain/results`), so re-scoring never calls a provider. Routes and CLI commands map HTTP and the terminal onto the use cases.
 
 **Tech Stack:** Python 3.14, FastAPI 0.162.4, SQLAlchemy 2.1.8, Alembic 1.20.1, pytest 9.2.0, Hypothesis 6.170.15, httpx (made a runtime dependency by 0c). **0e adds no dependencies.**
 
@@ -12,24 +12,13 @@
 
 ## Global Constraints
 
-- **Python and tooling:**
-  - Python 3.14 with uv and `uv.lock`.
-  - Any new dependency gets an exact pin (`==`) and a lockfile update. This phase needs none.
-  - Heavy local-model dependencies go only in the `local` and `apple` extras, and adapters import them lazily.
-- **Commands:**
-  - From `apps/api`: `uv run pytest -q`, `uv run ruff check`, `uv run ruff format --check`, `uv run pyright` (strict for `src`).
-  - From the repo root: `make test`, `make lint`, `make gen-api`.
+- **Python and tooling:** Python 3.14 with uv and `uv.lock`; any new dependency gets an exact pin (`==`) and a lockfile update (this phase needs none); heavy local-model dependencies stay in the `local` and `apple` extras, imported lazily.
+- **Commands:** from `apps/api`: `uv run pytest -q`, `uv run ruff check`, `uv run ruff format --check`, `uv run pyright` (strict for `src`); from the repo root: `make test`, `make lint`, `make gen-api`.
 - **TDD for every change:** write the failing test, run it, write the minimal code, run it again, commit.
-- **Layering:**
-  - `domain` has no I/O and is deterministic given its inputs.
-  - Only `api/deps.py` (and `cli.py` through it) chooses adapters and persistence.
-  - Every port has a fake for tests, in `tests/`, following the style of `tests/factories.py`.
-- **Property tests:** Hypothesis for domain logic, with the existing profiles: `default` (100 examples) and `heavy` (1000), chosen via `HYPOTHESIS_PROFILE`.
-- **Live tests:** tests that call real services are marked `@pytest.mark.live`, are excluded by default and run through `make test-live`. CI never has keys.
-- **No real voices or data in the repo:**
-  - Never commit audio or anything under `data/`.
-  - Test WAVs are generated at test time into `tmp_path` with the stdlib `wave` module, and contain synthetic noise, never a voice.
-  - `scripts/check-no-personal-data.sh` runs in CI and in pre-commit.
+- **Layering:** `domain` has no I/O and is deterministic given its inputs; only `api/deps.py` (and `cli.py` through it) chooses adapters and persistence; every port has a fake in `tests/`, in the style of `tests/factories.py`.
+- **Property tests:** Hypothesis for domain logic, profiles `default` (100 examples) and `heavy` (1000) via `HYPOTHESIS_PROFILE`.
+- **Live tests** are marked `@pytest.mark.live`, excluded by default, run through `make test-live`. CI never has keys.
+- **No real voices or data in the repo:** never commit audio or anything under `data/`; test WAVs are generated at test time into `tmp_path` and contain synthetic noise, never a voice; `scripts/check-no-personal-data.sh` runs in CI and in pre-commit.
 - **`apps/web`:** the only permitted change is running `make gen-api` after an OpenAPI change and committing the regenerated files.
 - **Security (the owner's rules, verbatim):** Keys come only from env or .env. They never appear in logs, API responses, error messages, OpenAPI examples or fixtures. Bind to 127.0.0.1 by default, restrict CORS to the app's origin, and never expose the API unauthenticated. Uploads: cap size and duration, validate the WAV format, generate filenames server-side, write only under the data directory. Treat transcripts and coach output as untrusted. Use structured outputs with the taxonomy enum, and never let model output reach a file path, shell command or SQL string. Check the usage ledger before every paid or quota-limited call, so a bug can't burn a user's quota. Pin and lock dependencies, pin model downloads to a revision, and add a dependency audit to CI. No telemetry. Document exactly what is sent to which provider.
 - **Git:**
@@ -38,7 +27,10 @@
   - Commit messages are imperative sentences, with **no Co-Authored-By trailer and no "Generated with Claude Code" footer**.
   - Never push to `main`.
   - Squash-merge only when CI is green: `gh pr merge --squash`, **without `--delete-branch`**.
+  - Delivery commands, at the end of each task: `git push -u origin <branch> && gh pr create --fill`, then `gh pr checks --watch && gh pr merge --squash`. Each task starts with `git fetch origin && git switch -c <branch> origin/main`.
 - **HANDOFF.md:** every task's PR updates `docs/superpowers/HANDOFF.md` with what is done, in progress and next, and the list of adapters still unverified against the live service.
+- **Built on 0b–0d:** tests build settings with `make_settings(...)` and API clients with `loopback_client(app)`; every new `GET /api/...` route is added to `READ_ONLY_GET_ROUTES` in `tests/api/test_guards.py`; typed errors are 0c's `domain/errors.py` and every error body is 0c's `ErrorOut{code, message}`; CLI commands go through 0c's `ApiClient` and `cli.main(argv, *, client=None)`.
+- **Migration:** `0007_scoring_calibration` (`revision = "0007"`, `down_revision = "0006"`, the head 0d leaves).
 - **Scoring values (§6.8; this phase decides them):**
   - `V0_THRESHOLDS`: `nbest_margin=30.0`, `low_accuracy=40.0`, `slow_start_ms=3000`, `long_pause_ms=2000`.
   - `CALIBRATED_THRESHOLDS`: `nbest_margin=15.0`, `low_accuracy=60.0`, `slow_start_ms=3000`, `long_pause_ms=2000`.
@@ -82,7 +74,6 @@ These are the inputs and failure modes most likely to bite a user that no task's
 
 ## Not in This Plan
 
-- **`provisional` on `GET /api/profile`.** Adding a required field to `ProfileEntryOut` breaks the web test fixture, and `apps/web` can't change before Phase 2. The baseline report carries the flag instead.
 - **Prosody calibration items, and calibration items for `sound.low.*` and `sound.del.final_cluster`.** These keys stay provisional, or drilled but not scored, until a later content PR adds items for them.
 - **The daily plan and feedback (Phase 1), the web UI (Phase 2), word stress (Phase 3) and the weekly re-test (Phase 5).**
 
@@ -90,14 +81,14 @@ These are the inputs and failure modes most likely to bite a user that no task's
 
 ```
 content/
-  calibration/items.json                    shared calibration set (converted from 0b's port, extended to ≥5 words per key)
+  calibration/items.toml                    0b's port of the spike items, extended here to 5 words per key
   baseline/protocol.json                    baseline protocol v1: passage A, word list, free talk, rapid questions, articulate
 apps/api/src/nosolear/
   domain/attempts.py                        SessionKind, AttemptStep (adds `calibration`)
   domain/scoring.py                         Thresholds, rules, ScoringConfig, V0_CONFIG, rules JSON, current_observations
   domain/observations.py                    + scoring_config_id, provisional
   domain/profile.py                         + ProfileEntry.provisional
-  domain/extraction/phones.py               Azure en-US vowel set, s-cluster and final-cluster tests
+  domain/extraction/phones.py               s-cluster and final-cluster tests over 0d's AZURE_VOWELS; probe_words
   domain/extraction/opportunities.py        Opportunity, tracked_keys
   domain/extraction/sounds.py               azure_pa and phone_probe opportunities
   domain/extraction/fluency.py              sentences, fluency opportunities
@@ -110,9 +101,9 @@ apps/api/src/nosolear/
   domain/onboarding.py                      next onboarding step
   ports/scoring_stores.py                   ScoringConfigReader/Writer, ExtractionWriter, ExtractionInputs
   ports/content_store.py, ports/calibration_store.py, ports/baseline_store.py
-  adapters/content_files.py                 reads content/ JSON into domain types
+  adapters/content_files.py (0b's)          + load_calibration_set, load_baseline_protocol, load_seed_content
   persistence/models.py                     + 0e tables and columns
-  persistence/migrations/versions/0006_scoring_calibration.py
+  persistence/migrations/versions/0007_scoring_calibration.py
   persistence/scoring_repository.py         ScoringConfigRepository, ExtractionRepository, ExtractionInputsRepository
   persistence/content_repository.py, persistence/calibration_repository.py, persistence/baseline_repository.py
   app/extract_attempt.py, app/rescore.py, app/scoring_steps.py
@@ -125,8 +116,8 @@ apps/api/src/nosolear/
   first_run_cli.py                          rescore, calibrate, baseline, onboarding, stand-in commands
 apps/api/tests/
   strategies.py                             Hypothesis strategies for configs and provider results
-  oracle_voice.py                           scripted fakes: synthesizer, scorer, transcriber
-  harness.py                                app + fakes + job drain, for API, CLI and e2e tests
+  oracle_voice.py                           scripted raw ports: speech synthesizer, scorer, transcriber, probe
+  harness.py                                app (0d's RawPorts, start_runner=False) + run_pending drain, for API, CLI and e2e tests
   e2e/test_first_run.py
   live/test_first_run_live.py
 ```
@@ -166,7 +157,7 @@ apps/api/tests/
 - **Produces, elsewhere:**
   - `Observation` gains `scoring_config_id: str = V0_CONFIG_ID` and `provisional: bool = False`, after `evidence`.
   - `make_observation(..., scoring_config_id: str = V0_CONFIG_ID, provisional: bool = False)`.
-  - `ProfileEntry.provisional: bool`, which `build_profile` sets.
+  - `ProfileEntry.provisional: bool = False`, which `build_profile` sets (Phase 1's selection reads it).
 
 **`rule_for`, checked in order:**
 1. If the detector is not in `definition.detectors`, return `None`.
@@ -308,15 +299,7 @@ Follow the Interfaces block and the rules above. `build_profile` sets `provision
 Run: `uv run pytest -q && uv run pyright && uv run ruff check`
 Expected: all pass (0a's tests unchanged, because both new fields have defaults).
 
-- [ ] **Step 5: Commit, open the PR, merge when green**
-
-```bash
-git fetch origin && git switch -c p0e/01-scoring-configs origin/main
-git add apps/api docs/superpowers/HANDOFF.md
-git commit -m "Add scoring configs with v0 rules and provisional observations"
-git push -u origin p0e/01-scoring-configs && gh pr create --fill
-gh pr checks --watch && gh pr merge --squash
-```
+- [ ] **Step 5: Deliver.** Branch `p0e/01-scoring-configs`; `git add apps/api docs/superpowers/HANDOFF.md`; commit message "Add scoring configs with v0 rules and provisional observations"; then the delivery commands in Global Constraints.
 
 ---
 
@@ -325,7 +308,7 @@ gh pr checks --watch && gh pr merge --squash
 **Files:**
 - Create:
   - `apps/api/src/nosolear/domain/attempts.py`
-  - `apps/api/src/nosolear/persistence/migrations/versions/0006_scoring_calibration.py`
+  - `apps/api/src/nosolear/persistence/migrations/versions/0007_scoring_calibration.py`
   - `apps/api/src/nosolear/persistence/scoring_repository.py`
   - `apps/api/src/nosolear/ports/scoring_stores.py`
 - Modify:
@@ -333,13 +316,15 @@ gh pr checks --watch && gh pr merge --squash
   - `persistence/repositories.py` (`ObservationRepository`, `ProfileRepository`)
   - `ports/stores.py` (`ObservationReader.current`)
   - `app/rebuild_profile.py` (reads `current()`)
+  - `domain/jobs.py` (0c's): `JobKind.CALIBRATE = "calibrate"` and its plan (Task 8 registers the steps)
+  - `api/schemas.py`, `api/profile_routes.py`: `ProfileEntryOut.provisional: bool = False`; regenerated `apps/web/src/shared/api/*` (`make gen-api`)
   - `docs/ARCHITECTURE.md`: §6.8 `v0` values; §7 the `extractions` table and the `calibrate` job kind; §18 `v0` decided.
-- Test: `tests/persistence/test_schema.py`, `tests/persistence/test_scoring_repository.py`, `tests/persistence/test_repositories.py`, `tests/app/test_rebuild_profile.py`
+- Test: `tests/persistence/test_schema.py`, `tests/persistence/test_scoring_repository.py`, `tests/persistence/test_repositories.py`, `tests/app/test_rebuild_profile.py`, `tests/api/test_profile_api.py`
 
 **Interfaces:**
 - **Consumes:**
   - Task 1: `ScoringConfig`, `V0_CONFIG`, `rules_to_json`, `rules_from_json`, `canonical_json` and `current_observations`.
-  - 0c's tables `recordings`, `jobs` and `analyses`, and 0d's `tts_cache` (see Cross-phase assumptions).
+  - 0c's tables `recordings`, `jobs` and `analyses` (whose control-row columns and checks already exist), 0c's `JobKind` and `JOB_PLANS`, and 0d's `tts_cache` (`hash` is its primary key).
 - **Produces:**
   - `domain/attempts.py`:
     - `class SessionKind(StrEnum)`: baseline, daily, retest, conversation and `CALIBRATION = "calibration"`.
@@ -370,11 +355,9 @@ gh pr checks --watch && gh pr merge --squash
     - **`profile_entries`:** adds `provisional BOOLEAN NOT NULL` with server default false.
     - **`sessions.kind`** CHECK adds `calibration`.
     - **`attempts`:** the `step` CHECK adds `calibration`, plus a new `content_item_id NULL FK content_items`.
-    - **`analyses`:**
-      - `attempt_id` becomes nullable; adds `tts_hash NULL FK tts_cache.hash` and `calibration_run_id NULL FK`.
-      - CHECK `(attempt_id IS NULL) <> (tts_hash IS NULL)` and `(tts_hash IS NULL) = (calibration_run_id IS NULL)`.
-      - Unique `(tts_hash, kind, calibration_run_id)`.
-    - **`jobs.kind`** CHECK adds `calibrate`.
+    - **`analyses`:** 0c already made `attempt_id` nullable and added `tts_hash`, `calibration_run_id`, the one-key-shape CHECK and the partial unique indexes; 0e adds only the foreign keys `tts_hash → tts_cache.hash` and `calibration_run_id → calibration_runs.id`.
+    - **`jobs.kind`** CHECK adds `calibrate`, from `JobKind`. `JOB_PLANS[JobKind.CALIBRATE] = (StepSpec("controls"), StepSpec("evaluate", needs=("controls",)), StepSpec("queue_rescore", needs=("evaluate",)))`; 0c's `JobOut.kind` gains the value.
+  - **`GET /api/profile`:** `ProfileEntryOut` gains `provisional: bool = False`. The default keeps the field optional in the generated TypeScript, so the existing web fixtures still compile without editing `apps/web`; if `tsc` fails anyway, stop and report instead of editing `apps/web`.
   - **`ports/scoring_stores.py`:**
     - `ScoringConfigReader`: `newest() -> ScoringConfig` and `get(config_id: str) -> ScoringConfig`.
     - `ScoringConfigWriter`: `add(config: ScoringConfig, *, capabilities: Mapping[str, object], created_at: datetime) -> None`.
@@ -391,7 +374,7 @@ gh pr checks --watch && gh pr merge --squash
     - Saves `provisional` in `profile_entries` and in every snapshot entry; `latest()` restores it.
     - `rebuild_profile` reads `observations.current()`.
 
-**Migration `0006`** (`down_revision` = the head left by 0d, assumed `"0005"`; if the head differs, use the next free number and that head). Steps, in order:
+**Migration `0007`** (`down_revision = "0006"`, 0d's `provider_capabilities`). Steps, in order:
 1. `PRAGMA defer_foreign_keys=ON`.
 2. Create `content_items`, `calibration_runs`, `scoring_configs`, `calibration_trials`, `skill_scores` and `extractions`. SQLite checks the mutual foreign keys between runs and configs on writes, not on CREATE.
 3. Insert the `v0` row:
@@ -421,12 +404,12 @@ def test_new_enum_checks(conn, table, column, good, bad): ...   # insert with go
 
 def test_trial_needs_exactly_one_subject(conn): ...        # both or neither of attempt_id/tts_hash -> IntegrityError
 def test_error_trial_needs_an_attempt(conn): ...           # kind='error' with tts_hash only -> IntegrityError
-def test_analysis_needs_exactly_one_subject(conn): ...     # control row without calibration_run_id -> IntegrityError
+def test_analysis_control_row_foreign_keys(conn): ...     # control row with an unknown tts_hash or run id -> IntegrityError
 def test_skill_score_range(conn): ...                       # 100.5 -> IntegrityError
 
-def test_migration_0006_backfills_existing_observations(tmp_path):
+def test_migration_0007_backfills_existing_observations(tmp_path):
     engine = create_engine_for(f"sqlite:///{tmp_path / 'm.sqlite'}")
-    upgrade_to_head(engine, revision=PREVIOUS_HEAD)          # "0005"
+    upgrade_to_head(engine, revision=PREVIOUS_HEAD)          # "0006"
     insert_session_attempt_and_observations(engine, keys=["sound.sub.v.w", "fluency.filler"], attempt_id="a")
     upgrade_to_head(engine)
     rows = query(engine, "SELECT error_key, scoring_config_id, provisional FROM observations ORDER BY error_key")
@@ -439,7 +422,7 @@ def test_migration_0006_backfills_existing_observations(tmp_path):
 def test_v0_is_oldest_and_newest_until_calibrated(db_engine):
     repo = ScoringConfigRepository(db_engine, TAX)
     assert repo.newest() == V0_CONFIG and repo.order() == ["v0"]
-    repo.add(CAL_CONFIG, capabilities={"azure_pa": {"nbest": True}}, created_at=T0)
+    repo.add(CAL_CONFIG, capabilities={"azure_pa": {"nbest_phonemes": True}}, created_at=T0)
     assert repo.newest() == CAL_CONFIG and repo.order() == ["v0", CAL_CONFIG.id]
     assert repo.get(CAL_CONFIG.id) == CAL_CONFIG
 
@@ -463,6 +446,10 @@ def test_profile_roundtrip_keeps_provisional(db_engine): ...      # latest() == 
 # tests/app/test_rebuild_profile.py (added)
 def test_rebuild_reads_only_current_observations(db_engine): ...
     # v0 miss + calibrated ok for the same attempt -> the profile entry counts only the ok
+
+# tests/api/test_profile_api.py (added)
+def test_profile_entries_carry_provisional(seeded_profile, client_with_tmp_db): ...
+    # a sound key seeded under v0 -> "provisional": true; a fluency key -> false
 ```
 
 - [ ] **Step 2: Run them and confirm they fail**
@@ -479,18 +466,10 @@ Follow the Interfaces block. In `models.py`, CHECK lists come from the enums (`S
 
 - [ ] **Step 4: Run the tests and lint, and confirm they pass**
 
-Run: `uv run pytest -q && uv run pyright && uv run ruff check && uv run ruff format --check`
-Expected: all pass; `test_models_match_migrations` reports no drift.
+Run: `uv run pytest -q && uv run pyright && uv run ruff check && uv run ruff format --check && cd ../.. && make gen-api && make lint`
+Expected: all pass; `test_models_match_migrations` reports no drift; under `apps/web` only `src/shared/api/*` changes.
 
-- [ ] **Step 5: Commit, open the PR, merge when green**
-
-```bash
-git fetch origin && git switch -c p0e/02-scoring-schema origin/main
-git add apps/api docs/ARCHITECTURE.md docs/superpowers/HANDOFF.md
-git commit -m "Add scoring, calibration and content tables with a v0 scoring config row"
-git push -u origin p0e/02-scoring-schema && gh pr create --fill
-gh pr checks --watch && gh pr merge --squash
-```
+- [ ] **Step 5: Deliver.** Branch `p0e/02-scoring-schema`; `git add apps/api apps/web/src/shared/api docs/ARCHITECTURE.md docs/superpowers/HANDOFF.md`; commit message "Add scoring, calibration and content tables with a v0 scoring config row"; then the delivery commands in Global Constraints.
 
 ---
 
@@ -498,50 +477,52 @@ gh pr checks --watch && gh pr merge --squash
 
 **Files:**
 - Create: `apps/api/src/nosolear/domain/extraction/__init__.py`, `phones.py`, `opportunities.py`, `sounds.py`
-- Modify: `tests/factories.py` (builders for 0d result types), `tests/strategies.py` (`pronunciation_results()`, `probe_results()`)
+- Modify: `tests/factories.py` (builders for 0d's result types: `pa_result`, `pa_word`, `pa_phone`, `probe_result`), `tests/strategies.py` (`pronunciation_results()`, `probe_results()`)
 - Test: `tests/domain/extraction/test_sounds.py`, `tests/domain/extraction/test_sounds_properties.py`
 
 **Interfaces:**
 - **Consumes:**
-  - 0d's `PronunciationResult`, `PaWord`, `PaPhoneme`, `PhoneCandidate`, `PhoneProbeResult`, `ProbeWord` and `ProbeOp`. The fields read are listed under Cross-phase assumptions.
-  - 0b's `LanguagePack`.
+  - 0d's `PronunciationAssessment` (`words`, `has_nbest`, `has_prosody`), `WordAssessment` (`word`, `accuracy`, `error_type`, `start_ms`, `end_ms`, `phonemes`, `prosody`), `PhonemeAssessment` (`phoneme`, `accuracy`, `nbest`, `start_ms`, `end_ms`), `NBestPhoneme(phoneme, score)`, `ProsodyFeedback.error_types`, `PhoneProbeResult` (`expected_words`, `heard`), `AZURE_VOWELS`, `PhoneEdit` and `align_phones`.
+  - 0b's `LanguagePack` (`hypotheses: tuple[PackHypothesis, ...]`, `calibration_emphasis`).
   - `Thresholds` (Task 1).
 - **Produces:**
   - `domain/extraction/phones.py`:
-    - `AZURE_VOWELS = frozenset({"i", "ɪ", "eɪ", "ɛ", "æ", "ɑ", "ɔ", "ʊ", "oʊ", "u", "ʌ", "ə", "aɪ", "aʊ", "ɔɪ", "ɝ", "ɚ"})`.
-    - `is_vowel(phone: str) -> bool`.
+    - `is_vowel(phone: str) -> bool` (0d's `AZURE_VOWELS`).
     - `starts_with_s_cluster(phones: Sequence[str]) -> bool`: the first phone is `s` and the second is a consonant.
     - `ends_with_consonant_cluster(phones: Sequence[str]) -> bool`: the last two phones are consonants.
+    - `ProbeWord(text: str | None, expected: tuple[str, ...], edits: tuple[PhoneEdit, ...])`, with each edit's `expected_index` relative to the word.
+    - `probe_words(result: PhoneProbeResult, *, reference_text: str | None) -> tuple[ProbeWord, ...]`: aligns `result.expected` with `result.heard` once (`align_phones`), then splits the edits by word using each word's span of expected indices; an insertion at a word's first index belongs to that word. `text` is the i-th whitespace token of `reference_text` when the token count equals `len(expected_words)`, else `None`.
   - `domain/extraction/opportunities.py`:
     - `Opportunity(error_key: str, missed: bool, evidence: Mapping[str, object])`.
     - `ThresholdsFor = Callable[[str], Thresholds]`.
-    - `tracked_keys(taxonomy: Taxonomy, pack: LanguagePack) -> frozenset[str]`: every defined key, plus the keys the pack names in `hypotheses` and `calibration_emphasis`.
+    - `tracked_keys(taxonomy: Taxonomy, pack: LanguagePack) -> frozenset[str]`: every defined key, plus the keys of the pack's `hypotheses` and `calibration_emphasis`.
   - `domain/extraction/sounds.py`:
-    - `clear_substitute(phoneme: PaPhoneme, margin: float) -> str | None`.
-    - `azure_opportunities(result: PronunciationResult, *, keys: frozenset[str], thresholds_for: ThresholdsFor) -> list[Opportunity]`.
-    - `probe_opportunities(result: PhoneProbeResult, *, keys: frozenset[str]) -> list[Opportunity]`.
+    - `clear_substitute(phoneme: PhonemeAssessment, margin: float) -> str | None`.
+    - `azure_opportunities(result: PronunciationAssessment, *, keys: frozenset[str], thresholds_for: ThresholdsFor) -> list[Opportunity]`.
+    - `probe_opportunities(result: PhoneProbeResult, *, reference_text: str | None, keys: frozenset[str]) -> list[Opportunity]`.
   - Evidence keys: `word`, `start_ms`, `end_ms` (the word's span, for clip playback; `None` when the probe gives no timing), `expected`, `produced`, `score`.
 
 **Opportunity rules (§6.2).** Words whose Azure `error_type` is `"Omission"` or `"Insertion"` are skipped; every other word counts as scored.
 - **`clear_substitute`:**
   - Returns `None` if `nbest` is empty.
-  - Otherwise it takes the top candidate by `(-score, phone)`. It returns that phone if the phone differs from the expected one and `top.score − expected_score ≥ margin`, else `None`.
+  - Otherwise it takes the top candidate by `(-score, phoneme)`. It returns that phoneme if it differs from the expected one and `top.score − expected_score ≥ margin`, else `None`.
 - **`sound.sub.<e>.<p>` (azure_pa), only when `result.has_nbest`:** every expected /e/ phoneme in a scored word is one opportunity for each tracked key `sound.sub.e.*`. It is missed when `clear_substitute(phoneme, thresholds_for(key).nbest_margin) == p`.
 - **`sound.low.<e>` (azure_pa):** every expected /e/ phoneme in a scored word. It is missed when there is no clear substitute (checked with this key's `nbest_margin`, and treated as none when `has_nbest` is false) and `accuracy < thresholds_for(key).low_accuracy`.
-- **Prosody (azure_pa), only when `result.has_prosody`:**
+- **Prosody (azure_pa), only when `result.has_prosody`:** a word carries a flag when its `prosody.error_types` contains it (`UnexpectedBreak`, `MissingBreak`, `Monotone`).
   - `prosody.unexpected_break` and `prosody.missing_break`: every scored word after the first, missed when that word carries the flag.
-  - `prosody.monotone`: one opportunity per clip with at least one scored word, missed when any scored word carries `monotone`.
-- **`sound.sub.<e>.<p>` (phone_probe):** every op with `expected == e` (match, sub or del) is one opportunity for each tracked key `sound.sub.e.*`, missed when `op.kind == "sub" and op.heard == p`.
-- **`sound.ins.epenthesis_sC` (phone_probe):** every probe word whose `expected` starts with an s-cluster, missed when there is an `ins` op at position 0 whose heard phone is a vowel.
-- **`sound.del.final_cluster` (phone_probe):** every probe word whose `expected` ends in a consonant cluster, missed when there is a `del` op at position `len(expected) − 1`.
+  - `prosody.monotone`: one opportunity per clip with at least one scored word, missed when any scored word carries `Monotone`.
+- **`sound.sub.<e>.<p>` (phone_probe):** every edit of a probe word with `expected == e` (match, sub or del) is one opportunity for each tracked key `sound.sub.e.*`, missed when `edit.op == "sub" and edit.heard == p`.
+- **`sound.ins.epenthesis_sC` (phone_probe):** every probe word whose `expected` starts with an s-cluster, missed when there is an `ins` edit at `expected_index` 0 whose heard phone is a vowel.
+- **`sound.del.final_cluster` (phone_probe):** every probe word whose `expected` ends in a consonant cluster, missed when there is a `del` edit at `expected_index == len(expected) − 1`.
 
 Only keys in `keys` produce opportunities. Output order follows the words, then the phonemes, then the keys sorted.
 
 - [ ] **Step 1: Write the failing tests**
 
 ```python
-# tests/domain/extraction/test_sounds.py   (builders: pa_phone(phone, acc, nbest=()), pa_word(text, phones, error_type="None", ...),
-#                                           pa_result(words, has_nbest=True, has_prosody=True), probe_word(text, expected, ops))
+# tests/domain/extraction/test_sounds.py   (builders over 0d's types: pa_phone(phone, acc, nbest=()) -> PhonemeAssessment,
+#   pa_word(text, phones, error_type="None", prosody=()) -> WordAssessment, pa_result(words, has_nbest=True, has_prosody=True),
+#   probe_result(reference_text, expected_words, heard) -> PhoneProbeResult)
 ALL = tracked_keys(TAX, PACK)
 def v0(_: str) -> Thresholds: return V0_THRESHOLDS
 
@@ -572,10 +553,11 @@ def test_prosody_only_when_returned(): ...            # has_prosody=False -> no 
 def test_monotone_is_one_opportunity_per_clip(): ...
 def test_dynamic_pack_key_is_tracked(): ...           # pack hypothesis "sound.sub.p.b" -> expected /p/ yields it
 def test_probe_epenthesis_and_final_cluster():
-    w = probe_word("school", ["s", "k", "u", "l"], [ins(0, "ɪ"), match("s"), match("k"), match("u"), match("l")])
-    got = {o.error_key: o.missed for o in probe_opportunities(probe_result([w]), keys=ALL)}
+    r = probe_result("school", expected_words=[["s", "k", "u", "l"]], heard=["ɪ", "s", "k", "u", "l"])
+    got = {o.error_key: o.missed for o in probe_opportunities(r, reference_text="school", keys=ALL)}
     assert got["sound.ins.epenthesis_sC"] is True and "sound.del.final_cluster" not in got
 def test_probe_substitution_counts_deleted_phones_as_ok(): ...
+def test_probe_words_split_edits_by_word(): ...       # "the school": the insertion before /s/ lands in word 2 at index 0
 def test_evidence_carries_word_span_and_phones(): ...  # {"word": "vest", "start_ms": 100, "end_ms": 520, "expected": "v", "produced": "w", "score": 30}
 ```
 
@@ -608,15 +590,7 @@ Follow the rules above. Build the `expected phone → [(key, produced)]` index o
 Run: `uv run pytest tests/domain -q && uv run pyright`
 Expected: all pass, and Hypothesis finds no falsifying example.
 
-- [ ] **Step 5: Commit, open the PR, merge when green**
-
-```bash
-git fetch origin && git switch -c p0e/03-sound-extraction origin/main
-git add apps/api docs/superpowers/HANDOFF.md
-git commit -m "Extract sound and prosody opportunities from Azure and phone-probe results"
-git push -u origin p0e/03-sound-extraction && gh pr create --fill
-gh pr checks --watch && gh pr merge --squash
-```
+- [ ] **Step 5: Deliver.** Branch `p0e/03-sound-extraction`; `git add apps/api docs/superpowers/HANDOFF.md`; commit message "Extract sound and prosody opportunities from Azure and phone-probe results"; then the delivery commands in Global Constraints.
 
 ---
 
@@ -624,46 +598,45 @@ gh pr checks --watch && gh pr merge --squash
 
 **Files:**
 - Create: `apps/api/src/nosolear/domain/extraction/fluency.py`, `coach.py`, `extract.py`
-- Modify: `tests/factories.py` (builders `transcript(...)`, `coach_result(...)`), `tests/strategies.py` (`transcripts()`, `coach_results()`, `provider_results()`)
+- Modify: `tests/factories.py` (builders `transcript(...)` and `coach_analysis(...)` over 0d's types), `tests/strategies.py` (`transcripts()`, `coach_analyses()`, `provider_results()`)
 - Test: `tests/domain/extraction/test_fluency.py`, `test_coach.py`, `test_extract.py`, `test_extract_properties.py`
 
 **Interfaces:**
-- **Consumes:** 0d's `Transcript`, `TimedWord`, `CoachResult` and `CoachIssue`; Task 3's `Opportunity`, `tracked_keys`, `azure_opportunities` and `probe_opportunities`; Task 1's `ScoringConfig` and `enabled_keys`; `make_observation`.
+- **Consumes:** 0d's `Transcript` (`words: tuple[WordTiming, ...]`, `fillers_kept`), `WordTiming`, `CoachAnalysis` (`findings`, `rubric`), `CoachFinding(error_key, quote: str | None, ...)`, `TASK_FAMILIES`, `coach_task_for_step` and `quote_in_transcript`; Task 3's `Opportunity`, `tracked_keys`, `azure_opportunities` and `probe_opportunities`; Task 1's `ScoringConfig` and `enabled_keys`; `make_observation`.
 - **Produces:**
   - `domain/extraction/fluency.py`:
     - `FILLERS: frozenset[str]` (Global Constraints).
     - `normalize(word: str) -> str`: lowercase, with surrounding punctuation stripped.
-    - `sentences(words: Sequence[TimedWord]) -> list[tuple[TimedWord, ...]]`: a sentence ends after a word whose raw text ends in `.`, `?` or `!`, and leftover words form a last sentence.
+    - `sentences(words: Sequence[WordTiming]) -> list[tuple[WordTiming, ...]]`: a sentence ends after a word whose raw text ends in `.`, `?` or `!`, and leftover words form a last sentence.
     - `fluency_opportunities(transcript: Transcript, *, step: str, keys: frozenset[str], thresholds_for: ThresholdsFor) -> list[Opportunity]`.
-  - `domain/extraction/coach.py`:
-    - `COACH_FAMILIES_BY_STEP: Mapping[str, frozenset[Family]]`: `speak` → {GRAMMAR, CLARITY}, `quick_answer` → {GRAMMAR}, `articulate` → {GRAMMAR, STRUCTURE, CLARITY}.
-    - `valid_issues(coach: CoachResult, transcript: Transcript, *, step: str, taxonomy: Taxonomy) -> list[CoachIssue]`.
-    - `coach_opportunities(coach: CoachResult, transcript: Transcript, *, step: str, keys: frozenset[str], taxonomy: Taxonomy) -> list[Opportunity]`.
+  - `domain/extraction/coach.py` (the step's coach families are 0d's `TASK_FAMILIES[coach_task_for_step(step)]`, so the coach call and extraction never disagree):
+    - `valid_findings(coach: CoachAnalysis, transcript: Transcript, *, step: str, taxonomy: Taxonomy) -> list[CoachFinding]`.
+    - `coach_opportunities(coach: CoachAnalysis, transcript: Transcript, *, step: str, keys: frozenset[str], taxonomy: Taxonomy) -> list[Opportunity]`.
   - `domain/extraction/extract.py`:
-    - `ExtractionItem(attempt_id: str, step: str, scripted: bool, observed_at: datetime)`.
-    - `ProviderResults(pronunciation: PronunciationResult | None = None, transcript: Transcript | None = None, phone_probe: PhoneProbeResult | None = None, coach: CoachResult | None = None)`.
+    - `ExtractionItem(attempt_id: str, step: str, scripted: bool, reference_text: str | None, observed_at: datetime)`.
+    - `ProviderResults(pronunciation: PronunciationAssessment | None = None, transcript: Transcript | None = None, phone_probe: PhoneProbeResult | None = None, coach: CoachAnalysis | None = None)`.
     - `DETECTOR_INPUT: Mapping[Detector, str]`: `azure_pa` → `"pronunciation"`, `phone_probe` → `"phone_probe"`, `asr_metrics` → `"transcript"`, `coach` → `"coach"`.
     - `extract(item: ExtractionItem, results: ProviderResults, *, config: ScoringConfig, pack: LanguagePack, taxonomy: Taxonomy) -> dict[Detector, tuple[Observation, ...]]`: one entry for every detector whose input is present, even when it holds no observations.
 
 **Fluency rules (`asr_metrics`).** Unscripted steps are `speak`, `quick_answer` and `articulate`; scripted steps yield nothing.
 - **`fluency.slow_start`:** one opportunity on a `quick_answer` attempt. It is missed when there are no words or `words[0].start_ms > slow_start_ms`. Evidence: `{"first_word_ms": ...}`.
 - **The other three keys:** one opportunity per sentence on each unscripted step.
-  - `fluency.filler` is missed when the sentence contains a filler. Its evidence includes `"undercounted": transcript.drops_fillers`.
+  - `fluency.filler` is missed when the sentence contains a filler. Its evidence includes `"undercounted": not transcript.fillers_kept`.
   - `fluency.long_pause` is missed when a gap between consecutive words exceeds `long_pause_ms`. The gaps counted are those inside the sentence and the one before its first word, except for the first sentence.
   - `fluency.false_start` is missed when the sentence immediately repeats a 1–3 word sequence (normalized, fillers removed), as in "I I think" or "we went we went".
 - **Evidence:** the sentence's `start_ms` and `end_ms`, and `text`.
 
 **Coach rules (`coach`).** Coach output is untrusted.
-- `valid_issues` drops an issue when any of these holds:
+- `valid_findings` re-checks what 0d's `parse_analysis` already checked (defense in depth, §15) and drops a finding when any of these holds:
   - its key is not in the taxonomy;
   - `coach` is not an allowed detector for the key;
-  - the key's family is not in `COACH_FAMILIES_BY_STEP[step]`;
-  - it is a grammar issue without a quote;
-  - its quote, normalized (lowercased, whitespace collapsed), is not a substring of the normalized transcript text.
+  - the key's family is not in the step's `TASK_FAMILIES` entry (no entry: every finding is dropped);
+  - it is a grammar finding without a quote;
+  - its quote is not `None` and `quote_in_transcript(quote, transcript.text)` is false.
 
   It never raises on bad input.
-- **Grammar keys** (tracked and enabled): one opportunity per sentence. A sentence is missed when a valid issue of that key quotes text that begins inside it, located at the quote's first occurrence in the normalized transcript.
-- **Structure and clarity keys** (where the step allows them): one opportunity per answer, missed when there is any valid issue of that key.
+- **Grammar keys** (tracked and enabled): one opportunity per sentence. A sentence is missed when a valid finding of that key quotes a token run that begins inside it, located at the run's first occurrence in the transcript's tokens.
+- **Structure and clarity keys** (where the step allows them): one opportunity per answer, missed when there is any valid finding of that key.
 - **Evidence:** `quote`, plus the sentence span or the answer span.
 
 **`extract`:**
@@ -678,7 +651,7 @@ gh pr checks --watch && gh pr merge --squash
 - [ ] **Step 1: Write the failing tests**
 
 ```python
-# tests/domain/extraction/test_fluency.py   (transcript(("Well,", 600, 900), ("um", 1000, 1200), ...), drops_fillers=False)
+# tests/domain/extraction/test_fluency.py   (transcript(("Well,", 600, 900), ("um", 1000, 1200), ...), fillers_kept=True)
 def test_slow_start_is_one_opportunity_per_rapid_question():
     late = transcript(("I", 3400, 3500), ("think", 3500, 3900))
     assert opps(late, step="quick_answer", key="fluency.slow_start") == [True]
@@ -687,25 +660,25 @@ def test_no_answer_is_a_slow_start(): ...                       # empty transcri
 def test_fillers_long_pauses_and_false_starts_per_sentence(): ...
     # "I I went home. Um it was late." -> false_start [True, False], filler [False, True]
 def test_scripted_steps_have_no_fluency_opportunities(): ...
-def test_filler_evidence_flags_undercounting(): ...              # drops_fillers=True -> evidence["undercounted"] is True
+def test_filler_evidence_flags_undercounting(): ...              # fillers_kept=False -> evidence["undercounted"] is True
 ```
 
 ```python
 # tests/domain/extraction/test_coach.py
 TEXT = transcript_from("I go to the market yesterday. It was fun.")
-@pytest.mark.parametrize("issue", [
-    CoachIssue("grammar.artcle", "the market"),           # unknown key
-    CoachIssue("sound.sub.v.w", "market"),                # coach may not report sound keys
-    CoachIssue("grammar.verb_tense", "I went"),           # quote not in transcript
-    CoachIssue("grammar.verb_tense", None),               # grammar needs a quote
-    CoachIssue("structure.missing_point", None),          # structure not judged on quick answers
-    CoachIssue("grammar.article'); DROP TABLE observations;--", "x"),
+@pytest.mark.parametrize("finding", [
+    finding("grammar.artcle", "the market"),              # unknown key
+    finding("sound.sub.v.w", "market"),                   # coach may not report sound keys
+    finding("grammar.verb_tense", "I went"),              # quote not in transcript
+    finding("grammar.verb_tense", None),                  # grammar needs a quote
+    finding("structure.missing_point", None),             # structure not judged on quick answers
+    finding("grammar.article'); DROP TABLE observations;--", "x"),
 ])
-def test_coach_output_is_untrusted(issue):
-    assert valid_issues(coach_result([issue]), TEXT, step="quick_answer", taxonomy=TAX) == []
+def test_coach_output_is_untrusted(finding):              # finding(key, quote) builds a CoachFinding
+    assert valid_findings(coach_analysis([finding]), TEXT, step="quick_answer", taxonomy=TAX) == []
 
 def test_grammar_miss_lands_in_the_quoted_sentence():
-    c = coach_result([CoachIssue("grammar.verb_tense", "I go to")])
+    c = coach_analysis([finding("grammar.verb_tense", "I go to")])
     assert opps(c, TEXT, step="quick_answer", key="grammar.verb_tense") == [True, False]
 def test_structure_is_one_opportunity_per_answer(): ...         # articulate, missing_reason -> [True]
 ```
@@ -713,11 +686,11 @@ def test_structure_is_one_opportunity_per_answer(): ...         # articulate, mi
 ```python
 # tests/domain/extraction/test_extract.py
 def test_calibration_attempts_yield_nothing():
-    item = ExtractionItem("a", "calibration", True, T0)
+    item = ExtractionItem("a", "calibration", True, "vest", T0)
     assert extract(item, FULL_RESULTS, config=V0_CONFIG, pack=PACK, taxonomy=TAX) == {}
 
 def test_observations_carry_config_and_provisional():
-    out = extract(ExtractionItem("a", "read_aloud", True, T0), ProviderResults(pronunciation=VEST_AS_WEST),
+    out = extract(ExtractionItem("a", "read_aloud", True, "The vest.", T0), ProviderResults(pronunciation=VEST_AS_WEST),
                   config=V0_CONFIG, pack=PACK, taxonomy=TAX)
     assert set(out) == {Detector.AZURE_PA}
     vw = [o for o in out[Detector.AZURE_PA] if o.error_key == "sound.sub.v.w"]
@@ -759,15 +732,7 @@ Expected: FAIL (`ModuleNotFoundError: nosolear.domain.extraction.fluency`).
 Run: `uv run pytest tests/domain -q && uv run pyright`
 Expected: all pass.
 
-- [ ] **Step 5: Commit, open the PR, merge when green**
-
-```bash
-git fetch origin && git switch -c p0e/04-extraction origin/main
-git add apps/api docs/superpowers/HANDOFF.md
-git commit -m "Extract fluency and coach observations and combine detectors in one pure extract"
-git push -u origin p0e/04-extraction && gh pr create --fill
-gh pr checks --watch && gh pr merge --squash
-```
+- [ ] **Step 5: Deliver.** Branch `p0e/04-extraction`; `git add apps/api docs/superpowers/HANDOFF.md`; commit message "Extract fluency and coach observations and combine detectors in one pure extract"; then the delivery commands in Global Constraints.
 
 ---
 
@@ -784,7 +749,9 @@ gh pr checks --watch && gh pr merge --squash
   - `ports/scoring_stores.py`: add `ExtractionInputs`.
   - `ports/stores.py` and `persistence/repositories.py`: `ProfileWriter.replace`.
   - `app/rebuild_profile.py`: `session_id` and `reason` parameters.
-  - `api/deps.py`: register the `extract` step and the `rescore` kind; amend 0d's step predicates.
+  - `app/analysis_steps.py` (0d's): amend the step predicates below.
+  - `api/deps.py`: register `ExtractStep` for `JobKind.ANALYZE` and `RescoreStep` for `JobKind.RESCORE`.
+  - `api/schemas.py`: `JobAcceptedOut(job_id: str)` (0e's first 202-with-a-job response; calibration reuses it).
   - `api/app.py`: router.
   - `cli.py`: dispatch to `first_run_cli`.
   - `apps/web/src/shared/api/*` (regenerated).
@@ -794,43 +761,43 @@ gh pr checks --watch && gh pr merge --squash
 - **Consumes:**
   - Task 4's `extract`, `ExtractionItem` and `ProviderResults`.
   - Task 2's repositories.
-  - 0d: `RawAnalysis`, `decode` and `encode`, and the step classes for score, transcribe, probe and coach.
-  - 0c: the step registry, `JobQueue.enqueue`, `JobAcceptedOut`, `ApiClient` and the `main(argv, *, client=None)` hook.
+  - 0d: `raw_result_of`, the parsers `parse_azure_pa`, `parse_transcript`, `parse_phone_probe` and `parse_coach_analysis`, `coach_task_for_step`, `coach_keys`, the steps `ScoreStep`, `TranscribeStep`, `ProbeStep`, `CoachStep`, `RawPorts`, `create_app(..., raw_ports=...)`, `FakeCoach`, and the payload builders in `tests/adapters/azure_payloads.py`.
+  - 0c: `StepRegistry`, `StepContext.progress`, `JobKind`, `JobQueue.enqueue(kind, attempt_id) -> Job`, `AnalysisStore.for_attempt`, `StoredAnalysis`, `ApiClient`, `cli.main(argv, *, client=None)`, `create_app(..., start_runner=False)` and `ThreadPoolJobRunner.run_pending()`.
 - **Produces:**
   - **`ExtractionInputs` (port) / `ExtractionInputsRepository(engine)`:**
     - `item(attempt_id: str) -> ExtractionItem | None`. `observed_at` is the recording's `created_at`, else the attempt's.
-    - `analyses(attempt_id: str) -> list[RawAnalysis]`.
+    - `analyses(attempt_id: str) -> list[StoredAnalysis]` (0c's `AnalysisRepository.for_attempt`).
     - `rescorable_attempt_ids() -> list[str]`: attempts that are not `calibration` and have at least one analysis, ordered by `(created_at, id)`.
   - **`app/extract_attempt.py`:**
-    - `collect_results(analyses: Iterable[RawAnalysis]) -> tuple[ProviderResults, tuple[str, ...]]`: the second element lists the kinds whose `decode` raised `ValueError`. Those are skipped, and nothing about them is logged except the kind.
+    - `collect_results(analyses: Iterable[StoredAnalysis], *, step: str, taxonomy: Taxonomy) -> tuple[ProviderResults, tuple[str, ...]]`: parses each kind with 0d's parser over `raw_result_of(analysis)` (the coach after the transcript, with `allowed_keys = coach_keys(taxonomy, coach_task_for_step(step))`). The second element lists the kinds whose parser raised `ValueError` (which covers `MalformedProviderResponse` and `UnmappedSymbol`). Those are skipped, and nothing about them is logged except the kind.
     - `ExtractSummary(attempt_id: str, scoring_config_id: str, written: int, undecodable: tuple[str, ...])`.
     - `extract_attempt(*, attempt_id: str, inputs: ExtractionInputs, configs: ScoringConfigReader, extractions: ExtractionWriter, pack: LanguagePack, taxonomy: Taxonomy, clock: Clock) -> ExtractSummary`: extracts under `configs.newest()` and writes each detector through `extractions.write`.
   - **`app/rescore.py`:**
     - `RescoreSummary(scoring_config_id: str, attempts: int, observations: int, undecodable: int)`.
     - `rescore(*, inputs, configs, extractions, observations: ObservationReader, profiles: ProfileWriter, pack, taxonomy, clock, on_progress: Callable[[float], None] = _ignore) -> RescoreSummary`. It loops over `rescorable_attempt_ids()`, then calls `rebuild_profile(..., reason="rebuild")`. Its parameters include no provider port.
-  - **`app/scoring_steps.py`:**
-    - `ExtractStep` (name `"extract"`, `needs=()`, always applies): `extract_attempt`, then `rebuild_profile(..., reason=None)`.
-    - `RescoreStep` (name `"rescore"`): `rescore` with job progress.
-  - **`rebuild_profile(*, observations, profiles, taxonomy, pack, clock, config=DEFAULT_CONFIG, session_id: str | None = None, reason: str | None = "rebuild") -> Profile`:** `reason=None` calls `profiles.replace(profile)`, which replaces the entries and takes no snapshot.
-  - **Step predicates (amending 0d):**
-    - transcribe and coach skip `step == "calibration"`.
-    - probe applies only when the attempt is scripted and one of these holds: its step is `calibration` or `drill`, or `enabled_keys(newest config, PHONE_PROBE, tracked keys)` is non-empty.
-  - **`POST /api/rescore`:** `operation_id="startRescore"`, 202 `JobAcceptedOut`. It enqueues `kind="rescore"` with no attempt.
+  - **`app/scoring_steps.py`** (names and dependencies come from 0c's `JOB_PLANS`):
+    - `ExtractStep` (`"extract"` on analyze jobs, always applies): `extract_attempt`, then `rebuild_profile(..., reason=None)`.
+    - `RescoreStep` (`"extract"` on rescore jobs, the plan's only step): `rescore`, reporting `ctx.progress`.
+  - **`rebuild_profile(*, observations, profiles, taxonomy, pack, clock, config=DEFAULT_CONFIG, session_id: str | None = None, reason: str | None = "rebuild") -> Profile`:** `reason=None` calls `profiles.replace(profile)`, which replaces the entries and takes no snapshot. Phase 1 uses `session_id` and `reason="daily"`.
+  - **Step predicates (amending 0d's steps):**
+    - `TranscribeStep` and `CoachStep` don't apply to `step == "calibration"`.
+    - `ProbeStep` applies only when the attempt is scripted, the probe exists, and one of these holds: its step is `calibration` or `drill`, or `enabled_keys(newest config, PHONE_PROBE, tracked keys)` is non-empty.
+  - **`POST /api/rescore`:** `operation_id="startRescore"`, 202 `JobAcceptedOut`. It calls `enqueue(JobKind.RESCORE, None)`.
   - **`first_run_cli.py`:**
     - `register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None`.
     - `run(args: argparse.Namespace, client: ApiClient) -> int | None`.
-    - Command `nosolear rescore` posts, follows the job, and prints `Re-scoring {status}: job {job_id}`.
+    - Command `nosolear rescore` posts, follows the job with `client.follow_job`, and prints `Re-scoring {status}: job {job_id}`.
   - **Test doubles:**
-    - `tests/oracle_voice.py`:
-      - `OracleVoice(user_errors: Mapping[str, str] = {}, calibration_set: CalibrationSet | None = None)`, with `.synthesizer`, `.scorer`, `.transcriber` and `.probe`, a `.calls: Counter[str]` (one counter per port), and `.fail_all(exc: Exception)`.
-      - Each new text spoken through `.synthesizer` gets the next id `n` and a seeded-noise 16 kHz mono 16-bit WAV of `1000 + 10·n` ms, so the other ports can recover what was "said" from the clip's duration.
-      - `.scorer` returns `encode(PronunciationResult)` for the reference text, built from a small grapheme-to-phone map (`th`, `sh`, `ch`, `ng` digraphs; vowels → `ə`). It substitutes where the spoken text is the calibration respelling of the reference word, or where `user_errors` maps a phone (e.g. `{"v": "w"}`).
-      - `.probe` returns `encode(PhoneProbeResult)` from the same map, all `match` ops, plus a vowel `ins` at position 0 when the spoken text is an `is…` respelling.
-      - `.transcriber` returns the spoken words at 400 ms each, starting at 600 ms.
+    - `tests/oracle_voice.py` (raw ports for 0d's `RawPorts`, so the app wraps them like real adapters):
+      - `OracleVoice(user_errors: Mapping[str, str] = {}, calibration_set: CalibrationSet | None = None)`, with `.speech_synthesizer` (a `SpeechSynthesizer`), `.scorer`, `.transcriber` and `.probe`, a `.calls: Counter[str]` (one counter per port), and `.fail_all(exc: Exception)`.
+      - Each new text spoken through `.speech_synthesizer` gets the next id `n` and a seeded-noise 16 kHz mono 16-bit WAV of `1000 + 10·n` ms (built with `tests/wavs.py`), so the other ports can recover what was "said" from the clip's duration.
+      - `.scorer` builds an Azure payload with 0d's `azure_payloads` builders for the reference text, from a small grapheme-to-phone map (`th`, `sh`, `ch`, `ng` digraphs; vowels → `ə`), and returns `parse_azure_pa(RawResult(...))`, so stored `raw_json` re-parses identically. It substitutes where the spoken text is the calibration respelling of the reference word, or where `user_errors` maps a phone (e.g. `{"v": "w"}`).
+      - `.probe` builds a phone-probe payload from the same map (heard equals expected, plus a vowel before the first phone when the spoken text is an `is…` respelling) and returns `parse_phone_probe(...)`.
+      - `.transcriber` returns `parse_local_transcript(...)` of the spoken words at 400 ms each, starting at 600 ms.
     - `tests/harness.py`:
-      - A `make_harness(*, probe: bool = False)` fixture factory, plus a default `harness` fixture.
-      - It builds `create_app(Settings(data_dir=tmp_path), providers=ProviderPorts(...oracle..., probe=voice.probe if probe else None, coach=FakeCoach()))`.
-      - A `Harness` exposes `client`, `voice`, `engine`, `drain()`, `upload(attempt_id, text) -> job_id` (synthesizes `text` with `voice.synthesizer` and posts it), `attempt(step=..., scripted=..., reference_text=..., session_kind="daily") -> attempt_id`, `observations() -> list[Observation]` and `ledger_rows() -> int`.
+      - A `make_harness(*, probe: bool = False, clock: Clock | None = None, start_runner: bool = False)` fixture factory (a mutable clock lets Phase 1 move to the next day; `start_runner=True` serves CLI tests that follow a job), plus a default `harness` fixture.
+      - It builds `app = create_app(make_settings(data_dir=tmp_path), clock=clock, raw_ports=RawPorts(scorer=voice.scorer, transcriber=voice.transcriber, speech_synthesizer=voice.speech_synthesizer, phone_probe=voice.probe if probe else None, coach=FakeCoach(...)), start_runner=start_runner)` and `client = loopback_client(app)`.
+      - A `Harness` exposes `client`, `voice`, `engine`, `synthesizer` (the app's composed `Providers.synthesizer`), `drain()` (`app.state.services.runner.run_pending()`), `upload(attempt_id, text) -> job_id` (synthesizes `text` through `synthesizer` and posts the clip), `attempt(step=..., scripted=..., reference_text=..., session_kind="daily") -> attempt_id`, `observations() -> list[Observation]` and `ledger_rows() -> int`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -881,13 +848,13 @@ def test_rescore_endpoint_queues_a_rescore_job(harness):
     assert r.status_code == 202
     harness.drain()
     assert harness.client.get(f"/api/jobs/{r.json()['job_id']}").json()["status"] == "done"
-def test_openapi_operation_id(): assert create_app().openapi()["paths"]["/api/rescore"]["post"]["operationId"] == "startRescore"
+def test_openapi_operation_id(harness): assert harness.client.app.openapi()["paths"]["/api/rescore"]["post"]["operationId"] == "startRescore"
 ```
 
 ```python
 # tests/test_cli_rescore.py
 def test_cli_rescore_follows_job(harness, capsys):
-    assert main(["rescore"], client=ApiClient(http=harness.client)) == 0
+    assert main(["rescore"], client=ApiClient(harness.client)) == 0
     assert "Re-scoring done: job " in capsys.readouterr().out
 ```
 
@@ -896,10 +863,7 @@ def test_cli_rescore_follows_job(harness, capsys):
 Run: `uv run pytest tests/app tests/api/test_rescore_api.py tests/test_cli_rescore.py -q`
 Expected: FAIL (no `extract_attempt`, no `/api/rescore`).
 
-- [ ] **Step 3: Implement the use cases, steps, route, CLI and test doubles** to the Interfaces block. In `api/deps.py`:
-- Append `ExtractStep` to the analyze kind's steps.
-- Register `rescore` with `[RescoreStep]`.
-- Pass `configs` into 0d's probe step for its new predicate.
+- [ ] **Step 3: Implement the use cases, steps, route, CLI and test doubles** to the Interfaces block. In `api/deps.py`, `build_services` registers `ExtractStep` for `JobKind.ANALYZE` and `RescoreStep` for `JobKind.RESCORE`, and passes `configs` into 0d's `ProbeStep` for its new predicate.
 
 `first_run_cli.register` is called from `cli._parser()`. `cli.main` returns `first_run_cli.run(args, client)` whenever that is not `None`.
 
@@ -908,15 +872,7 @@ Expected: FAIL (no `extract_attempt`, no `/api/rescore`).
 Run: `uv run pytest -q && uv run pyright && cd ../.. && make gen-api && make lint && git status --short apps/web`
 Expected: all pass; `apps/web/src/shared/api/openapi.json` and `schema.d.ts` change (they gain `/api/rescore`), and nothing else under `apps/web` does.
 
-- [ ] **Step 5: Commit, open the PR, merge when green**
-
-```bash
-git fetch origin && git switch -c p0e/05-extract-step-rescore origin/main
-git add apps/api apps/web/src/shared/api docs/superpowers/HANDOFF.md
-git commit -m "Extract observations in analyze jobs and re-score history without provider calls"
-git push -u origin p0e/05-extract-step-rescore && gh pr create --fill
-gh pr checks --watch && gh pr merge --squash
-```
+- [ ] **Step 5: Deliver.** Branch `p0e/05-extract-step-rescore`; `git add apps/api apps/web/src/shared/api docs/superpowers/HANDOFF.md`; commit message "Extract observations in analyze jobs and re-score history without provider calls"; then the delivery commands in Global Constraints.
 
 ---
 
@@ -926,12 +882,12 @@ gh pr checks --watch && gh pr merge --squash
 - Create:
   - `content/baseline/protocol.json`
   - `apps/api/src/nosolear/domain/content.py`
-  - `apps/api/src/nosolear/adapters/content_files.py`
   - `apps/api/src/nosolear/persistence/content_repository.py`
   - `apps/api/src/nosolear/ports/content_store.py`
 - Modify:
-  - `content/calibration/items.json`: convert 0b's port into the shape below and extend it.
-  - `content/packs/nepali/`: only if 0b stored calibration extras elsewhere; move them into `calibration.json`.
+  - `content/calibration/items.toml` (0b's): extend every key to five words, in 0b's `[[specs]]` format.
+  - `apps/api/src/nosolear/adapters/content_files.py` (0b's): add the loaders below.
+  - `apps/api/src/nosolear/domain/calibration_items.py` (0b's): factor the instruction text into `calibration_instruction` so 0b's `build_calibration_items` and 0e use one formatter; 0b's test that pins 78 items now expects three items per word (150).
   - `api/app.py`: load and sync the content in the lifespan; `create_app(..., content: SeedContent | None = None)`. Passing `content` skips loading the files, for tests.
   - `api/deps.py`: `get_seed_content`.
   - `tests/harness.py`: `make_harness(*, content: SeedContent | None = None, ...)`.
@@ -939,12 +895,13 @@ gh pr checks --watch && gh pr merge --squash
 - Test: `tests/domain/test_content.py`, `tests/adapters/test_content_files.py`, `tests/persistence/test_content_repository.py`
 
 **Interfaces:**
-- **Consumes:** 0b's content root (`CONTENT_DIR`) and the active pack (`calibration_emphasis`); `Taxonomy`; `AttemptStep`.
+- **Consumes:** 0b's `CONTENT_DIR`, `load_pack(packs_dir, pack_id)`, `load_calibration_specs`, `CalibrationSpec` and the active `LanguagePack` (`calibration_emphasis`, `calibration_extras`); `Taxonomy`; `AttemptStep`.
 - **Produces, in `domain/content.py`:**
   - `class ContentKind(StrEnum)`: `PROMPT`, `PASSAGE_SENTENCE`, `MINIMAL_PAIR`, `DRILL_SENTENCE`, `STARTER`, `QUICK_QUESTION`, `CALIBRATION_WORD`, with the §7 values.
   - `ContentItem(id: str, kind: ContentKind, text: str, target_keys: tuple[str, ...], source: Literal["seed", "coach"] = "seed")`.
   - `CalibrationWord(item_id: str, error_key: str, word: str, respelling: str, description: str)`; `item_id = f"cal:{error_key}:{word}"`.
-  - `CalibrationSet(takes_per_word: int, words: tuple[CalibrationWord, ...])`, with `keys() -> tuple[str, ...]` (file order), `words_for(key) -> tuple[CalibrationWord, ...]` and `word(item_id) -> CalibrationWord | None`.
+  - `CalibrationSet(takes_per_word: int, words: tuple[CalibrationWord, ...])`, with `keys() -> tuple[str, ...]` (file order), `words_for(key) -> tuple[CalibrationWord, ...]` and `word(item_id) -> CalibrationWord | None`. `TAKES_PER_WORD = 2`, the error takes 0b's builder makes per word.
+  - `calibration_set(specs: Sequence[CalibrationSpec], *, extras: Sequence[CalibrationExtra] = ()) -> CalibrationSet`: 0b's specs in file order, with a pack's extra words appended to their key (an extra without a respelling is rejected by validation).
   - `BaselineItem(item: ContentItem, stand_in: str | None, tokens: Mapping[str, tuple[str, ...]])`.
   - `BaselineSection(name: str, step: AttemptStep, items: tuple[BaselineItem, ...], max_seconds: int | None, start_limit_seconds: int | None)`.
   - `BaselineProtocol(version: int, sections: tuple[BaselineSection, ...], stress_pairs: tuple[str, ...])`.
@@ -953,29 +910,21 @@ gh pr checks --watch && gh pr merge --squash
   - `validate_calibration_set(cs: CalibrationSet, taxonomy: Taxonomy, *, min_words: int = 5) -> None`.
   - `validate_baseline_protocol(p: BaselineProtocol, taxonomy: Taxonomy) -> None`.
   - `seed_items(content: SeedContent) -> tuple[ContentItem, ...]`.
-  - `calibration_instruction(w: CalibrationWord, *, deliberate: bool, take: int, takes: int) -> str`.
+  - `calibration_instruction(...)`, moved into 0b's `domain/calibration_items.py` (see Files) and re-exported here.
   - `stand_in_text(w: CalibrationWord, *, deliberate: bool) -> str`: the respelling for a deliberate take, else the word.
   - `BASELINE_PROTOCOL_VERSION = 1`.
 - **Produces, elsewhere:**
-  - `adapters/content_files.py`:
-    - `load_calibration_set(content_dir: Path, pack_id: str) -> CalibrationSet` reads `calibration/items.json` and merges `packs/<pack_id>/calibration.json` when present (same shape; extra words appended to their key).
+  - `adapters/content_files.py` (0b's module):
+    - `load_calibration_set(content_dir: Path, pack: LanguagePack) -> CalibrationSet` reads `calibration/items.toml` with 0b's `load_calibration_specs` and merges `pack.calibration_extras`.
     - `load_baseline_protocol(content_dir: Path) -> BaselineProtocol`.
-    - `load_seed_content(content_dir: Path, pack_id: str) -> SeedContent` loads both and validates them.
-    - Malformed JSON or missing fields raise `ContentInvalid`. Paths are fixed relative to `content_dir`; `pack_id` is already validated as `^[a-z0-9_]+$` by settings.
+    - `load_seed_content(content_dir: Path, pack: LanguagePack) -> SeedContent` loads both and validates them.
+    - Malformed files or missing fields raise `ContentInvalid`. Paths are fixed relative to `content_dir`; nothing in a path comes from content or a request.
   - `ContentRepository(engine)`:
     - `sync_seed(items: Sequence[ContentItem], *, now: datetime) -> SyncSummary(added: int, retired: int)` inserts missing ids and retires seed ids that are gone. An existing id whose kind, text or keys changed raises `ContentConflict(ValueError)`, because content ids are immutable so past attempts keep their meaning.
     - `get(item_id) -> ContentItem | None`.
   - The lifespan calls `sync_seed` after migrations.
 
-**`content/calibration/items.json`:**
-
-```json
-{"version": 1, "takes_per_word": 2,
- "keys": [{"error_key": "sound.sub.v.w", "description": "W instead of V",
-           "words": [{"word": "vest", "respelling": "west"}, ...]}, ...]}
-```
-
-Keep all 26 salvaged words with their respellings and descriptions (from `p0b/spikes:spikes/items.py`, as ported by 0b). Then add these, so that every key has exactly 5 words, which means 10 error takes and 5 TTS controls:
+**`content/calibration/items.toml`** keeps 0b's format (`[[specs]]` with `error_key`, `description`, `words = [["vest", "west"], ...]`) and all 26 salvaged words with their respellings and descriptions. Add these, so that every key has exactly 5 words, which means 10 error takes and 5 TTS controls:
 
 | Key | Added (word → respelling) |
 |---|---|
@@ -990,10 +939,10 @@ Keep all 26 salvaged words with their respellings and descriptions (from `p0b/sp
 | `sound.sub.z.s` | prize → price, eyes → ice, rise → rice |
 | `sound.ins.epenthesis_sC` | smile → ismile |
 
-**Calibration copy** (salvaged; the insertion key uses the second form):
+**Calibration copy** (0b pinned it when porting the spike; the insertion key uses the second form):
 - Correct take: `Say "{word}" as correctly as possible, in General American.`
-- Error take: `Say "{word}" with {description} — sounds like "{respelling}" (take {n} of {takes})`
-- Insertion error take: `Say "{word}" with {description} — "{respelling}" (take {n} of {takes})`
+- Error take: `Say "{word}" with {description}: sounds like "{respelling}" (take {n} of {takes})`
+- Insertion error take: `Say "{word}" with {description}: "{respelling}" (take {n} of {takes})`
 
 **`content/baseline/protocol.json`:** written for this project, not copied from anywhere. Sections in this order:
 1. **`read_aloud`** (step `read_aloud`): passage A, about 150 words, one `passage_sentence` item per sentence. Each sentence has `tokens: {error_key: [words]}` annotating where each tracked contrast occurs. Passage-level `stress_pairs` lists words that appear in both stress forms (at least `record`).
@@ -1022,20 +971,20 @@ Every unscripted item has a `stand_in` answer text (two to four sentences) for T
 
 ```python
 # tests/adapters/test_content_files.py  (reads the committed content/)
-@pytest.mark.parametrize("pack_id", sorted(p.name for p in (CONTENT_DIR / "packs").iterdir()))
+@pytest.mark.parametrize("pack_id", list_pack_ids(CONTENT_DIR / "packs"))
 def test_every_pack_calibration_set_meets_the_minimum(pack_id):
-    cs = load_calibration_set(CONTENT_DIR, pack_id)
+    cs = load_calibration_set(CONTENT_DIR, load_pack(CONTENT_DIR / "packs", pack_id))
     validate_calibration_set(cs, TAX)
     for key in cs.keys():
         assert len(cs.words_for(key)) >= 5 and len(cs.words_for(key)) * cs.takes_per_word >= 5
 
 def test_salvaged_words_are_kept():
-    words = {w.word for w in load_calibration_set(CONTENT_DIR, "neutral").words}
+    words = {w.word for w in load_calibration_set(CONTENT_DIR, NEUTRAL).words}
     assert SALVAGED_26 <= words                  # vest very van west wine fan fine coffee think three thanks
                                                  # this they ship she shop sip see zoo zero zip buzz school speak street sport
 def test_nepali_emphasis_keys_are_calibratable():
-    cs = load_calibration_set(CONTENT_DIR, "nepali")
-    for key in load_pack(CONTENT_DIR, "nepali").calibration_emphasis:
+    cs = load_calibration_set(CONTENT_DIR, NEPALI)
+    for key in NEPALI.calibration_emphasis:
         if TAX.get(key).family in (Family.SUB, Family.INS, Family.DEL):
             assert key in cs.keys()
 
@@ -1052,7 +1001,7 @@ def test_rejects_thin_coverage_of_a_contrast(): ...           # sound.sub.v.w wi
 def test_rejects_sections_out_of_order(): ...
 def test_instruction_copy():
     w = CalibrationWord("cal:sound.sub.v.w:vest", "sound.sub.v.w", "vest", "west", "W instead of V")
-    assert calibration_instruction(w, deliberate=True, take=1, takes=2) == 'Say "vest" with W instead of V — sounds like "west" (take 1 of 2)'
+    assert calibration_instruction(w, deliberate=True, take=1, takes=2) == 'Say "vest" with W instead of V: sounds like "west" (take 1 of 2)'
     assert calibration_instruction(w, deliberate=False, take=1, takes=2) == 'Say "vest" as correctly as possible, in General American.'
     assert stand_in_text(w, deliberate=True) == "west"
 ```
@@ -1078,15 +1027,7 @@ Follow the Interfaces block and the rules above. Passage A must also read natura
 Run: `uv run pytest -q && uv run pyright && cd ../.. && git ls-files content | bash scripts/check-no-personal-data.sh`
 Expected: all pass; hygiene exits 0.
 
-- [ ] **Step 5: Commit, open the PR, merge when green**
-
-```bash
-git fetch origin && git switch -c p0e/06-seed-content origin/main
-git add content apps/api docs/superpowers/HANDOFF.md
-git commit -m "Add the calibration set and baseline protocol as validated seed content"
-git push -u origin p0e/06-seed-content && gh pr create --fill
-gh pr checks --watch && gh pr merge --squash
-```
+- [ ] **Step 5: Deliver.** Branch `p0e/06-seed-content`; `git add content apps/api docs/superpowers/HANDOFF.md`; commit message "Add the calibration set and baseline protocol as validated seed content"; then the delivery commands in Global Constraints.
 
 ---
 
@@ -1097,7 +1038,7 @@ gh pr checks --watch && gh pr merge --squash
 - Test: `tests/domain/test_calibration.py`, `tests/domain/test_calibration_properties.py`
 
 **Interfaces:**
-- **Consumes:** Task 1's `ScoringConfig`, `KeyRule`, `TrialCounts`, `V0_CONFIG` and `CALIBRATED_THRESHOLDS`; Task 3's `azure_opportunities` and `probe_opportunities`; Task 6's `CalibrationSet`; 0d's `PronunciationResult` and `PhoneProbeResult`.
+- **Consumes:** Task 1's `ScoringConfig`, `KeyRule`, `TrialCounts`, `V0_CONFIG` and `CALIBRATED_THRESHOLDS`; Task 3's `azure_opportunities` and `probe_opportunities`; Task 6's `CalibrationSet`; 0d's `PronunciationAssessment` and `PhoneProbeResult`.
 - **Produces, in `domain/calibration.py`:**
   - **Trials:**
     - `class TrialKind(StrEnum)`: `ERROR = "error"`, `CONTROL = "control"`.
@@ -1114,7 +1055,7 @@ gh pr checks --watch && gh pr merge --squash
     - `PairResult(detector: Detector, error_key: str, counts: TrialCounts, covered: bool, enabled: bool, warning: str | None)`, with the properties `hit_rate`, `false_alarm_rate` and `correct_take_flag_rate` (each `float | None`).
     - `evaluate(trials: Iterable[Trial], rule: CalibrationRule = DEFAULT_RULE) -> tuple[PairResult, ...]`, sorted by `(error_key, detector)` and independent of input order.
     - `build_calibrated_config(*, config_id: str, run_id: str, results: Sequence[PairResult], base: ScoringConfig = V0_CONFIG) -> ScoringConfig`. The config has kind `CALIBRATED` and `base`'s family rules and thresholds, plus one `KeyRule(detector, key, enabled=result.enabled, thresholds=CALIBRATED_THRESHOLDS, counts)` for each covered result.
-  - **Flagging a single clip:** `flagged(detector: Detector, error_key: str, result: PronunciationResult | PhoneProbeResult, *, thresholds: Thresholds = CALIBRATED_THRESHOLDS) -> bool | None`. It is `None` when the clip gives that key no opportunity; otherwise it is whether any opportunity was missed.
+  - **Flagging a single clip:** `flagged(detector: Detector, error_key: str, result: PronunciationAssessment | PhoneProbeResult, *, reference_text: str, thresholds: Thresholds = CALIBRATED_THRESHOLDS) -> bool | None` (the reference is the calibration word). It is `None` when the clip gives that key no opportunity; otherwise it is whether any opportunity was missed.
   - **Planning:**
     - `calibratable_detectors(*, azure_nbest: bool, phone_probe_ready: bool) -> frozenset[Detector]`.
     - `PlannedToken(order: int, item_id: str, error_key: str, word: str, deliberate: bool, take: int)`.
@@ -1203,15 +1144,7 @@ Follow the Interfaces block. `flagged` runs the Task 3 opportunity function on `
 Run: `uv run pytest tests/domain -q && uv run pyright`
 Expected: all pass, with no falsifying examples.
 
-- [ ] **Step 5: Commit, open the PR, merge when green**
-
-```bash
-git fetch origin && git switch -c p0e/07-calibration-rule origin/main
-git add apps/api docs/superpowers/HANDOFF.md
-git commit -m "Add the calibration rule, plan and calibrated scoring config"
-git push -u origin p0e/07-calibration-rule && gh pr create --fill
-gh pr checks --watch && gh pr merge --squash
-```
+- [ ] **Step 5: Deliver.** Branch `p0e/07-calibration-rule`; `git add apps/api docs/superpowers/HANDOFF.md`; commit message "Add the calibration rule, plan and calibrated scoring config"; then the delivery commands in Global Constraints.
 
 ---
 
@@ -1227,7 +1160,7 @@ gh pr checks --watch && gh pr merge --squash
   - `api/deps.py`: register the `calibrate` kind and provide `get_calibration_store` and `get_available_detectors`.
   - `api/app.py`: router.
   - `first_run_cli.py`: `calibrate start|status|skip|finish`.
-  - `tests/harness.py`: every harness seeds an `azure_pa` `provider_capabilities` row with n-best and prosody, so `azure_pa` is calibratable.
+  - `tests/harness.py`: every harness seeds an `azure_pa` `provider_capabilities` row (`CapabilityRepository.add(ProviderCapabilities(provider="azure", adapter="azure_pa", ..., region=None, locale="en-US", capabilities={"nbest_phonemes": True, "prosody": True}))`), so `azure_pa` is calibratable.
   - `docs/ARCHITECTURE.md`: §9.2 and §18, recording that prosody is not calibrated in 0e.
   - `apps/web/src/shared/api/*` (regenerated).
 - Test: `tests/persistence/test_calibration_repository.py`, `tests/app/test_calibrate.py`, `tests/api/test_calibration_api.py`, `tests/test_cli_calibrate.py`
@@ -1238,8 +1171,8 @@ gh pr checks --watch && gh pr merge --squash
   - Task 6: `SeedContent` and `calibration_instruction`.
   - Task 5: `ExtractionInputs.analyses` and the `rescore` kind.
   - Task 2: `ScoringConfigWriter`.
-  - 0d: metered `Synthesizer.synthesize`, `PronunciationScorer.score` and `PhoneProbe.probe`, plus the capability store and the phone-probe readiness row.
-  - 0c: `JobQueue` and the jobs and recordings tables.
+  - 0d: the composed `Providers` (`synthesizer`, `scorer`, `phone_probe`), `CapabilityRepository.latest("azure", "azure_pa")`, `is_stale`, `raw_result_of`, `new_analysis` and the parsers.
+  - 0c: `JobQueue`, `JobKind.CALIBRATE` (added in Task 2), `StepContext.progress`, and the jobs and recordings tables.
 - **Produces:**
   - **`CalibrationStore` (port) / `CalibrationRepository(engine)`:**
     - `running()` and `latest()`, each returning `CalibrationRunRecord | None`.
@@ -1252,7 +1185,7 @@ gh pr checks --watch && gh pr merge --squash
     - `skip(*, run_id, now) -> CalibrationRunRecord`: marks the running run `skipped`, or else inserts a new `skipped` run with no session.
     - `items(run_id) -> list[CalibrationItemRecord]`.
     - `trials(run_id) -> list[TrialRecord]`.
-    - `control_analysis(tts_hash, run_id, kind) -> RawAnalysis | None` and `add_control_analysis(tts_hash, run_id, analysis)`.
+    - `control_analysis(tts_hash, run_id, kind: AnalysisKind) -> RawResult | None` and `add_control_analysis(tts_hash, run_id, kind, raw: RawResult)` over 0c's `analyses` control rows.
     - `add_control_trials(run_id, tts_hash, pairs: Sequence[tuple[str, Detector]])`, idempotent.
     - `set_flags(flags: Mapping[int, bool | None])`.
     - `complete(*, run_id, config, capabilities, now)`: in one transaction, inserts the config and marks the run `done` with its `scoring_config_id`.
@@ -1272,22 +1205,22 @@ gh pr checks --watch && gh pr merge --squash
       - raises `CalibrationNotRunning` when no run is running;
       - raises `NothingRecorded` when no token has a recording, so controls never spend quota for nothing;
       - raises `TokensPending` while any recorded token's analyze job is `queued` or `running`. Unrecorded tokens don't block; their trials stay `None`.
-      - Otherwise it enqueues `kind="calibrate"`.
+      - Otherwise it calls `queue.enqueue(JobKind.CALIBRATE, None)`.
     - `calibration_view(*, store, content) -> CalibrationView | None`. `results` are computed from the stored trials with `evaluate` once the run is `done`.
-  - **`app/calibrate_job.py`** (steps in order):
+  - **`app/calibrate_job.py`** (steps in 0c's `JOB_PLANS[JobKind.CALIBRATE]` order; `build_services` registers them):
     - `ControlsStep` (`"controls"`). For each distinct word of the running run:
       - `clip = synthesizer.synthesize(word)`;
-      - for each detector the word's keys use, if no control analysis is stored for `(clip.hash, run, kind)`, call the port (`score(clip.path, reference_text=word)` or `probe(...)`) and store the result;
+      - for each detector the word's keys use, if no control analysis is stored for `(clip.hash, run, kind)`, call the port (`score(data_dir / clip.path, reference_text=word)` or `probe(...)`) and store `result.raw`;
       - `add_control_trials`;
-      - then progress `i/n`.
+      - then `ctx.progress(i / n)`.
       Any port error propagates, so the runner fails the step with its typed error and the run stays `running`.
     - `EvaluateStep` (`"evaluate"`, `needs=("controls",)`). If the run is already `done`, it does nothing. Otherwise:
-      - decode each trial's analysis (the attempt's analysis of the detector's kind, or the control's);
+      - parse each trial's analysis with 0d's parsers (the attempt's analysis of the detector's kind, or the control's);
       - `set_flags` from `flagged(...)` (`None` when the analysis is missing or undecodable);
       - `evaluate`, then `build_calibrated_config(config_id=uuid4().hex, run_id=...)`;
-      - `complete(capabilities=...)`, with `{"azure_pa": {"nbest": ..., "prosody": ..., "provider_version": ...}, "phone_probe": {"ready": ...}}`.
-    - `QueueRescoreStep` (`"queue_rescore"`, `needs=("evaluate",)`): `queue.enqueue("rescore")`.
-  - **Routes** (`api/calibration_routes.py`; domain errors map to 409 with the safe messages below):
+      - `complete(capabilities=...)`, with `{"azure_pa": {"nbest_phonemes": ..., "prosody": ..., "provider_version": ...}, "phone_probe": {"ready": ...}}`.
+    - `QueueRescoreStep` (`"queue_rescore"`, `needs=("evaluate",)`): `queue.enqueue(JobKind.RESCORE, None)`.
+  - **Routes** (`api/calibration_routes.py`; domain errors map to 409 `ErrorOut` with the safe messages below; `/api/calibration` joins `READ_ONLY_GET_ROUTES`):
     - `POST /api/calibration` → 200 `CalibrationRunOut` (`startCalibration`).
     - `GET /api/calibration` → 200 `CalibrationRunOut`, or 404 when no run exists (`getCalibration`).
     - `POST /api/calibration/skip` → 200 `CalibrationRunOut` (`skipCalibration`).
@@ -1378,22 +1311,14 @@ Expected: FAIL (`ModuleNotFoundError: nosolear.app.calibrate`).
 
 - [ ] **Step 3: Implement the repository, use cases, job steps, routes, schemas and CLI**
 
-Follow the Interfaces block. `get_available_detectors` in `api/deps.py` computes `calibratable_detectors(azure_nbest=<latest azure_pa capabilities' "nbest">, phone_probe_ready=<readiness phone_probe row is ready>)`. Every port the steps use comes from 0d's composition, cache → retry → metered → raw, so each control call reserves on the ledger. Update §9.2 and §18 of `docs/ARCHITECTURE.md` with the prosody decision.
+Follow the Interfaces block. `get_available_detectors` in `api/deps.py` computes `calibratable_detectors(azure_nbest=<the latest ("azure", "azure_pa") record's "nbest_phonemes", and the record is not is_stale for the current region and locale>, phone_probe_ready=<Providers.phone_probe is not None>)`. Every port the steps use comes from 0d's composition, cache → retry → metered → raw, so each control call reserves on the ledger. Update §9.2 and §18 of `docs/ARCHITECTURE.md` with the prosody decision.
 
 - [ ] **Step 4: Run the tests, regenerate the API types, and confirm they pass**
 
 Run: `uv run pytest -q && uv run pyright && cd ../.. && make gen-api && make lint`
 Expected: all pass; only `apps/web/src/shared/api/*` changes under `apps/web`.
 
-- [ ] **Step 5: Commit, open the PR, merge when green**
-
-```bash
-git fetch origin && git switch -c p0e/08-calibration-session origin/main
-git add apps/api apps/web/src/shared/api docs/ARCHITECTURE.md docs/superpowers/HANDOFF.md
-git commit -m "Add the calibration session with cached TTS controls and a calibrate job"
-git push -u origin p0e/08-calibration-session && gh pr create --fill
-gh pr checks --watch && gh pr merge --squash
-```
+- [ ] **Step 5: Deliver.** Branch `p0e/08-calibration-session`; `git add apps/api apps/web/src/shared/api docs/ARCHITECTURE.md docs/superpowers/HANDOFF.md`; commit message "Add the calibration session with cached TTS controls and a calibrate job"; then the delivery commands in Global Constraints.
 
 ---
 
@@ -1404,16 +1329,16 @@ gh pr checks --watch && gh pr merge --squash
 - Test: `tests/domain/test_skill_scores.py`, `tests/domain/test_baseline_report.py`
 
 **Interfaces:**
-- **Consumes:** `Profile` and `ProfileEntry` (with `provisional`); `Observation`; 0d's `PronunciationResult`, `Transcript` and `CoachRubric`; Task 4's `FILLERS`, `normalize` and `sentences`.
+- **Consumes:** `Profile` and `ProfileEntry` (with `provisional`); `Observation`; 0d's `PronunciationAssessment`, `Transcript` and `Rubric`; Task 4's `FILLERS`, `normalize` and `sentences`.
 - **Produces, in `domain/skill_scores.py`:**
   - `linear_score(value: float, *, zero_at: float, full_at: float) -> float`: 100 at `full_at`, 0 at `zero_at`, linear in between, clamped to [0, 100].
   - `SessionEvidence`, with these fields:
-    - `scripted_pronunciation: tuple[PronunciationResult, ...]`
+    - `scripted_pronunciation: tuple[PronunciationAssessment, ...]`
     - `sound_observations: tuple[Observation, ...]`
     - `quick_answers: tuple[Transcript, ...]`
     - `unscripted: tuple[Transcript, ...]`
     - `grammar_misses: int`
-    - `articulate_rubric: CoachRubric | None`
+    - `articulate_rubric: Rubric | None`
   - `SkillScore(skill: Skill, score: float, values: Mapping[str, float], scores: Mapping[str, float])`.
   - `skill_scores(evidence: SessionEvidence) -> tuple[SkillScore, ...]`, in Skill order. A skill with no available component is omitted, and `score` is the unweighted mean of the available component scores.
 - **Produces, in `domain/baseline_report.py`:**
@@ -1483,15 +1408,7 @@ Expected: FAIL (`ModuleNotFoundError`).
 Run: `uv run pytest tests/domain -q && uv run pyright`
 Expected: all pass.
 
-- [ ] **Step 5: Commit, open the PR, merge when green**
-
-```bash
-git fetch origin && git switch -c p0e/09-skill-scores-report origin/main
-git add apps/api docs/superpowers/HANDOFF.md
-git commit -m "Add per-skill baseline scores and the ranked baseline report"
-git push -u origin p0e/09-skill-scores-report && gh pr create --fill
-gh pr checks --watch && gh pr merge --squash
-```
+- [ ] **Step 5: Deliver.** Branch `p0e/09-skill-scores-report`; `git add apps/api docs/superpowers/HANDOFF.md`; commit message "Add per-skill baseline scores and the ranked baseline report"; then the delivery commands in Global Constraints.
 
 ---
 
@@ -1546,17 +1463,17 @@ gh pr checks --watch && gh pr merge --squash
       1. Raise `BaselineNotOpen` when no session is open.
       2. Raise `BaselinePending` unless every attempt is recorded and its analyze job is `done` or `failed`.
       3. `now = clock.now()`, then `rebuild_profile(..., session_id=id, reason="baseline")`.
-      4. Gather `SessionEvidence` from the session's decoded analyses and current observations, then `save_scores(skill_scores(...))`.
+      4. Gather `SessionEvidence` from the session's parsed analyses (`collect_results`) and current observations, then `save_scores(skill_scores(...))`.
       5. `complete(completed_at=now)`, then return `baseline_report(...)`.
     - `refresh_baseline(session_id: str, *, store, inputs, observations, profiles, taxonomy, pack) -> None`: `build_profile(current observations, as_of=completed_at)`, `profiles.snapshot(..., reason="baseline")`, then recompute and save the scores.
     - `refresh_completed_baselines(*, store, inputs, observations, profiles, taxonomy, pack) -> int`: calls `refresh_baseline` for every completed session and returns how many it refreshed.
     - `baseline_report(*, store, observations, profiles, configs, calibration, inputs) -> BaselineReport | None` reads the newest baseline snapshot of the latest completed session, its current observations and its scores.
   - **Report inputs:**
     - `calibration` is `CALIBRATED` when the newest config is calibrated, `SKIPPED` when the latest run is skipped, and otherwise `NOT_RUN`.
-    - `fillers_undercounted` is true when any session transcript has `drops_fillers`.
+    - `fillers_undercounted` is true when any session transcript has `fillers_kept` false.
     - `coach_scored` is true when any coach analysis exists for the session.
   - **`RescoreStep`** now runs `rescore(...)`, then `refresh_completed_baselines(...)`.
-  - **Routes** (`BaselinePending` and `BaselineNotOpen` map to 409):
+  - **Routes** (`BaselinePending` and `BaselineNotOpen` map to 409 `ErrorOut`; `/api/baseline` and `/api/baseline/report` join `READ_ONLY_GET_ROUTES`):
     - `POST /api/baseline` → 200 `BaselineSessionOut` (`startBaseline`).
     - `GET /api/baseline` → 200 `BaselineSessionOut`, or 404 (`getBaseline`).
     - `POST /api/baseline/complete` → 200 `BaselineReportOut` (`completeBaseline`).
@@ -1629,15 +1546,7 @@ Expected: FAIL (`ModuleNotFoundError: nosolear.app.baseline`).
 Run: `uv run pytest -q && uv run pyright && cd ../.. && make gen-api && make lint`
 Expected: all pass; only `apps/web/src/shared/api/*` changes under `apps/web`.
 
-- [ ] **Step 5: Commit, open the PR, merge when green**
-
-```bash
-git fetch origin && git switch -c p0e/10-baseline-session origin/main
-git add apps/api apps/web/src/shared/api docs/superpowers/HANDOFF.md
-git commit -m "Add the baseline session, skill scores and baseline report endpoints"
-git push -u origin p0e/10-baseline-session && gh pr create --fill
-gh pr checks --watch && gh pr merge --squash
-```
+- [ ] **Step 5: Deliver.** Branch `p0e/10-baseline-session`; `git add apps/api apps/web/src/shared/api docs/superpowers/HANDOFF.md`; commit message "Add the baseline session, skill scores and baseline report endpoints"; then the delivery commands in Global Constraints.
 
 ---
 
@@ -1655,17 +1564,18 @@ gh pr checks --watch && gh pr merge --squash
   - `cli.py`: `main(argv, *, client=None, synthesizer=None)`.
   - `api/deps.py`, `api/app.py`.
   - `tests/harness.py`: `make_harness(*, readiness: ReadinessReport | None = None, ...)` overrides `get_readiness_report`. The default is all components ready, with the phone probe `not_installed`.
+  - `tests/live/conftest.py`: `live_harness`, the harness over real adapters: 0b's `live_settings` (tmp data dir) and `create_app(live_settings, ledger=real_ledger, start_runner=False)` with 0d's `real_ledger`, so caps still apply.
   - `README.md`: the "First run" section.
   - `apps/web/src/shared/api/*` (regenerated).
 - Test: `tests/domain/test_onboarding.py`, `tests/api/test_onboarding_api.py`, plus the e2e and live files above.
 
 **Interfaces:**
 - **Consumes:**
-  - 0b: `ReadinessReport` and `ReadinessRow` from `get_readiness_report`.
+  - 0b: `ReadinessReport`, `ReadinessRow`, `Component` and `ReadinessStatus` from `deps.get_readiness_report` (with 0c's usage and 0d's probe rows filled in).
   - Task 8: `CalibrationStore.latest`.
   - Task 10: `BaselineStore.open_session` and `latest_completed`.
   - 0d: `Synthesizer`, built for the CLI through `api/deps.py`.
-  - 0c: `ApiClient.upload_wav` and `follow_job`.
+  - 0c: `ApiClient.upload_wav(attempt_id, path) -> job_id` and `follow_job(job_id) -> dict`.
 - **Produces:**
   - **`domain/onboarding.py`:**
     - `class OnboardingStep(StrEnum)`: `READINESS = "readiness"`, `CALIBRATION = "calibration"`, `BASELINE = "baseline"`, `REPORT = "report"`, `DAILY_PLAN = "daily_plan"`.
@@ -1685,7 +1595,7 @@ gh pr checks --watch && gh pr merge --squash
 
       So a re-calibration after the baseline never sends onboarding back.
   - **`app/onboarding.py`:** `OnboardingState(step, blockers, calibration, baseline, baseline_session_id: str | None)` and `onboarding_state(*, readiness, calibration, baselines, daily_sessions: int) -> OnboardingState`. `daily_sessions` counts sessions with `kind = 'daily'`.
-  - **`GET /api/onboarding`:** 200 `OnboardingOut` (`getOnboarding`), with fields `step`, `blockers: list[OnboardingBlockerOut(component, status, fix)]`, `calibration`, `baseline` and `baseline_session_id`. The `fix` copy comes from the readiness row.
+  - **`GET /api/onboarding`:** 200 `OnboardingOut` (`getOnboarding`), added to `READ_ONLY_GET_ROUTES`, with fields `step`, `blockers: list[OnboardingBlockerOut(component, status, fix)]`, `calibration`, `baseline` and `baseline_session_id`. The `fix` copy comes from the readiness row.
   - **CLI:**
     - `first_run_cli.run(args, client, *, synthesizer: Synthesizer | None = None) -> int | None`. `cli.main` passes `synthesizer` through, or builds one through `api/deps.py` when it is `None`.
     - `nosolear onboarding` prints `Next: {step}`, then one hint line per step:
@@ -1731,7 +1641,7 @@ def test_onboarding_get_has_no_side_effects(harness): ...        # row counts of
 ```python
 # tests/e2e/test_first_run.py  (harness with committed content, readiness all ready, probe not installed, user_errors {"v": "w"})
 def test_first_run_through_api_and_cli(harness, capsys):
-    cli = lambda *argv: main(list(argv), client=ApiClient(http=harness.client), synthesizer=harness.voice.synthesizer)
+    cli = lambda *argv: main(list(argv), client=ApiClient(harness.client), synthesizer=harness.synthesizer)
     assert harness.client.get("/api/onboarding").json()["step"] == "calibration"
     assert cli("calibrate", "start") == 0 and cli("stand-in", "calibration") == 0
     assert cli("calibrate", "finish") == 0
@@ -1766,22 +1676,14 @@ Expected: FAIL (`ModuleNotFoundError: nosolear.domain.onboarding`).
 
 - [ ] **Step 3: Implement onboarding, the route, the CLI commands, and the README "First run" section**
 
-The README section covers `nosolear onboarding` → `calibrate start` / `skip` → `upload` → `calibrate finish` → `baseline start` → `upload` → `baseline complete` → `baseline report`. It adds a note that `stand-in` spends TTS characters and Azure audio, like any recording.
+The README section covers `nosolear onboarding` → `calibrate start` / `skip` → `nosolear upload FILE --attempt-id ID` per item → `calibrate finish` → `baseline start` → `upload` per item → `baseline complete` → `baseline report`. It adds a note that `stand-in` spends TTS characters and Azure audio, like any recording.
 
 - [ ] **Step 4: Run the full suite, regenerate the API types, and confirm they pass**
 
 Run: `uv run pytest -q && uv run pyright && cd ../.. && make gen-api && make test && make lint`
 Expected: all pass, with the e2e tests among them. The live test is collected but deselected.
 
-- [ ] **Step 5: Commit, open the PR, merge when green**
-
-```bash
-git fetch origin && git switch -c p0e/11-onboarding-first-run origin/main
-git add apps/api apps/web/src/shared/api README.md docs/superpowers/HANDOFF.md
-git commit -m "Add onboarding state and an end-to-end first run through the API and CLI"
-git push -u origin p0e/11-onboarding-first-run && gh pr create --fill
-gh pr checks --watch && gh pr merge --squash
-```
+- [ ] **Step 5: Deliver.** Branch `p0e/11-onboarding-first-run`; `git add apps/api apps/web/src/shared/api README.md docs/superpowers/HANDOFF.md`; commit message "Add onboarding state and an end-to-end first run through the API and CLI"; then the delivery commands in Global Constraints.
 
 ---
 
@@ -1835,70 +1737,31 @@ gh pr checks --watch && gh pr merge --squash
 - Re-scoring after calibration changes earlier observations without any provider call or ledger use (`test_skip_then_calibrate_later_rescores_without_provider_calls`).
 - `make test` and `make lint` pass, and the `contract` check shows no drift.
 
+## Spec deviations (accepted by the owner)
+
+- The `extractions` table (one row per attempt, scoring config and detector) and the `calibrate` job kind are not in §7; Task 2 adds them to §7.
+- `GET /api/profile` exposes `provisional` per entry in this phase (an optional field, so `apps/web` changes only by `make gen-api`), because the goal requires sound scores to show as provisional.
+- Calibration covers sound keys only; prosody keys stay provisional (Task 8 records it in §9.2 and §18).
+
 ## Cross-phase assumptions
 
-Each line gives what this plan assumes and which phase must produce it. Where a neighbouring plan names something differently, its name wins and this plan's tasks follow it.
-
-- **0b:**
-  - `LanguagePack` in `nosolear/domain/packs.py` with `id`, `hypotheses: Mapping[str, str]` and `calibration_emphasis: tuple[str, ...]`.
-  - `load_pack(content_dir, pack_id)`, and `get_pack()` in `api/deps.py`.
-  - `tests/factories.py` exports `PACK` (the neutral pack).
-- **0b:** `build_profile(observations, *, as_of, taxonomy, pack, config=DEFAULT_CONFIG)` and `rebuild_profile(*, observations, profiles, taxonomy, pack, clock, config)`, with `profile_entries.pack_id`.
-- **0b:** `CONTENT_DIR = REPO_ROOT / "content"` in `settings.py`, and the 78 salvaged calibration items committed under `content/calibration/` (Task 6 converts them to its shape if needed).
-- **0b:**
-  - `ReadinessReport(rows: tuple[ReadinessRow, ...])`, with `ReadinessRow(component: str, status: str, reason: str, fix: str | None)`.
-  - Statuses: `ready`, `missing`, `not_installed`, `not_probed`, `degraded`.
-  - Component ids: `azure_speech`, `azure_capabilities`, `anthropic`, `transcriber`, `phone_probe`, `language_pack`, `data_dir`, `usage`.
-  - Served by `get_readiness_report()` in `api/deps.py`.
-- **0b:** the `live` marker, `make test-live`, and a `live_harness`-style fixture: a temporary data dir that shares the user's ledger.
-- **0c:**
-  - Tables `recordings`, `jobs` and `analyses` per §7.
-  - `analyses.attempt_id` is NOT NULL, with unique `(attempt_id, kind)` and no `tts_hash` or `calibration_run_id` yet.
-  - `jobs.kind` has a CHECK limited to `analyze` and `rescore`; `jobs.attempt_id` is nullable.
-- **0c:**
-  - A job step registry: steps have `name`, `needs`, `applies(job)` and `run(job)`, and a job context gives `attempt_id` and `progress(fraction)`.
-  - Job kinds are registered in `api/deps.py`, and `JobQueue.enqueue(kind, *, attempt_id=None) -> str`.
-  - Typed step errors `CapExceeded`, `ProviderUnavailable`, `CapabilityMissing` and `InvalidAudio`.
-  - A test-only synchronous drain of queued jobs.
-- **0c:**
-  - `JobAcceptedOut(job_id: str)` and `GET /api/jobs/{id}` with a `status` field.
-  - `ApiClient` (httpx, runtime dependency) with `get_json`, `post_json`, `upload_wav(attempt_id, path) -> job_id` and `follow_job(job_id)`.
-  - `cli.main(argv, *, client: ApiClient | None = None)`, and the CLI command `nosolear upload <attempt_id> <wav>`.
-- **0c–0d:** migration heads `0003` (0b), `0004` (0c), `0005` (0d), so 0e's migration is `0006`.
-- **0d:** `tts_cache.hash` is the table's primary key.
-- **0d** (`nosolear/domain/provider_results.py`):
-  - `RawAnalysis(kind, provider, provider_version, adapter, adapter_version, raw)`.
-  - Pure `decode(RawAnalysis) -> PronunciationResult | Transcript | PhoneProbeResult | CoachResult`, raising `ValueError` on bad input.
-  - `encode(result, *, provider, provider_version, adapter, adapter_version) -> RawAnalysis` (used by fakes).
-  - The analysis kinds `pronunciation`, `transcript`, `phone_probe` and `coach`.
-- **0d, fields 0e reads:**
-  - `PronunciationResult`: `words`, `has_nbest`, `has_prosody`.
-  - `PaWord`: `text`, `start_ms`, `end_ms`, `accuracy`, `error_type` (Azure's ErrorType verbatim), `phonemes`, `unexpected_break`, `missing_break`, `monotone`.
-  - `PaPhoneme`: `phone` (Azure en-US IPA), `accuracy`, `start_ms`, `end_ms`, `nbest: tuple[PhoneCandidate(phone, score), ...]`.
-  - `Transcript`: `words: tuple[TimedWord(text, start_ms, end_ms), ...]`, `drops_fillers`.
-  - `PhoneProbeResult`: `words: tuple[ProbeWord(text, expected, ops, start_ms | None, end_ms | None), ...]`, with `ProbeOp(kind: "match" | "sub" | "ins" | "del", expected, heard, position)`.
-  - `CoachResult`: `issues: tuple[CoachIssue(error_key, quote | None), ...]` and `rubric: CoachRubric(structure, clarity, concision) | None` (0–4 each; present for `articulate`).
-- **0d:**
-  - Ports `PronunciationScorer.score(audio: Path, *, reference_text: str | None) -> RawAnalysis`, `PhoneProbe.probe(audio: Path, *, reference_text: str) -> RawAnalysis` and `Synthesizer.synthesize(text: str, *, rate: float = 1.0) -> SynthesizedClip(hash, path, ...)`.
-  - Step classes for score, transcribe, probe and coach, whose `applies` 0e amends.
-  - `create_app(settings, *, providers: ProviderPorts | None = None)`. It wraps the given raw ports as cache → retry → metered, so fakes are metered too.
-  - A builder in `api/deps.py` the CLI can use for the `Synthesizer`.
-  - `tests/fakes.py` with `FakeCoach`.
-- **0d:** the latest `azure_pa` `provider_capabilities` row exposes `nbest`, `prosody` and `provider_version`, and the readiness `phone_probe` row is `ready` only when the `local` extra and espeak-ng are installed.
+None open. Every consumed name is the one 0b, 0c or 0d produces: 0b's `LanguagePack`, `load_pack(packs_dir, pack_id)`, `CONTENT_DIR`, `PACK = NEPALI`, the calibration specs and readiness types; 0c's tables, `JobKind`/`JOB_PLANS`, `Step`/`StepContext`, `AnalysisStore`, `ApiClient`, `ErrorOut`, `create_app(start_runner=False)` and `run_pending()`; 0d's result types, parsers, `RawPorts`, `Providers`, steps and `CapabilityRepository`. Migration heads: 0003 (0b), 0004 (0c), 0005–0006 (0d), so this plan's is 0007.
 
 ## Produces for later phases
 
-- **`domain/scoring.py`:** `ScoringConfig`, `ScoringConfig.rule_for(detector, definition) -> ScoringRule | None`, `V0_CONFIG`, `V0_CONFIG_ID = "v0"`, `enabled_keys(...)`, `current_observations(...)`. `Observation.scoring_config_id` / `.provisional` and `ProfileEntry.provisional`.
+- **`domain/scoring.py`:** `ScoringConfig`, `ScoringConfig.rule_for(detector, definition) -> ScoringRule | None`, `V0_CONFIG`, `V0_CONFIG_ID = "v0"`, `enabled_keys(...)`, `current_observations(...)`. `Observation.scoring_config_id` / `.provisional` and `ProfileEntry.provisional: bool = False` (also on `GET /api/profile` as `ProfileEntryOut.provisional`). `ScoringConfigRepository(engine, taxonomy).newest() / get / order()`: Phase 1 asks `newest().rule_for(...)` whether a key is scored.
+- **Observation evidence keys** (Phase 1's feedback reads them): `word`, `start_ms`, `end_ms`, `expected`, `produced`, `score` for sounds; `text`, `start_ms`, `end_ms` (the sentence) for fluency; `quote` plus the sentence or answer span for coach keys.
+- **Tables:** `scoring_configs`, `calibration_runs`, `calibration_trials`, `content_items`, `skill_scores`, `extractions` (new, not in §7); `observations.scoring_config_id/provisional`, `profile_entries.provisional`, `attempts.content_item_id`, kinds `calibration` (sessions, attempts) and `calibrate` (jobs). Migration `0007_scoring_calibration`.
 - **`domain/extraction/extract.py`:** `extract(item: ExtractionItem, results: ProviderResults, *, config, pack, taxonomy) -> dict[Detector, tuple[Observation, ...]]`. This is what Phase 1's daily attempts and Phase 3's drills go through.
-- **`app/extract_attempt.py`:** `extract_attempt(*, attempt_id, inputs, configs, extractions, pack, taxonomy, clock) -> ExtractSummary` and `collect_results(analyses)`.
+- **`app/extract_attempt.py`:** `extract_attempt(*, attempt_id, inputs, configs, extractions, pack, taxonomy, clock) -> ExtractSummary` and `collect_results(analyses, *, step, taxonomy)`.
 - **`app/rescore.py`:** `rescore(*, inputs, configs, extractions, observations, profiles, pack, taxonomy, clock, on_progress) -> RescoreSummary`.
-- **Job kinds:** `rescore` (via `POST /api/rescore`) and `calibrate`. Analyze jobs end with the `extract` step.
-- **Rebuilding:** `rebuild_profile(..., session_id=None, reason="rebuild")`, where `reason=None` replaces the entries without a snapshot. `ProfileRepository.snapshot(...)` and `latest_snapshot(session_id, reason)`.
+- **Job kinds:** `rescore` (via `POST /api/rescore`) and `calibrate` (`JobKind.CALIBRATE`, plan `controls`, `evaluate`, `queue_rescore`). Analyze and rescore jobs end with the `extract` step, so a `done` analyze job leaves the profile current. `JobAcceptedOut(job_id)` for 202 responses.
+- **Rebuilding:** `rebuild_profile(..., session_id=None, reason="rebuild")`, where `reason=None` calls `ProfileWriter.replace` (entries only, no snapshot). `ProfileRepository.snapshot(...)` and `latest_snapshot(session_id, reason)`. Phase 1's re-check columns must survive both `save` and `replace`.
 - **`ObservationRepository.current()`:** the observations the profile uses, meaning the newest config per attempt.
-- **`domain/content.py`:** `ContentItem`, `ContentKind`, `SeedContent`, `BaselineProtocol` (reused by Phase 5's re-test, with passage A and the same word list), and `ContentRepository.sync_seed`.
-- **`domain/skill_scores.py`:** `skill_scores(SessionEvidence) -> tuple[SkillScore, ...]`, and the `skill_scores` table written per session (Phase 1 writes the daily ones).
+- **`domain/content.py`:** `ContentItem`, `ContentKind`, `SeedContent`, `CalibrationSet`, `BaselineProtocol` (reused by Phase 5's re-test, with passage A and the same word list), and `ContentRepository.sync_seed`. The `content_items` table holds the seed prompts Phase 1's plan picks from (`kind='prompt'`, `target_keys` as a JSON array).
+- **`domain/skill_scores.py`:** `skill_scores(SessionEvidence) -> tuple[SkillScore, ...]`, and the `skill_scores` table, written for the baseline here. Daily and re-test scores are not written by Phase 1; Phase 5 (trend lines) owns them.
 - **`domain/baseline_report.py`:** `BaselineReport`, `ReportItem`, `ClipRef`, `CalibrationState`.
 - **Onboarding:** `OnboardingStep` and `GET /api/onboarding` (`getOnboarding`). Phase 1 makes `daily_plan` real; until it exists, a completed baseline leads to `report`.
 - **Endpoints:** `startCalibration`, `getCalibration`, `skipCalibration`, `finishCalibration`, `startBaseline`, `getBaseline`, `completeBaseline`, `getBaselineReport`, `startRescore`, `getOnboarding`. All are typed in `apps/web/src/shared/api/schema.d.ts` for Phase 2.
 - **CLI:** `nosolear rescore`, `calibrate start|status|skip|finish`, `baseline start|status|complete|report`, `onboarding`, `stand-in calibration|baseline`.
-- **Test doubles:** `tests/oracle_voice.py` (`OracleVoice`) and `tests/harness.py` (`harness` fixture), for Phase 1's API tests.
+- **Test doubles:** `tests/oracle_voice.py` (`OracleVoice`) and `tests/harness.py` (`harness`, `make_harness`, `Harness.drain/upload/attempt/synthesizer`), which Phase 1's API and end-to-end tests reuse.

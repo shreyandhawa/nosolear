@@ -22,6 +22,7 @@
 - **`apps/web`:** the only permitted change is regenerating API types with `make gen-api` (commit the regenerated files) whenever the OpenAPI schema changes, so CI's `contract` check stays green.
 - **Security (owner's rules, verbatim):** Keys come only from env or .env. They never appear in logs, API responses, error messages, OpenAPI examples or fixtures. Bind to 127.0.0.1 by default, restrict CORS to the app's origin, and never expose the API unauthenticated. Uploads: cap size and duration, validate the WAV format, generate filenames server-side, write only under the data directory. Treat transcripts and coach output as untrusted. Use structured outputs with the taxonomy enum, and never let model output reach a file path, shell command or SQL string. Check the usage ledger before every paid or quota-limited call, so a bug can't burn a user's quota. Pin and lock dependencies, pin model downloads to a revision, and add a dependency audit to CI. No telemetry. Document exactly what is sent to which provider.
 - **Fixed values from the spec:** default host `127.0.0.1`, port `8000`; default origins `http://localhost:5173` and `http://127.0.0.1:5173`; region pattern `^[a-z0-9]+$`; pack id pattern `^[a-z0-9_]+$`; data dir mode `0700`; MIT licence, holder "Shreyan Dhawa", year 2026; default pack `neutral` (prior `a0 = 1, b0 = 9` for every key); hypothesis prior `a0 = 1, b0 = 3`.
+- **Fixed values decided by the owner (not in §14; added to the settings tree here so every phase reads one tree):** `NOSOLEAR_TIMEZONE`, an IANA name validated with `zoneinfo`, default the machine's local timezone (Phase 1's daily plan rolls over at local midnight in it; ledger cap periods stay UTC per §11); `NOSOLEAR_JOB_WORKERS`, default `1` (Azure F0 allows one concurrent request; 0c's job runner reads it); `NOSOLEAR_FASTER_WHISPER_MODEL`, default `small.en`, and `NOSOLEAR_MLX_WHISPER_MODEL`, default `whisper-large-v3-turbo` (0d maps each value to a model pinned at a revision SHA); configured API keys must be at least `MIN_KEY_LENGTH = 16` characters, so log scrubbing always applies to them.
 - **Git:** one branch and one PR per task, named `p0b/NN-<slug>`, branched from up-to-date `origin/main`. Commit and push as you go. Commit messages: an imperative sentence, **no `Co-Authored-By` trailer, no "Generated with Claude Code" footer**. Never push to `main`. Squash-merge only when CI is green, with `gh pr merge --squash` and **without** `--delete-branch` (the owner approves branch deletions).
 - **Every task's PR also updates `docs/superpowers/HANDOFF.md`** (done / in progress / next; the list of adapters still unverified against a live service is "none" for this whole phase).
 
@@ -127,7 +128,7 @@ def test_contributing_covers_the_house_rules():
   - `SECURITY.md`: scope; the threat model in short (§15: loopback only, guards, secrets, uploads, supply chain); the **single-user-machine warning** (until token mode in Phase 6 any local user can call the API and spend the owner's quota); how to report privately via the GitHub advisory URL above; what not to put in a public issue (keys, recordings).
   - `CONTRIBUTING.md`: setup (`make setup`), test-first rule, the `p<phase>/NN-slug` branch and one-PR-per-task flow, squash merge when CI is green, commit style (imperative, no trailers), no real voices or keys in fixtures (including example keys; `.env.example` lists names only), the checks to run (`make test`, `make lint`), and how to add a language pack (a directory under `content/packs/<id>/` with `pack.toml`; `uv run pytest tests/content` validates it; data-only PR).
 - [ ] **Step 4: Run** the test file. Expected: PASS.
-- [ ] **Step 5 (owner action, document in the PR body, do not run it yourself):** enable private vulnerability reporting: `gh api -X PUT repos/shreyandhawa/nosolear/private-vulnerability-reporting`.
+- [ ] **Step 5: Verify private vulnerability reporting is on** (the orchestrator enabled it; do not change repository settings): `gh api repos/shreyandhawa/nosolear/private-vulnerability-reporting -q .enabled` prints `true`. If it prints anything else, stop and tell the owner, because `SECURITY.md` links to `https://github.com/shreyandhawa/nosolear/security/advisories/new`.
 - [ ] **Step 6: Close out** (see Task close-out).
 
 ---
@@ -194,26 +195,34 @@ def test_espeak_is_gpl_separate_executable():
 ```python
 LOOPBACK_NAMES: frozenset[str]            # {"localhost", "127.0.0.1", "::1"}
 TRANSCRIBERS = ("auto", "mlx_whisper", "faster_whisper", "azure_stt", "crisper_whisper")
+CONTENT_DIR = REPO_ROOT / "content"       # packs, calibration items and (0e) the baseline protocol
+MIN_KEY_LENGTH = 16                       # shorter keys are refused, so scrubbing never shreds ordinary text
 
 class Settings(BaseSettings):
     data_dir: Path
     host: str                              # default "127.0.0.1"; loopback only
     port: int                              # default 8000; 1..65535
     app_origins: tuple[str, ...]           # comma-separated in env; loopback hosts only
-    azure_speech_key: SecretStr | None
+    azure_speech_key: SecretStr | None     # when set, at least MIN_KEY_LENGTH characters
     azure_speech_region: str | None        # ^[a-z0-9]+$
     azure_locale: str                      # default "en-US"; ^[a-z]{2,3}-[A-Z]{2}$
-    tts_voice: str                         # default "en-US-JennyNeural"; ^[A-Za-z0-9-]+$
-    anthropic_api_key: SecretStr | None
+    tts_voice: str                         # default "en-US-JennyNeural"; ^[a-z]{2,3}-[A-Z]{2}-[A-Za-z]+Neural$
+    anthropic_api_key: SecretStr | None    # when set, at least MIN_KEY_LENGTH characters
     coach_model: str                       # default "claude-opus-5-5"; ^[A-Za-z0-9._-]+$
     transcriber: Literal["auto", "mlx_whisper", "faster_whisper", "azure_stt", "crisper_whisper"]
+    faster_whisper_model: str              # default "small.en"; ^[A-Za-z0-9._-]+$ (0d checks it names a pinned model)
+    mlx_whisper_model: str                 # default "whisper-large-v3-turbo"; same pattern and check
     pack: str                              # default "neutral"; ^[a-z0-9_]+$
+    timezone: str                          # default: the machine's local IANA zone (see Step 3); must load with zoneinfo.ZoneInfo
     cap_azure_audio_hours: float           # default 4.5, > 0
     cap_azure_tts_chars: int               # default 450000, > 0
     cap_claude_tokens: int                 # default 100000, > 0
+    job_workers: int                       # default 1, >= 1 (0c's job runner thread count)
     def secret_values(self) -> tuple[str, ...]      # non-empty configured secrets, in field order
     @property
-    def packs_dir(self) -> Path                     # REPO_ROOT / "content" / "packs"
+    def tzinfo(self) -> ZoneInfo                    # ZoneInfo(self.timezone)
+    @property
+    def packs_dir(self) -> Path                     # CONTENT_DIR / "packs"
 
 def settings_error_summary(exc: ValidationError) -> str
     # one line per error: "NOSOLEAR_<FIELD>: <message>"; never the input value
@@ -223,7 +232,17 @@ def settings_error_summary(exc: ValidationError) -> str
 - [ ] **Step 1: Write the failing tests** (use `make_settings(**kw)` = `Settings(_env_file=None, **kw)` so the developer's real `.env` never leaks in; the autouse fixture deletes every `NOSOLEAR_*` variable):
 
 ```python
-def test_defaults(): ...  # host "127.0.0.1", port 8000, origins == ("http://localhost:5173","http://127.0.0.1:5173"), pack "neutral", transcriber "auto", caps 4.5 / 450000 / 100000, coach_model "claude-opus-5-5"
+def test_defaults(): ...  # host "127.0.0.1", port 8000, origins == ("http://localhost:5173","http://127.0.0.1:5173"), pack "neutral", transcriber "auto", caps 4.5 / 450000 / 100000, coach_model "claude-opus-5-5", job_workers 1, faster_whisper_model "small.en", mlx_whisper_model "whisper-large-v3-turbo"
+@pytest.mark.parametrize("field", ["azure_speech_key", "anthropic_api_key"])
+def test_short_key_rejected(field):   # 15 characters -> ValidationError naming NOSOLEAR_<FIELD> but not the value; 16 accepted
+    ...
+@pytest.mark.parametrize("workers", [0, -1])
+def test_job_workers_must_be_positive(workers): ...
+@pytest.mark.parametrize("tz", ["Asia/Kathmandu", "UTC", "America/New_York"])
+def test_timezone_accepts_iana_names(tz): assert make_settings(timezone=tz).tzinfo == ZoneInfo(tz)
+@pytest.mark.parametrize("tz", ["Mars/Base", "../etc/passwd", "", "+05:45"])
+def test_timezone_rejects_unknown_names(tz): ...   # ValidationError naming NOSOLEAR_TIMEZONE
+def test_timezone_default_is_the_machine_zone(monkeypatch): ...   # patched local-zone lookup -> its name; lookup failure -> "UTC"
 @pytest.mark.parametrize("host", ["0.0.0.0", "192.168.1.5", "example.com", "::", ""]) 
 def test_non_loopback_host_rejected(host): ...
 @pytest.mark.parametrize("host", ["127.0.0.1", "::1", "localhost", "127.0.0.2"]) 
@@ -258,7 +277,7 @@ def test_cli_reports_bad_settings_without_input(monkeypatch, capsys):
 `test_env_example.py`: every `Settings` field appears in `.env.example` as a commented or uncommented `NOSOLEAR_<FIELD>=` line; no line assigns a value to a key-like setting (`*_KEY`, `*_API_KEY`); no line matches a long token pattern (`[A-Za-z0-9_-]{24,}`) after `=`.
 
 - [ ] **Step 2: Run** `uv run pytest tests/test_settings.py tests/test_cli.py tests/docs/test_env_example.py -v`. Expected: FAIL.
-- [ ] **Step 3: Implement** the fields above. Notes that fix choices: use `Annotated[tuple[str, ...], NoDecode]` plus a `mode="before"` validator that splits a comma-separated string; the origin validator parses with `urllib.parse.urlsplit`, requires scheme `http`/`https`, no userinfo/path/query/fragment, `hostname in LOOPBACK_NAMES`, rebuilds the canonical `scheme://host[:port]` (brackets for IPv6), de-duplicates in order. The error messages must not contain the offending value and must say "token mode is not available until Phase 6" for the origin case. The host validator uses `ipaddress.ip_address(...).is_loopback` or the literal `localhost`. `cli.main` constructs `Settings()` inside `try/except ValidationError` and prints `settings_error_summary` to stderr, returning 2.
+- [ ] **Step 3: Implement** the fields above. Notes that fix choices: use `Annotated[tuple[str, ...], NoDecode]` plus a `mode="before"` validator that splits a comma-separated string; the origin validator parses with `urllib.parse.urlsplit`, requires scheme `http`/`https`, no userinfo/path/query/fragment, `hostname in LOOPBACK_NAMES`, rebuilds the canonical `scheme://host[:port]` (brackets for IPv6), de-duplicates in order. The error messages must not contain the offending value and must say "token mode is not available until Phase 6" for the origin case. The key validator refuses a set key shorter than `MIN_KEY_LENGTH` with "too short to be a real key" (never the value or its length). The timezone validator accepts a name only if `zoneinfo.ZoneInfo(name)` loads (catch `ZoneInfoNotFoundError` and `ValueError`); the default factory reads the machine's IANA zone name (the `TZ` variable if set, else the `/etc/localtime` symlink target under `zoneinfo/`, which macOS and Linux both use) and falls back to `UTC` when none can be determined. `tzdata` is a dependency only if the system zone database is missing on a CI runner; pin it exactly if so. The host validator uses `ipaddress.ip_address(...).is_loopback` or the literal `localhost`. `cli.main` constructs `Settings()` inside `try/except ValidationError` and prints `settings_error_summary` to stderr, returning 2.
 - [ ] **Step 4: Rewrite `.env.example`** to list every setting with a one-line comment and its default, key lines empty (`# NOSOLEAR_AZURE_SPEECH_KEY=`), keeping the existing `NOSOLEAR_DATA_DIR` text.
 - [ ] **Step 5: Run** the full suite. Expected: PASS (existing `Settings(data_dir=tmp_path)` callers unchanged).
 - [ ] **Step 6: Close out.**
@@ -280,10 +299,10 @@ def test_cli_reports_bad_settings_without_input(monkeypatch, capsys):
 
 ```python
 # domain/redaction.py
-MIN_SECRET_LENGTH = 8     # shorter values are not scrubbed: they would shred ordinary text
 REDACTED = "[redacted]"
 def scrub(text: str, secrets: Iterable[str]) -> str
-    # also scrubs URL-quoted, quote_plus, JSON-escaped and repr-escaped forms; longest secret first
+    # scrubs every non-empty secret it is given (the settings validator guarantees configured keys
+    # are >= MIN_KEY_LENGTH); also URL-quoted, quote_plus, JSON-escaped and repr-escaped forms; longest secret first
 
 # logging_setup.py
 def install_secret_scrubbing(secrets: Iterable[str]) -> None   # idempotent; replaces earlier secrets
@@ -302,7 +321,7 @@ def prepare_process(settings: Settings, *, create_data_dir: bool) -> None
 ```
 
 - [ ] **Step 1: Write the failing tests.**
-  - `test_redaction.py`: `scrub("key=SECRETSECRET1", ["SECRETSECRET1"]) == "key=[redacted]"`; a secret of 7 chars is left alone; URL-quoted, `quote_plus`, JSON-escaped (`"a\"b..."`) and `repr`-escaped forms of a secret containing `"`/space/`/` are scrubbed; two secrets where one contains the other are both removed; `scrub(text, [])` returns `text`. Hypothesis property: for any `prefix`, `suffix` text and a secret of length >= 8, `secret not in scrub(prefix + secret + suffix, [secret])`.
+  - `test_redaction.py`: `scrub("key=SECRETSECRET1", ["SECRETSECRET1"]) == "key=[redacted]"`; an empty secret in the list is ignored; URL-quoted, `quote_plus`, JSON-escaped (`"a\"b..."`) and `repr`-escaped forms of a secret containing `"`/space/`/` are scrubbed; two secrets where one contains the other are both removed; `scrub(text, [])` returns `text`. Hypothesis property: for any `prefix`, `suffix` text and a secret of length >= `MIN_KEY_LENGTH`, `secret not in scrub(prefix + secret + suffix, [secret])`.
   - `test_logging_setup.py` (fixture calls `uninstall_secret_scrubbing()` afterwards; capture with a handler on the logger, formatted through `logging.Formatter`):
     `test_scrubs_message_and_args` (`log.info("key %s", key)` and an f-string message), `test_scrubs_traceback` (`raise ValueError(f"bad {key}")` logged with `log.exception`), `test_scrubs_chained_traceback` (`raise RuntimeError("outer") from ValueError(key)`), `test_scrubs_encoded_forms` (key in a logged URL, percent-encoded), `test_scrubs_loggers_created_after_install` (a new `logging.getLogger("late")` with its own new handler), `test_second_install_replaces_secrets`, `test_mismatched_format_args_do_not_crash` (`log.info("%s %s", key)` still logs, scrubbed, no exception).
   - `test_private_fs.py`: a 0755 dir containing a 0644 file and a nested 0755 dir becomes 0700/0600/0700 via `tighten_tree`; `ensure_private_dir` on a new nested path creates 0700; on an existing 0755 dir tightens to 0700; a dir owned by another uid (monkeypatch `os.stat` result uid) raises `DataDirError`; a symlink inside the tree is not followed and not chmod-ed (target keeps its mode); `make_private_file` gives 0600.
@@ -565,9 +584,11 @@ class EnvironmentProbe(Protocol):
 
 # app/check_readiness.py
 def check_readiness(settings: Settings, env: EnvironmentProbe) -> ReadinessReport
+    # 0c adds a keyword `usage: UsageSnapshot | None = None`; 0d adds the stored probe records
 # api/deps.py
 def get_settings(request: Request) -> Settings
 def get_environment() -> EnvironmentProbe       # SystemEnvironment()
+def get_readiness_report(request: Request) -> ReadinessReport   # the route's only dependency; tests and 0e override it
 # api/schemas.py
 class ReadinessRowOut(BaseModel): component: Literal[...8 ids...]; label: str; status: Literal[...5...]; reason: str; fix: str | None
 class ReadinessOut(BaseModel):    ready: bool; rows: list[ReadinessRowOut]
@@ -675,7 +696,7 @@ def test_get_routes_are_declared_read_only(app):
 - [ ] **Step 2: Run** them. Expected: FAIL.
 - [ ] **Step 3: Implement** `network_policy` as exact-membership checks (build the allowed set once; lower-case hosts; compare origins exactly). Implement the middleware: for `http`/`websocket` scopes read `scope["client"][0]` (None if absent), the `host`, `origin` and `sec-fetch-site` headers (first value), call `check_request`; on refusal log the reason code and send the 403 (for websockets close with code 1008); otherwise pass through.
 - [ ] **Step 4: Implement `serve`** (settings already refuse a non-loopback host; `prepare_process(settings, create_data_dir=True)` runs inside the app lifespan so reload workers also run it). `proxy_headers=False` keeps `scope["client"]` the real socket peer, so a forwarded-for header cannot change it. Update `Makefile`: `api` -> `cd apps/api && uv run nosolear serve --reload`; `api-dev` -> the same with `NOSOLEAR_DATA_DIR=$(CURDIR)/data/dev`.
-- [ ] **Step 5: Update existing API tests** to build clients with `loopback_client(create_app(...))` (the default `testserver` host and `testclient` peer are now refused, which is the point).
+- [ ] **Step 5: Update existing API tests** to build clients with `loopback_client(create_app(...))`, including the `client_with_tmp_db` fixture in `tests/api/conftest.py` (the default `testserver` host and `testclient` peer are now refused, which is the point). Every later phase builds its API test clients the same way.
 - [ ] **Step 6: Run** the full suite. Expected: PASS. Smoke check once by hand: `make api` in one terminal, `curl -s -H 'Host: evil.com' http://127.0.0.1:8000/api/health` prints the refusal body, `curl -s http://127.0.0.1:8000/api/health` prints `{"status":"ok"}`.
 - [ ] **Step 7: Close out.**
 
@@ -824,30 +845,26 @@ def leak_surface(fn): ...      # decorator that appends fn to LEAK_SURFACES
 ## Self-Review
 
 - **Spec coverage (§13 Phase 0b):** LICENSE, README, THIRD_PARTY_NOTICES, CONTRIBUTING, SECURITY, PRIVACY (Tasks 1, 2, 10); settings tree with SecretStr, validators, log scrubbing, data-dir tightening (3, 4); readiness, `doctor`, `GET /api/readiness` (7); guards, `serve`, Makefile (8); audit, macOS, `live` marker, `make test-live`, branch-protection command (9); packs with `neutral`, `nepali`, spike items, pack in the profile (5, 6); planted-key test (11); phase gate (12). §15 rows for 0b: network, origins, DNS rebinding, CSRF, data dir, keys in logs/API/OpenAPI/repo, supply chain audit: all have a task and a test. §14's `doctor` warning on a group-readable `.env` is in Task 7. §6.9's "changing the pack triggers a rebuild" is `ensure_profile_pack` in Task 6.
-- **Deviations from the literal spec, flagged for the reviewer:** (1) `doctor --probe` and capability findings are stubbed to Phase 0d, as §13 allows. (2) The usage row shows caps only until Phase 0c has a ledger. (3) Secrets shorter than 8 characters are not scrubbed (they would corrupt ordinary log text); real provider keys are far longer. (4) `proxy_headers=False` in `serve` so forwarded-for headers cannot alter the peer address; Phase 6 revisits it for Tailscale Serve.
+- **Deviations from the literal spec, flagged for the reviewer:** (1) `doctor --probe` and capability findings are stubbed to Phase 0d, as §13 allows. (2) The usage row shows caps only until Phase 0c has a ledger. (3) Four settings not in §14 (`NOSOLEAR_TIMEZONE`, `NOSOLEAR_JOB_WORKERS`, `NOSOLEAR_FASTER_WHISPER_MODEL`, `NOSOLEAR_MLX_WHISPER_MODEL`) and the 16-character minimum for keys, all owner decisions. (4) `proxy_headers=False` in `serve` so forwarded-for headers cannot alter the peer address; Phase 6 revisits it for Tailscale Serve.
 - **Type consistency:** `LanguagePack`/`PackError`/`load_pack` (Task 5) are the names Tasks 6 and 7 use; `Settings.secret_values`, `packs_dir` (Task 3) are used in Tasks 4, 6, 7; `make_settings`, `loopback_client` (Tasks 3, 8) are used by Tasks 7, 8, 11; `prepare_process(settings, create_data_dir=...)` (Task 4) is called by Tasks 7 and 8.
 - **Proportion:** tasks carry signatures, file names, test names and the fixed values; bodies are left to the implementer except the two algorithms the signature does not fix (the log record factory and the Host/Origin exact-membership rule).
 
 ## Produces for later phases
 
-- `Settings` tree and `LOOPBACK_NAMES`; `Settings.secret_values()`; `Settings.packs_dir`; `settings_error_summary(exc)`.
+- `Settings` tree (including `timezone` and `Settings.tzinfo`, `job_workers`, `faster_whisper_model`, `mlx_whisper_model`), `LOOPBACK_NAMES`, `CONTENT_DIR`, `MIN_KEY_LENGTH`; `Settings.secret_values()`; `Settings.packs_dir`; `settings_error_summary(exc)`. A later phase that needs a new setting adds it to this tree and `.env.example` in its own task, and says so.
 - `domain/redaction.scrub`, `logging_setup.install_secret_scrubbing`, `startup.prepare_process(settings, *, create_data_dir)`.
-- `adapters/private_fs.py`: `ensure_private_dir`, `tighten_tree`, `make_private_file(path)` (0c's `AudioStore` and 0d's TTS cache call `make_private_file` on every file they write).
-- `LanguagePack`, `PackHypothesis`, `CalibrationExtra`, `parse_pack`, `validate_pack`, `load_pack`, `list_pack_ids`; `CalibrationSpec`, `CalibrationItem`, `build_calibration_items`, `load_calibration_specs` (0e's calibration reads `LanguagePack.calibration_emphasis` and `calibration_extras`, and extends `content/calibration/items.toml`).
-- `build_profile(..., pack)`, `rebuild_profile(..., pack)`, `Profile.pack_id`, `ProfilePackReader`, `deps.load_active_pack(settings)`; tables `profile_entries.pack_id` and `profile_snapshots.pack_id` (migration `0003`).
-- Readiness: `ReadinessInputs` (with `capabilities: CapabilityFindings | None` and `usage: UsageSnapshot | None` for 0d and 0c to fill), `build_readiness`, `check_readiness(settings, env)`, `EnvironmentProbe`, `GET /api/readiness` (`getReadiness`), `nosolear doctor` (`--probe` currently refuses with exit 2).
-- Network: `domain/network_policy.check_request`, `RequestGuardMiddleware`, `nosolear serve [--reload]`; every new `GET /api/...` route must be added to `READ_ONLY_GET_ROUTES` in `tests/api/test_guards.py`.
-- Tests: marker `live`, `make test-live`, `tests/live/conftest.py` (`live_settings`, `require_keys`), `tests/security/planted.py` (`PLANTED_*`, `planted_settings`, `assert_no_planted_key`, `@leak_surface`), `tests/factories.py` (`make_settings`, `loopback_client`, `FakeEnvironment`, `NEPALI`, `NEUTRAL`, `PACK`), `scripts/third_party_licences.py`.
+- `adapters/private_fs.py`: `ensure_private_dir`, `tighten_tree`, `make_private_file(path)` (0c's `AudioStore` and 0d's TTS cache write owner-only files).
+- `LanguagePack`, `PackHypothesis`, `CalibrationExtra`, `parse_pack`, `validate_pack`, `load_pack(packs_dir, pack_id)`, `list_pack_ids`; `CalibrationSpec`, `CalibrationItem`, `build_calibration_items`, `load_calibration_specs` in `adapters/content_files.py` (0e builds its `CalibrationSet` from these specs plus `LanguagePack.calibration_extras`, reuses the instruction copy pinned here, and extends `content/calibration/items.toml` to five words per key).
+- `build_profile(..., pack)`, `rebuild_profile(..., pack)`, `Profile.pack_id`, `LanguagePack.prior_for(key)` (replaces `domain/profile.prior_for`), `ProfilePackReader`, `deps.load_active_pack(settings)`; tables `profile_entries.pack_id` and `profile_snapshots.pack_id` (migration `0003`, `down_revision = "0002"`).
+- Readiness: `Component`, `ReadinessStatus`, `ReadinessRow`, `ReadinessReport`, `ReadinessInputs` (with `usage: UsageSnapshot | None` for 0c to fill; 0d replaces `capabilities: CapabilityFindings | None` with its stored probe records and builds the Azure capabilities, transcriber and phone probe rows), `build_readiness`, `check_readiness(settings, env)`, `EnvironmentProbe`, `deps.get_readiness_report`, `GET /api/readiness` (`getReadiness`), `nosolear doctor` (`--probe` refuses with exit 2 until 0d).
+- Network: `domain/network_policy.check_request`, `RequestGuardMiddleware`, `nosolear serve [--reload]`; every new `GET /api/...` route must be added to `READ_ONLY_GET_ROUTES` in `tests/api/test_guards.py`. Phase 6's token mode relaxes origins only in `Settings.app_origins` validation and adds its Bearer check in `RequestGuardMiddleware`.
+- Tests: marker `live`, `make test-live`, `tests/live/conftest.py` (`live_settings`, `require_keys`), `tests/security/planted.py` (`PLANTED_*`, `planted_settings`, `assert_no_planted_key`, `@leak_surface`), `tests/factories.py` (`make_settings`, `loopback_client`, `FakeEnvironment`, `NEPALI`, `NEUTRAL`, `PACK = NEPALI`), `scripts/third_party_licences.py`.
 - CI check names: `hygiene`, `api` (gate), `api (ubuntu-latest)`, `api (macos-latest)`, `web`, `contract`, `audit`; required: `hygiene`, `api`, `web`, `contract`, `audit`.
 
 ## Cross-phase assumptions
 
-- **Phase 0c** provides a way to read recorded usage per period (the `UsageLedger` totals) so `check_readiness` can fill `UsageSnapshot`; it calls `make_private_file` for recordings and writes its tables through new migrations numbered after `0003`.
-- **Phase 0d** produces `CapabilityFindings` from `provider_capabilities` (n-best, prosody, probe date), replaces the platform-order transcriber resolution in `domain/readiness.py` with its speed-aware selection, implements `doctor --probe` (removing the exit-2 stub), registers the `local_models` marker, and appends `@leak_surface` producers for adapter error paths. It keeps the adapter-import rule (only raw adapters import provider SDKs).
-- **Phase 0e** assumes pack priors flow through `LanguagePack.prior_for` and that `pack_id` is on profile rows; its extraction stamps observations without needing the pack.
-- **Phase 6** assumes `Settings.app_origins` validation and `RequestGuardMiddleware` are the single places token mode relaxes (origins) or extends (Bearer check).
+None open: the consuming phases (0c usage figures, 0d probe rows and `doctor --probe`, 0e pack priors) are written against the names above.
 
 ## Open questions for the owner
 
-1. Should the owner enable GitHub private vulnerability reporting (Task 1, Step 5)? `SECURITY.md` points to it.
-2. Secrets shorter than 8 characters are not scrubbed from logs. Acceptable, or should the settings validator reject shorter keys instead?
+None. Private vulnerability reporting is enabled (Task 1 verifies it); the short-key question was decided as the 16-character minimum.

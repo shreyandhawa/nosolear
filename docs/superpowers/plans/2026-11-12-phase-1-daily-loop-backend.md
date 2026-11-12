@@ -4,7 +4,7 @@
 
 **Goal:** After a baseline, today's daily session is planned from the error profile (Thompson-sampling selection policy), its recording flows through the existing upload → job → extraction → profile path, and the session yields one feedback item per skill; tomorrow's plan visibly reflects today's misses. All of it runs with fakes through the API and the CLI.
 
-**Architecture:** Three new pure domain modules (`selection`, `rechecks`, `daily_plan`, plus `feedback`) make every decision; use cases in `app/` orchestrate them over new Protocol ports; SQLite repositories and FastAPI routes are thin adapters. The feedback explanation is the only new paid call: it goes through the `Coach` port built by the composition root (cache → retry → metered → raw), its output is untrusted and sanitized in the domain, and any typed failure degrades to written templates with a recorded reason, never silently.
+**Architecture:** Three new pure domain modules (`selection`, `rechecks`, `daily_plan`, plus `feedback`) make every decision; use cases in `app/` orchestrate them over new Protocol ports; SQLite repositories and FastAPI routes are thin adapters. The feedback explanation is the only new paid call: it goes through 0d's `Coach` port built by the composition root (retry → metered → raw), its output is untrusted and sanitized in the domain, and any typed failure degrades to written templates with a recorded reason, never silently.
 
 **Tech Stack:** Python 3.14, FastAPI, SQLAlchemy Core + Alembic (SQLite), Hypothesis, pytest, uv. No new third-party dependencies (random draws use the stdlib `random.Random.betavariate`, hashing uses `hashlib`).
 
@@ -21,18 +21,20 @@
 - **Hygiene:** never commit audio or anything under `data/`. Fixtures are synthetic and contain no real person's voice. `scripts/check-no-personal-data.sh` runs in CI and pre-commit.
 - **apps/web:** the only permitted change is regenerating API types with `make gen-api` (commit the regenerated files) whenever the OpenAPI changes, so the CI `contract` check stays green.
 - **Security (owner's rules):** keys come only from env or `.env` and never appear in logs, API responses, error messages, OpenAPI examples or fixtures. Bind to 127.0.0.1, restrict CORS to the app origin, never expose the API unauthenticated. Treat transcripts and coach output as untrusted; use structured outputs with the taxonomy enum; model output never reaches a file path, shell command or SQL string. Check the usage ledger before every paid call (a bug must not burn quota). No telemetry. Document exactly what is sent to which provider. No GET changes state or triggers a paid call (§15), so plan and feedback creation are `POST`.
-- **Values from the spec:** re-check spacing 2, 4, 8, 16, 32 days (§6.6); a focus can't win more than 3 days in a row unless its sampled score is at least double the runner-up's (§6.6); exactly one focus per skill and one fix per skill (§6.6, §6.7); daily Claude cap is per day in UTC (§11); typed errors `InvalidAudio`, `CapExceeded`, `ProviderUnavailable`, `CapabilityMissing` (§8.1); session protocol times from §8.2.
+- **Values from the spec:** re-check spacing 2, 4, 8, 16, 32 days (§6.6); a focus can't win more than 3 days in a row unless its sampled score is at least double the runner-up's (§6.6); exactly one focus per skill and one fix per skill (§6.6, §6.7); daily Claude cap is per day in UTC (§11, unchanged); typed errors `InvalidAudio`, `CapExceeded`, `ProviderUnavailable`, `CapabilityMissing` from 0c's `nosolear.domain.errors` (§8.1); session protocol times from §8.2.
+- **"Today" (owner decision, a deviation from §11 to record in Task 11):** the plan's date is the local date in `NOSOLEAR_TIMEZONE` (0b's `Settings.timezone`, an IANA name defaulting to the machine's zone; `Settings.tzinfo`), so the plan rolls over at local midnight. Ledger cap periods stay UTC.
+- **Built on 0b–0e:** tests build settings with `make_settings(...)` and API clients with `loopback_client(app)`; every new `GET /api/...` route is added to `READ_ONLY_GET_ROUTES` in `tests/api/test_guards.py`; error bodies are 0c's `ErrorOut{code, message}`; CLI commands go through 0c's `ApiClient` and `cli.main(argv, *, client=None)`; API and end-to-end tests reuse 0e's `make_harness` (oracle raw ports, `start_runner=False`, `drain()`), 0d's `FakeCoach` (`tests/provider_fakes.py`) and 0c's `tests/wavs.py`.
 - **Delivery recipe (every task):** one branch `p1/NN-<slug>` from up-to-date `origin/main` (`git fetch origin && git switch -c <branch> origin/main`), test-first commits pushed as you go (`git push -u origin <branch>`). Commit messages: an imperative sentence, **no** `Co-Authored-By` trailer, **no** "Generated with Claude Code" footer. Never push to main. Each task's PR also updates `docs/superpowers/HANDOFF.md` (done / in progress / next, and the adapters still unverified against the live service). Open the PR with `gh pr create`, and when CI is green merge with `gh pr merge --squash` and **without** `--delete-branch` (the owner approves branch deletions).
-- **Migrations:** other phases add Alembic revisions too. Each migration task sets `down_revision` to the single current head (`uv run alembic heads` from `apps/api`, after rebasing on `origin/main`), uses batch mode for SQLite, and adds a schema test in `tests/persistence/test_schema.py` style.
+- **Migrations:** the chain continues from 0e's `0007`: `0008_recheck_columns` (Task 2), `0009_daily_plans` (Task 4), `0010_sessions_plan_id` (Task 6), `0011_feedback_items` (Task 8), each with `down_revision` the one before. Confirm with `uv run alembic heads` after rebasing. Each uses batch mode for SQLite and adds a schema test in `tests/persistence/test_schema.py` style.
 
 ## Review Focus
 
 The inputs most likely to bite that the spec implies but the obvious tests skip. Each has a pinned test in its owning task.
 
-1. **Day rollover.** A user outside UTC (Nepal is +05:45) will call the plan endpoint around the UTC day boundary. §11 fixes UTC, so the plan for a date must be created once, stay frozen when the profile changes later that day, and a call after UTC midnight must create the next day's plan. Task 4 (`test_same_utc_day_returns_frozen_plan`, `test_next_utc_day_builds_new_plan`).
+1. **Day rollover.** A user in Nepal (+05:45) practises around local midnight, which is 18:15 UTC. The plan for a local date must be created once, stay frozen when the profile changes later that day, and a call after local midnight must create the next day's plan, while a call that crosses only the UTC boundary must not. Task 4 (`test_same_local_day_returns_frozen_plan`, `test_next_local_day_builds_new_plan`, `test_utc_midnight_alone_does_not_roll_over`).
 2. **Brand-new or empty profile, empty content bank.** A skipped baseline or fresh install must still produce a plan (one fallback focus per skill, `prompt=None`) instead of a 500. Task 1 (`test_empty_profile_still_has_one_focus_per_skill`), Task 3 (`test_empty_prompt_bank_gives_no_prompt`).
 3. **Feedback asked for before the analysis job finishes.** Returning partial feedback built from half the observations would be wrong and sticky. Expect 409 `session_not_analyzed`, and no coach call. Task 8 (`test_unfinished_job_refuses_without_calling_coach`), Task 9 (API 409).
-4. **Coach capped, down or hostile.** `CapExceeded`/`ProviderUnavailable`, an explanation for a key that was not asked about, a 50 kB message, control or bidi characters, or a missing item must each yield a stored template item with a visible `fallback_reason`; a later request after recovery upgrades it once and never re-calls the coach for items already written by it. Task 7 (`test_hostile_explanations_are_rejected`), Task 8 (`test_capped_coach_stores_template_with_reason`, `test_second_request_upgrades_template_items_only`).
+4. **Coach capped, down or hostile.** `CapExceeded`/`ProviderUnavailable`, a malformed reply, a 50 kB message, or control or bidi characters must each yield a stored template item with a visible `fallback_reason`; a later request after recovery upgrades it once and never re-calls the coach for items already written by it. Task 7 (`test_hostile_explanations_are_rejected`), Task 8 (`test_capped_coach_stores_template_with_reason`, `test_second_request_upgrades_template_items_only`).
 5. **A skill with nothing to fix.** A session with no misses for a skill ("clean") is different from a skill that was not scored at all (Azure missing or capped, "not scored today"); inventing a card for either is wrong. Task 7 (`test_clean_and_not_scored_are_distinct`).
 
 ## Not in This Plan
@@ -40,7 +42,7 @@ The inputs most likely to bite that the spec implies but the obvious tests skip.
 - Drill content and drill screens (Phase 3), the web screens (Phase 2), the weekly re-test (Phase 5). The plan only names drill families (`DrillSpec`); no drill attempts are created.
 - Coach-written prompts for tomorrow (§6.6 step 4 "or written by the coach"). Phase 1 picks from the seed content bank only, which is also the §8.2 fallback; Phase 3 fills the bank from the coach.
 - Model-voice audio for feedback cards (Phase 2 asks the TTS cache). Phase 1 returns `model_text` only.
-- A timezone setting. The day is the UTC date (§11).
+- Daily skill scores (the `skill_scores` table is written by 0e's baseline; trend lines are Phase 5).
 
 ## File Map
 
@@ -57,7 +59,7 @@ apps/api/src/nosolear/
   app/generate_feedback.py     choose fixes, ask coach, sanitize, fall back, persist
   app/complete_daily_session.py  rebuild + snapshot, advance re-checks
   persistence/models.py        daily_plans, feedback_items, profile_entries/sessions columns
-  persistence/migrations/versions/<rev>_*.py   one per schema task
+  persistence/migrations/versions/0008–0011     one per schema task
   persistence/repositories.py  (or plan_repositories.py / feedback_repositories.py) new repos
   api/plan_routes.py           /api/plan/today, /api/plan/today/session, /api/sessions/{id}/feedback|complete
   api/schemas.py               PlanOut, FocusOut, DailySessionOut, FeedbackOut, ...
@@ -77,7 +79,7 @@ apps/api/tests/                mirrors src/ (domain/, app/, persistence/, api/, 
 - Modify: `apps/api/tests/factories.py` (add `entry(...)` helper)
 
 **Interfaces:**
-- Consumes: `Profile`, `ProfileEntry`, `prior_for` (`domain/profile.py`), `BetaState`, `KeyEstimate` (`domain/estimates.py`), `Status`, `Skill`, `Taxonomy`, `KeyDefinition`. **Assumes** 0e added `ProfileEntry.provisional: bool` with default `False`; this task reads it.
+- Consumes: `Profile`, `ProfileEntry` (with 0e's `provisional: bool = False`), `BetaState`, `KeyEstimate` (`domain/estimates.py`), `Status`, `Skill`, `Taxonomy`, `KeyDefinition`, and 0b's `LanguagePack.prior_for(key)` (0b removed `domain/profile.prior_for`).
 - Consumes (declared here, implemented in Task 2): `RecheckState` (`domain/rechecks.py`: `@dataclass(frozen=True, slots=True) RecheckState(stage: int, next_at: datetime)`). To avoid a cycle, define `RecheckState` in this task's PR inside `domain/rechecks.py` with only that dataclass; Task 2 adds the rest.
 - Produces (`domain/selection.py`):
   - `SKILL_ORDER: tuple[Skill, ...] = (Skill.SOUNDS, Skill.ON_THE_SPOT, Skill.ARTICULATE)`
@@ -86,17 +88,17 @@ apps/api/tests/                mirrors src/ (domain/, app/, persistence/, api/, 
   - `@dataclass(frozen=True, slots=True) RecheckProbe(skill: Skill, error_key: str, due_at: datetime)`
   - `@dataclass(frozen=True, slots=True) Selection(foci: tuple[Focus, ...], probe: RecheckProbe | None)`
   - `seed_for_date(day: date) -> int` (first 8 bytes of `sha256(day.isoformat())`, big-endian; never Python `hash()`)
-  - `select(*, profile: Profile | None, taxonomy: Taxonomy, seed: int, now: datetime, history: Mapping[Skill, Sequence[str]], rechecks: Mapping[str, RecheckState], is_scored: Callable[[str], bool], config: SelectionConfig = DEFAULT_SELECTION) -> Selection`. `history[skill]` is the previous plans' focus keys, most recent first. `now` must be timezone-aware (`ValueError` otherwise).
+  - `select(*, profile: Profile | None, taxonomy: Taxonomy, pack: LanguagePack, seed: int, now: datetime, history: Mapping[Skill, Sequence[str]], rechecks: Mapping[str, RecheckState], is_scored: Callable[[str], bool], config: SelectionConfig = DEFAULT_SELECTION) -> Selection`. `history[skill]` is the previous plans' focus keys, most recent first. `now` must be timezone-aware (`ValueError` otherwise).
 
 **Rules to implement (ARCHITECTURE.md §6.6, with the decisions this plan makes):**
 1. Per skill, candidates are profile entries of that skill whose status is in `focus_statuses` and `is_scored(key)`. Mastered keys never become focus; a mastered key whose `rechecks[key].next_at <= now` and that is scored is a re-check probe candidate.
 2. Score = `Random(f"{seed}:{key}").betavariate(a, b) * impact`, one independent generator per key, so the result does not depend on entry order or on which other keys exist. Highest score wins; ties break by key.
 3. Variety: if the winner equals each of the last `max_streak` keys in `history[skill]` and `score < streak_ratio * runner_up_score`, the runner-up is focus instead. `Focus.runner_up_score` records the runner-up's score (or `None`).
-4. Fallback: a skill with no profile candidate draws from `taxonomy.defined()` keys of that skill that are not in the profile and are scored, sampled from their prior (`prior_for`, status `UNKNOWN`, `source="fallback"`). A skill with an empty pool gets no focus.
+4. Fallback: a skill with no profile candidate draws from `taxonomy.defined()` keys of that skill that are not in the profile and are scored, sampled from their prior (`pack.prior_for(key)`, status `UNKNOWN`, `source="fallback"`). A skill with an empty pool gets no focus.
 5. Probe: at most one in total; highest impact, then earliest `due_at`, then key. A probe key is never also a focus.
 6. Keys that are not scored (`is_scored` false: a "drilled but not scored" key, §6.8) are never focus or probe, so the plan never asks the user to improve something the app cannot measure.
 
-- [ ] **Step 1: Write the failing example tests** in `tests/domain/test_selection.py`, using a new `factories.entry(key, *, a, b, status, provisional=False, at=NOW) -> ProfileEntry` (builds the estimate with `estimate()` and `priority=p_hat*impact`):
+- [ ] **Step 1: Write the failing example tests** in `tests/domain/test_selection.py`, using a new `factories.entry(key, *, a, b, status, provisional=False, at=NOW, pack=PACK) -> ProfileEntry` (builds the estimate with `estimate(..., prior=pack.prior_for(key))` and `priority=p_hat*impact`):
   - `test_seed_for_date_is_stable_and_distinct`: `seed_for_date(date(2026,11,12))` equals a hard-coded integer (compute once and paste), differs for the next day.
   - `test_confident_high_impact_wins_most_days`: keys `sound.sub.v.w` (impact 3, a=30, b=70) and a low-impact weak key (a=3, b=7); over seeds 0..199 the first wins more than 60% and the second wins at least once.
   - `test_one_focus_per_skill_in_skill_order`
@@ -143,7 +145,7 @@ Expected: all PASS / clean.
 
 **Files:**
 - Modify: `apps/api/src/nosolear/domain/rechecks.py`, `persistence/models.py`, `persistence/repositories.py`
-- Create: `persistence/migrations/versions/<rev>_recheck_columns.py`, `apps/api/src/nosolear/ports/plan.py` (only `RecheckStore` in this task)
+- Create: `persistence/migrations/versions/0008_recheck_columns.py` (`down_revision = "0007"`), `apps/api/src/nosolear/ports/plan.py` (only `RecheckStore` in this task)
 - Test: `tests/domain/test_rechecks.py`, `tests/persistence/test_recheck_store.py`
 
 **Interfaces:**
@@ -156,7 +158,7 @@ Expected: all PASS / clean.
     - a mastered key not in `checked` keeps its previous state;
     - a key that is not mastered is dropped (a relapse restarts at stage 0 when it is mastered again).
   - `ports/plan.py`: `class RecheckStore(Protocol): def load(self) -> dict[str, RecheckState]; def save(self, states: Mapping[str, RecheckState]) -> None`
-  - `persistence`: `RecheckRepository(engine)` implementing `RecheckStore`; new nullable column `profile_entries.next_recheck_at` (UTCDateTime, per §7) and `profile_entries.recheck_stage` (Integer, nullable; an addition to §7 that the reviewer must reconcile). `ProfileRepository.save` carries both columns forward for keys that are still in the new profile with status `mastered` (it currently deletes and reinserts every row, which would otherwise wipe the schedule on every rebuild).
+  - `persistence`: `RecheckRepository(engine)` implementing `RecheckStore`; new nullable column `profile_entries.next_recheck_at` (UTCDateTime, per §7) and `profile_entries.recheck_stage` (Integer, nullable; an addition to §7 that the reviewer must reconcile). `ProfileRepository.save` and 0e's `ProfileRepository.replace` (which every analyze job's `extract` step calls) carry both columns forward for keys that are still in the new profile with status `mastered` (both delete and reinsert every row, which would otherwise wipe the schedule on every rebuild).
 
 - [ ] **Step 1: Write failing domain tests** in `tests/domain/test_rechecks.py`: `test_newly_mastered_starts_at_two_days`, `test_checked_key_advances_through_2_4_8_16_32_then_stays_at_32` (loop 7 checks, assert the day gaps `[2,4,8,16,32,32,...]` after the first), `test_unchecked_key_keeps_state`, `test_relapsed_key_is_dropped_and_restarts_at_stage_zero`. Plus a Hypothesis property `test_next_at_is_always_in_the_future_of_now_and_stage_is_bounded`.
 
@@ -166,11 +168,11 @@ Expected: all PASS / clean.
 
 - [ ] **Step 4: Run to verify pass.** Same command. Expected: PASS.
 
-- [ ] **Step 5: Write failing persistence tests** in `tests/persistence/test_recheck_store.py` using the `db_engine` fixture: `test_save_then_load_roundtrip`; `test_profile_save_carries_schedule_for_still_mastered_keys` (save a profile with a mastered key, `RecheckRepository.save`, call `ProfileRepository.save` with a rebuilt profile still mastering the key, `load()` returns the same state); `test_profile_save_drops_schedule_when_key_no_longer_mastered`; `test_schema_has_recheck_columns` (nullable).
+- [ ] **Step 5: Write failing persistence tests** in `tests/persistence/test_recheck_store.py` using the `db_engine` fixture: `test_save_then_load_roundtrip`; `test_profile_save_carries_schedule_for_still_mastered_keys` (save a profile with a mastered key, `RecheckRepository.save`, call `ProfileRepository.save` with a rebuilt profile still mastering the key, `load()` returns the same state; the same through `replace`); `test_profile_save_drops_schedule_when_key_no_longer_mastered`; `test_schema_has_recheck_columns` (nullable).
 
 - [ ] **Step 6: Run to verify they fail.** Run: `uv run pytest tests/persistence/test_recheck_store.py -q`. Expected: FAIL.
 
-- [ ] **Step 7: Implement** the migration (batch add of two nullable columns), the `models.py` columns, `RecheckRepository`, and the carry-forward inside the existing transaction of `ProfileRepository.save` (read the old `error_key, next_recheck_at, recheck_stage` before `delete`).
+- [ ] **Step 7: Implement** the migration (batch add of two nullable columns), the `models.py` columns, `RecheckRepository`, and the carry-forward inside the existing transactions of `ProfileRepository.save` and `replace` (read the old `error_key, next_recheck_at, recheck_stage` before `delete`).
 
 - [ ] **Step 8: Run the full gate.** Run: `cd apps/api && uv run pytest -q && uv run ruff check && uv run ruff format --check && uv run pyright`. Expected: PASS / clean.
 
@@ -220,20 +222,20 @@ Expected: all PASS / clean.
 **Branch:** `p1/04-build-daily-plan`
 
 **Files:**
-- Create: `app/build_daily_plan.py`, `persistence/migrations/versions/<rev>_daily_plans.py`, `adapters`-free repositories in `persistence/plan_repositories.py`
+- Create: `app/build_daily_plan.py`, `persistence/migrations/versions/0009_daily_plans.py` (`down_revision = "0008"`), repositories in `persistence/plan_repositories.py`
 - Modify: `ports/plan.py`, `persistence/models.py`, `api/deps.py`
 - Test: `tests/app/test_build_daily_plan.py`, `tests/persistence/test_daily_plan_repository.py`
 
 **Interfaces:**
-- Consumes: Tasks 1–3; `ProfileRepository.latest() -> Profile | None`; `Clock`; `DEFAULT_TAXONOMY`. **Assumes (0e):** table `content_items(id, kind, text, target_keys, source, retired_at)` with `target_keys` stored as JSON text (a list of strings), and a scoring config exposing `ScoringConfig.scores_key(error_key: str) -> bool` read through `ScoringConfigRepository.latest() -> ScoringConfig` (0e).
+- Consumes: Tasks 1–3; `ProfileRepository.latest() -> Profile | None`; `Clock` (0c's `deps.get_clock`); `DEFAULT_TAXONOMY`; 0b's `Settings.tzinfo` and `deps.load_active_pack`; 0e's `content_items(id, kind, text, target_keys, source, retired_at)` table (`target_keys` a JSON array) and `ScoringConfigRepository.newest()` with `ScoringConfig.rule_for(detector, definition)`.
 - Produces (`ports/plan.py`):
   - `class ProfileReader(Protocol): def latest(self) -> Profile | None`
   - `class PromptBank(Protocol): def prompts(self) -> list[PromptCandidate]` (non-retired `kind='prompt'` items)
   - `class ScoredKeys(Protocol): def is_scored(self, error_key: str) -> bool`
   - `@dataclass(frozen=True, slots=True) StoredPlan(id: str, plan: DailyPlan)`
   - `class DailyPlanStore(Protocol): def get(self, for_date: date) -> StoredPlan | None; def add(self, plan: DailyPlan) -> StoredPlan; def recent_focus_keys(self, before: date, limit: int = 3) -> dict[Skill, list[str]]; def recent_prompt_ids(self, before: date, limit: int = 3) -> list[str]` where `add` returns the already-stored plan if `for_date` exists (the `UNIQUE(for_date)` constraint decides races).
-  - `build_daily_plan(*, plans: DailyPlanStore, profiles: ProfileReader, rechecks: RecheckStore, prompts: PromptBank, scoring: ScoredKeys, taxonomy: Taxonomy, clock: Clock) -> StoredPlan`. The date is `clock.now().astimezone(UTC).date()` (§11: periods are UTC). It returns the stored plan unchanged if one exists for that date, otherwise selects, assembles, stores and returns it.
-  - Table `daily_plans(id TEXT PK, for_date TEXT UNIQUE NOT NULL, focus_json TEXT, prompt_item_id TEXT NULL FK content_items.id, drills_json TEXT, seed INTEGER)` (§7). `drills_json` is an object `{"probe": ..., "drills": [...], "prompt": {"id","text","target_keys"} | null, "protocol_version": 1}` so the plan stays reproducible when a content item is later retired. `DailyPlanRepository(engine, taxonomy)` implements the store; `PromptBankRepository(engine)`; `ScoringCoverage(scoring_configs)` adapter implements `ScoredKeys` over 0e's latest scoring config (when no config row exists, every key is scored, matching a fresh `v0`).
+  - `build_daily_plan(*, plans: DailyPlanStore, profiles: ProfileReader, rechecks: RecheckStore, prompts: PromptBank, scoring: ScoredKeys, taxonomy: Taxonomy, pack: LanguagePack, clock: Clock, tz: tzinfo) -> StoredPlan`. The date is `clock.now().astimezone(tz).date()`, the local date in `NOSOLEAR_TIMEZONE` (owner decision). It returns the stored plan unchanged if one exists for that date, otherwise selects, assembles, stores and returns it.
+  - Table `daily_plans(id TEXT PK, for_date TEXT UNIQUE NOT NULL, focus_json TEXT, prompt_item_id TEXT NULL FK content_items.id, drills_json TEXT, seed INTEGER)` (§7). `drills_json` is an object `{"probe": ..., "drills": [...], "prompt": {"id","text","target_keys"} | null, "protocol_version": 1}` so the plan stays reproducible when a content item is later retired. `DailyPlanRepository(engine, taxonomy)` implements the store; `PromptBankRepository(engine)`; `ScoringCoverage(configs: ScoringConfigReader, taxonomy)` implements `ScoredKeys`: a key is scored when `configs.newest().rule_for(d, taxonomy.get(key))` is not `None` for at least one of its detectors (0e's migration always stores `v0`, so a config always exists).
   - `api/deps.py`: `get_build_daily_plan(request) -> Callable[[], StoredPlan]` style dependency, or individual `get_*` providers, following the existing `get_profile_repository` pattern.
 
 - [ ] **Step 1: Write failing repository tests** (`tests/persistence/test_daily_plan_repository.py`, `db_engine` fixture): `test_add_then_get_roundtrips_the_plan_exactly`, `test_second_add_for_same_date_returns_first_plan`, `test_recent_focus_keys_are_most_recent_first_and_per_skill`, `test_recent_prompt_ids_excludes_today_and_later`, `test_schema_unique_for_date`, `test_prompt_bank_skips_retired_and_non_prompt_items`.
@@ -245,8 +247,9 @@ Expected: all PASS / clean.
 - [ ] **Step 4: Run to verify pass.** Same command. Expected: PASS.
 
 - [ ] **Step 5: Write failing use-case tests** in `tests/app/test_build_daily_plan.py` with in-memory fakes (`FakeDailyPlanStore`, `FakeRecheckStore`, `FakePromptBank`, `FakeScoredKeys`, `FixedClock` from factories, a mutable clock for day advance):
-  - `test_same_utc_day_returns_frozen_plan`: build, then add misses to the profile fake, build again at a later time the same UTC day: the stored plan object is returned unchanged.
-  - `test_next_utc_day_builds_new_plan`: a clock at `2026-11-12T23:50Z` then `2026-11-13T00:10Z` gives two different `for_date`s; the user's local date (`NPT`) is irrelevant.
+  - `test_same_local_day_returns_frozen_plan`: build, then add misses to the profile fake, build again at a later time the same local day: the stored plan object is returned unchanged.
+  - `test_next_local_day_builds_new_plan`: with `tz=ZoneInfo("Asia/Kathmandu")`, a clock at `2026-11-12T18:10Z` (23:55 local) then `2026-11-12T18:20Z` (00:05 local on the 13th) gives `for_date`s 2026-11-12 and 2026-11-13.
+  - `test_utc_midnight_alone_does_not_roll_over`: same zone, `2026-11-12T23:50Z` then `2026-11-13T00:10Z` (05:35 and 05:55 on the 13th locally) return the same plan.
   - `test_streak_history_feeds_selection`: three stored plans with the same sounds focus plus a profile where it narrowly leads produce a different focus.
   - `test_recent_prompts_are_not_repeated`
   - `test_empty_prompt_bank_gives_no_prompt` and `test_no_profile_builds_fallback_plan`
@@ -273,11 +276,11 @@ Expected: all PASS / clean.
 - Test: `tests/api/test_plan_api.py`, `tests/test_cli.py` (new cases)
 
 **Interfaces:**
-- Consumes: `build_daily_plan`, `DailyPlanStore` (Task 4); **assumes (0c)** the CLI HTTP helper `nosolear.cli_client.ApiClient` with `get_json(path) -> Any` and `post_json(path, body=None) -> Any`, constructed from an `httpx.Client`, and `cli.main(argv, *, client: ApiClient | None = None)` so tests can inject `TestClient`-backed transport.
+- Consumes: `build_daily_plan`, `DailyPlanStore` (Task 4); 0c's `ApiClient(http)` (`get_json`, `post_json`) and `cli.main(argv, *, client=None)`, with `ApiClient(loopback_client(app))` in tests.
 - Produces:
   - `POST /api/plan/today` (operation id `buildTodayPlan`): builds or returns today's plan; 201 on creation, 200 when it already existed. Body is `PlanOut`.
-  - `GET /api/plan/today` (`getTodayPlan`): 200 `PlanOut`, or 404 `{"detail": "no_plan_for_today"}`. Side-effect free (§15).
-  - `PlanOut(id: str, for_date: date, seed: int, protocol_version: int, foci: list[FocusOut], probe: ProbeOut | None, prompt: PromptOut | None, drills: list[DrillOut], steps: list[StepOut])`; `FocusOut(skill, error_key, description, impact, status, p_hat, provisional, source)`; `ProbeOut(skill, error_key, due_at)`; `PromptOut(id, text, target_keys)`; `DrillOut(skill, error_key, drill_family)`; `StepOut(kind, skill, duration_s)`. Sampled scores stay out of the API.
+  - `GET /api/plan/today` (`getTodayPlan`): 200 `PlanOut`, or 404 `ErrorOut(code="no_plan_for_today")`. Side-effect free (§15); added to `READ_ONLY_GET_ROUTES`.
+  - `PlanOut(id: str, for_date: date, seed: int, protocol_version: int, foci: list[FocusOut], probe: ProbeOut | None, prompt: PromptOut | None, drills: list[DrillOut], steps: list[PlanStepOut])`; `FocusOut(skill, error_key, description, impact, status, p_hat, provisional, source)`; `ProbeOut(skill, error_key, due_at)`; `PromptOut(id, text, target_keys)`; `DrillOut(skill, error_key, drill_family)`; `PlanStepOut(kind, skill, duration_s)` (not `StepOut`, which 0c's job schema already uses). Sampled scores stay out of the API.
   - CLI: `nosolear plan [--json]` posts to `/api/plan/today` and prints one line per focus (`sounds: sound.sub.v.w (active, 31%)`), the probe, the prompt text and the step list; `--json` prints the response body.
 
 - [ ] **Step 1: Write failing API tests** in `tests/api/test_plan_api.py` using `client_with_tmp_db` plus a seeded profile (`seeded_profile`): `test_get_before_post_is_404`, `test_post_creates_then_returns_same_plan` (201 then 200, equal bodies), `test_get_after_post_matches`, `test_get_has_no_side_effects` (row count of `daily_plans` unchanged after GET), `test_plan_has_one_focus_per_skill`, `test_empty_db_still_returns_a_plan` (fallback foci), `test_response_fields_exact` (set of keys per object).
@@ -303,12 +306,12 @@ Expected: all PASS / clean.
 **Branch:** `p1/06-daily-session-start`
 
 **Files:**
-- Create: `app/start_daily_session.py`, `persistence/migrations/versions/<rev>_sessions_plan_id.py`
+- Create: `app/start_daily_session.py`, `persistence/migrations/versions/0010_sessions_plan_id.py` (`down_revision = "0009"`)
 - Modify: `ports/plan.py`, `persistence/models.py`, `persistence/plan_repositories.py`, `api/plan_routes.py`, `api/schemas.py`, `cli.py`, regenerated web API files
 - Test: `tests/app/test_start_daily_session.py`, `tests/api/test_daily_session_api.py`, `tests/test_cli.py`
 
 **Interfaces:**
-- Consumes: `build_daily_plan` (Task 4). **Assumes (0e):** `attempts.content_item_id` (nullable FK to `content_items`); **(0c):** `POST /api/attempts/{id}/recording` (raw `audio/wav`) and `GET /api/jobs/{id}`, whose job runs score → transcribe → probe → coach → extract → profile rebuild for the attempt, and the CLI `ApiClient.upload_wav(attempt_id: str, path: Path) -> str` (returns the job id) and `ApiClient.follow_job(job_id: str) -> dict[str, Any]` (blocks until a terminal state).
+- Consumes: `build_daily_plan` (Task 4); 0e's `attempts.content_item_id` (nullable FK to `content_items`); 0c's `POST /api/attempts/{id}/recording` (raw `audio/wav`) and `GET /api/jobs/{id}`, whose analyze job runs score → transcribe → probe → coach → extract (0e's step, which also rebuilds the profile) for the attempt, and 0c's `ApiClient.upload_wav(attempt_id, path) -> str` (the job id) and `ApiClient.follow_job(job_id) -> dict` (blocks until done or failed).
 - Produces:
   - Column `sessions.plan_id TEXT NULL REFERENCES daily_plans(id)` with a unique index (one daily session per plan).
   - `@dataclass(frozen=True, slots=True) AttemptRef(id: str, step: str, reference_text: str | None, content_item_id: str | None)` and `StartedSession(session_id: str, plan_id: str, created: bool, attempts: tuple[AttemptRef, ...])`.
@@ -344,18 +347,17 @@ Expected: all PASS / clean.
 - Test: `tests/domain/test_feedback.py`, `tests/domain/test_feedback_properties.py`
 
 **Interfaces:**
-- Consumes: `Observation`, `Outcome`, `Profile`, `Taxonomy`, `Skill`, `Family`, `KeyDefinition`, `SKILL_ORDER`. **Assumes (0e)** observation `evidence` holds `word: str` (the expected word, when there is one), `quote: str` (the quoted words, for coach-judged keys), `start_ms`/`end_ms` ints (§6.3).
+- Consumes: `Observation`, `Outcome`, `Profile`, `Taxonomy`, `Skill`, `Family`, `KeyDefinition`, `SKILL_ORDER`; 0e's evidence keys (`word` and `start_ms`/`end_ms` for sounds, `text` and the sentence span for fluency, `quote` and its span for coach keys); 0d's `CoachExplanation(message, model_text, ...)`, `MAX_EXPLANATION_CHARS` (600) and `MAX_MODEL_TEXT_CHARS` (300) from `domain/coach.py`.
 - Produces:
   - `ports/feedback.py`: `@dataclass(frozen=True, slots=True) StoredObservation(id: int, observation: Observation)`
   - `domain/feedback.py`:
     - `class SkillState(StrEnum): FIX="fix"; CLEAN="clean"; NOT_SCORED="not_scored"`
-    - `@dataclass(frozen=True, slots=True) FixChoice(skill: Skill, error_key: str, observation_id: int, attempt_id: str | None, word: str | None, quote: str | None, start_ms: int | None, end_ms: int | None, priority: float)`
+    - `@dataclass(frozen=True, slots=True) FixChoice(skill: Skill, error_key: str, observation_id: int, attempt_id: str | None, word: str | None, quote: str | None, context: str | None, start_ms: int | None, end_ms: int | None, priority: float)` (`context` is the evidence `text`, the sentence, when there is one)
     - `@dataclass(frozen=True, slots=True) SkillOutcome(skill: Skill, state: SkillState, fix: FixChoice | None)`
     - `choose_fixes(*, session_observations: Sequence[StoredObservation], profile: Profile, taxonomy: Taxonomy) -> tuple[SkillOutcome, ...]`: always three outcomes in `SKILL_ORDER`. Per skill: no observations for the skill gives `NOT_SCORED`; observations but no miss gives `CLEAN`; otherwise `FIX` for the missed key with the highest current profile `priority` (a key missing from the profile uses `1.0 * impact`), ties by key; the evidence observation is that key's miss with the highest weight, ties by earliest `observed_at`, then lowest id. The domain picks, never the LLM (§6.7).
-    - `@dataclass(frozen=True, slots=True) RawExplanation(error_key: str, message: str, model_text: str | None)` is **owned by 0d** (`ports/coach.py`); `sanitize_explanation` accepts any object with those three attributes through a local `Protocol`.
     - `@dataclass(frozen=True, slots=True) Explanation(error_key: str, message: str, model_text: str | None)`
-    - `MAX_MESSAGE_CHARS = 400`, `MAX_MODEL_TEXT_CHARS = 300`
-    - `sanitize_explanation(raw: ExplanationLike | None, *, fix: FixChoice, taxonomy: Taxonomy) -> Explanation | None`: `None` unless `raw.error_key == fix.error_key`; control characters (Unicode categories `Cc`, `Cf`, which includes bidi overrides) are removed and whitespace collapsed; empty or over-length message gives `None`; `model_text` is kept only for grammar, structure and clarity keys (the coach rewrite) and also length-capped, for sound and prosody keys it is replaced with `fix.word`, and for fluency keys it is `None`. Text is returned as plain text (never escaped here; the UI renders text, §15).
+    - The limits are 0d's `MAX_EXPLANATION_CHARS` and `MAX_MODEL_TEXT_CHARS`, so a reply 0d accepted is never rejected here for length.
+    - `sanitize_explanation(raw: CoachExplanation | None, *, fix: FixChoice, taxonomy: Taxonomy) -> Explanation | None` (0d's `explain` answers one key per call, so the explanation belongs to `fix.error_key`): `None` when `raw` is `None`; control characters (Unicode categories `Cc`, `Cf`, which includes bidi overrides) are removed and whitespace collapsed; empty or over-length message gives `None`; `model_text` is kept only for grammar, structure and clarity keys (the coach rewrite) and also length-capped, for sound and prosody keys it is replaced with `fix.word`, and for fluency keys it is `None`. Text is returned as plain text (never escaped here; the UI renders text, §15).
     - `template_explanation(fix: FixChoice, taxonomy: Taxonomy) -> Explanation`: a written template per family, mentioning the description and (when present) the word or quote; the same `model_text` rule as above. Must work for every defined key and every dynamic sound key.
     - Typed errors (all `ValueError` subclasses): `SessionNotFound`, `SessionNotDaily`, `SessionNotAnalyzed`.
     - `FallbackReason` literal: `"cap_exceeded" | "provider_unavailable" | "capability_missing" | "invalid_output"`.
@@ -367,7 +369,7 @@ Expected: all PASS / clean.
   - `test_outcomes_always_three_in_skill_order`
   - `test_ties_break_by_key`
   - `test_sanitize_accepts_matching_explanation_and_strips_controls` (`"fix‮ it\x00"` becomes `"fix it"`)
-  - `test_hostile_explanations_are_rejected` parametrized: other key than the fix, message of 50,000 chars, empty message, `None`
+  - `test_hostile_explanations_are_rejected` parametrized: message of 50,000 chars, empty message, a message of only control characters, `None`
   - `test_sound_model_text_comes_from_domain_not_coach` (coach says `model_text="rm -rf /"`, result equals `fix.word`)
   - `test_coach_rewrite_kept_for_grammar_and_capped`
   - `test_template_exists_for_every_defined_key` (loop `DEFAULT_TAXONOMY.defined()` plus `sound.sub.θ.s`-style dynamic key)
@@ -391,17 +393,17 @@ Expected: all PASS / clean.
 **Branch:** `p1/08-generate-feedback`
 
 **Files:**
-- Create: `app/generate_feedback.py`, `persistence/feedback_repositories.py`, `persistence/migrations/versions/<rev>_feedback_items.py`
-- Modify: `ports/feedback.py`, `persistence/models.py`, `persistence/repositories.py` (add `ObservationRepository.for_session`), `api/deps.py`, `PRIVACY.md` (the 0b file), `tests/fakes` additions
+- Create: `app/generate_feedback.py`, `persistence/feedback_repositories.py`, `persistence/migrations/versions/0011_feedback_items.py` (`down_revision = "0010"`)
+- Modify: `ports/feedback.py`, `persistence/models.py`, `persistence/repositories.py` (add `ObservationRepository.for_session`), `api/deps.py`, `PRIVACY.md` (the 0b file), in-memory fakes of the new ports in `tests/fakes.py`
 - Test: `tests/app/test_generate_feedback.py`, `tests/persistence/test_feedback_repository.py`, `tests/persistence/test_repositories.py` (new `for_session` cases)
 
 **Interfaces:**
-- Consumes: Task 7; `Coach`, `FixRequest`, `RawExplanation` from **0d** (`nosolear/ports/coach.py`). **Assumed shape:** `class Coach(Protocol): def explain_fixes(self, fixes: Sequence[FixRequest]) -> Sequence[RawExplanation]`, `FixRequest(error_key: str, description: str, word: str | None, quote: str | None)`. If 0d named it differently, change only the `_ask_coach` helper in this task. **Assumes (0c/0d)** typed errors `CapExceeded`, `ProviderUnavailable`, `CapabilityMissing` importable from `nosolear.domain.errors`, and that `api/deps.py` builds `Coach` as cache → retry → metered → raw so the ledger reserve happens inside the call.
+- Consumes: Task 7; 0d's `Coach.explain(*, error_key, quote, context) -> CoachExplanation` (`nosolear/ports/providers.py`), composed retry → metered → raw by `build_providers` (`get_providers(request).coach`), so the ledger reserve happens inside the call; 0c's `CapExceeded`, `ProviderUnavailable`, `CapabilityMissing` and 0d's `MalformedProviderResponse` from `nosolear.domain.errors`; 0e's `current_observations` rule; 0d's `FakeCoach`.
 - Produces:
   - Columns on `feedback_items` (§7 has `id, session_id, skill, error_key, observation_id, message, model_text`) plus `source TEXT CHECK IN ('coach','template')`, `fallback_reason TEXT NULL CHECK IN ('cap_exceeded','provider_unavailable','capability_missing','invalid_output')`, `created_at`; `UNIQUE(session_id, skill)`; `observation_id` FK to `observations.id`. (`source` and `fallback_reason` are Phase 1 additions to §7 to be reconciled.)
   - `ports/feedback.py`:
     - `class SessionReader(Protocol): def kind(self, session_id: str) -> str | None` (None means no such session)
-    - `class SessionJobStatus(Protocol): def unfinished(self, session_id: str) -> int` (queued, running, or failed jobs of the session's attempts; failed counts because partial observations would give wrong feedback until the job is resumed)
+    - `class SessionJobStatus(Protocol): def unfinished(self, session_id: str) -> int` (queued or running jobs of the session's attempts). A `failed` job counts as finished: 0c's `extract` step still runs on whatever results exist, so a skill whose provider step failed has no observations and shows `not_scored`, as §8.2 requires ("the other steps still run; the sounds card says not scored today").
     - `class SessionObservationReader(Protocol): def for_session(self, session_id: str) -> list[StoredObservation]`
     - `@dataclass(frozen=True, slots=True) FeedbackItem(id: str, session_id: str, skill: Skill, error_key: str, observation_id: int, attempt_id: str | None, start_ms: int | None, end_ms: int | None, word: str | None, message: str, model_text: str | None, source: Literal["coach","template"], fallback_reason: FallbackReason | None)`
     - `class FeedbackStore(Protocol): def for_session(self, session_id: str) -> list[FeedbackItem]; def upsert(self, session_id: str, items: Sequence[FeedbackItem]) -> None`
@@ -409,14 +411,14 @@ Expected: all PASS / clean.
   - `generate_feedback(*, session_id: str, sessions: SessionReader, jobs: SessionJobStatus, observations: SessionObservationReader, profiles: ProfileReader, feedback: FeedbackStore, coach: Coach, taxonomy: Taxonomy) -> FeedbackReport`:
     1. `SessionNotFound` if no session; `SessionNotDaily` if kind is not `daily`; `SessionNotAnalyzed` if `jobs.unfinished(...) > 0`. These checks run before any coach call.
     2. `choose_fixes` over the session's observations and the latest profile (an empty profile is allowed).
-    3. If every chosen fix already has a `source='coach'` item, return the stored report without calling the coach (idempotent). Otherwise ask the coach in **one** `explain_fixes` call only for fixes that lack a coach item (at most 3, one request, bounded text: `quote` and `word` truncated to 300 chars).
-    4. Per fix, `sanitize_explanation`; a `None`, a missing item or a coach item for an unrequested key becomes `template_explanation` with `fallback_reason="invalid_output"`.
-    5. Catch only `CapExceeded`, `ProviderUnavailable`, `CapabilityMissing` around the coach call: every fix gets a template item with the matching reason. Any other exception propagates (no blanket `except`).
+    3. If every chosen fix already has a `source='coach'` item, return the stored report without calling the coach (idempotent). Otherwise call `coach.explain(error_key=fix.error_key, quote=(fix.quote or fix.word or "")[:300], context=(fix.context or fix.quote or fix.word or "")[:300])` once per fix that lacks a coach item, in `SKILL_ORDER` (at most 3 calls).
+    4. Per fix, `sanitize_explanation`; a `None` becomes `template_explanation` with `fallback_reason="invalid_output"`.
+    5. Catch only typed errors around each call: `MalformedProviderResponse` gives that fix `invalid_output`; `CapExceeded`, `ProviderUnavailable` and `CapabilityMissing` give that fix and every fix not yet asked a template item with the matching reason, and no further call is made in this request. Any other exception propagates (no blanket `except`).
     6. Upsert and return the report. Stored coach items are never downgraded by a later template.
-  - `ObservationRepository.for_session(session_id) -> list[StoredObservation]` (joins `observations.attempt_id` to `attempts.session_id`, ordered by `observed_at, id`), `SessionJobRepository`, `SessionRepository.kind`, `FeedbackRepository`.
-  - `PRIVACY.md`: add under the Anthropic row: the feedback call sends, per fix, the error key and its short description plus the quoted words or expected word (each at most 300 characters). No audio and no full transcript.
+  - `ObservationRepository.for_session(session_id) -> list[StoredObservation]` (joins `observations.attempt_id` to `attempts.session_id`, keeps only each attempt's newest-config observations by 0e's `current_observations` rule, ordered by `observed_at, id`), `SessionJobRepository`, `SessionRepository.kind`, `FeedbackRepository`.
+  - `PRIVACY.md`: add under the Anthropic row: each feedback call sends one error key with its short description, plus the quoted words or expected word and the sentence around them (each at most 300 characters). No audio and no full transcript.
 
-- [ ] **Step 1: Write failing repository tests**: `test_for_session_only_returns_that_sessions_observations_with_ids` (two sessions), `test_feedback_upsert_replaces_by_session_and_skill`, `test_feedback_roundtrip_keeps_source_and_reason`, `test_check_constraints_reject_bad_source_and_reason`, `test_unfinished_counts_queued_running_and_failed_jobs` (insert jobs rows with the 0c schema).
+- [ ] **Step 1: Write failing repository tests**: `test_for_session_only_returns_that_sessions_observations_with_ids` (two sessions), `test_feedback_upsert_replaces_by_session_and_skill`, `test_feedback_roundtrip_keeps_source_and_reason`, `test_check_constraints_reject_bad_source_and_reason`, `test_unfinished_counts_queued_and_running_jobs_only` (insert jobs rows with the 0c schema; a `failed` job is not counted).
 
 - [ ] **Step 2: Run to verify they fail.** Run: `uv run pytest tests/persistence -q`. Expected: FAIL.
 
@@ -428,8 +430,8 @@ Expected: all PASS / clean.
   - `test_one_item_per_skill_with_misses_and_coach_text`
   - `test_unfinished_job_refuses_without_calling_coach` (`SessionNotAnalyzed`, `coach.calls == []`)
   - `test_unknown_and_non_daily_sessions_raise_typed_errors`
-  - `test_single_batched_coach_call_for_at_most_three_fixes`
-  - `test_capped_coach_stores_template_with_reason` (`CapExceeded` gives `source='template'`, `fallback_reason='cap_exceeded'`, `degraded=True`); same for `ProviderUnavailable` and `CapabilityMissing`
+  - `test_at_most_one_coach_call_per_fix` (three fixes, three `explain` calls, each with its own key)
+  - `test_capped_coach_stores_template_with_reason` (`CapExceeded` on the first call gives three template items with `fallback_reason='cap_exceeded'`, `degraded=True`, and no second call); same for `ProviderUnavailable` and `CapabilityMissing`; `MalformedProviderResponse` on one call gives only that fix `invalid_output`
   - `test_hostile_coach_output_falls_back_to_template_invalid_output`
   - `test_unexpected_exception_propagates` (`RuntimeError` is not swallowed)
   - `test_second_request_does_not_call_coach_when_all_items_are_coach`
@@ -439,9 +441,9 @@ Expected: all PASS / clean.
 
 - [ ] **Step 6: Run to verify they fail, then implement** `generate_feedback`. Run: `uv run pytest tests/app/test_generate_feedback.py -q`. Expected after implementing: PASS.
 
-- [ ] **Step 7: Run the gate.** Run: `cd apps/api && uv run pytest -q && uv run ruff check && uv run ruff format --check && uv run pyright`. Expected: PASS / clean. Add `@pytest.mark.live` test `tests/live/test_claude_explain_fixes_live.py` (real wrapped coach, synthetic fix, asserts a sanitized explanation comes back); it must be skipped by default (`uv run pytest -q` still green).
+- [ ] **Step 7: Run the gate.** Run: `cd apps/api && uv run pytest -q && uv run ruff check && uv run ruff format --check && uv run pyright`. Expected: PASS / clean. Add `@pytest.mark.live` test `tests/live/test_feedback_explain_live.py` (0d's `live_meter` and a real `ClaudeCoach` through `paid_coach`, one synthetic fix per skill, asserts `generate_feedback` stores sanitized coach items); it must be skipped by default (`uv run pytest -q` still green).
 
-- [ ] **Step 8: Deliver** (branch `p1/08-generate-feedback`; HANDOFF lists `claude_coach.explain_fixes` as unverified live).
+- [ ] **Step 8: Deliver** (branch `p1/08-generate-feedback`; HANDOFF lists the feedback use of `claude_coach.explain` as unverified live).
 
 ---
 
@@ -456,19 +458,19 @@ Expected: all PASS / clean.
 **Interfaces:**
 - Consumes: `generate_feedback`, `FeedbackStore`, `FeedbackReport` (Task 8); `ApiClient` (0c).
 - Produces:
-  - `POST /api/sessions/{session_id}/feedback` (`generateFeedback`): the only call that can reach the coach. 200 with `FeedbackOut`. Errors: 404 `{"detail": "session_not_found"}`, 409 `{"detail": "session_not_daily"}` and `{"detail": "session_not_analyzed"}` (fixed safe strings; no provider text).
-  - `GET /api/sessions/{session_id}/feedback` (`getFeedback`): side-effect free; 404 `feedback_not_generated` when no items were ever stored for the session, else 200 `FeedbackOut`.
+  - `POST /api/sessions/{session_id}/feedback` (`generateFeedback`): the only call that can reach the coach. 200 with `FeedbackOut`. Errors are 0c's `ErrorOut` with fixed safe messages and no provider text: 404 `session_not_found`, 409 `session_not_daily` and `session_not_analyzed` (the `code` values).
+  - `GET /api/sessions/{session_id}/feedback` (`getFeedback`): side-effect free and added to `READ_ONLY_GET_ROUTES`; 404 `ErrorOut(code="feedback_not_generated")` when no items were ever stored for the session, else 200 `FeedbackOut`.
   - `FeedbackOut(session_id: str, degraded: bool, skills: list[SkillFeedbackOut])`; `SkillFeedbackOut(skill: Literal["sounds","on_the_spot","articulate"], state: Literal["fix","clean","not_scored"], item: FeedbackItemOut | None)`; `FeedbackItemOut(id, error_key, message, model_text: str | None, source: Literal["coach","template"], fallback_reason: str | None, attempt_id: str | None, start_ms: int | None, end_ms: int | None, word: str | None)`.
   - CLI: `nosolear daily feedback SESSION_ID [--generate]` (without the flag it GETs, with it POSTs) prints one card per skill (`not scored today`, `clean`, or the fix with `[template: cap_exceeded]` when degraded).
 
-- [ ] **Step 1: Write failing API tests** (`tests/api/test_feedback_api.py`; override the coach dependency with `FakeCoach`, seed a daily session with finished fake jobs and observations):
+- [ ] **Step 1: Write failing API tests** (`tests/api/test_feedback_api.py`; 0e's `make_harness` with 0d's `FakeCoach` as the raw coach, seed a daily session with finished jobs and observations):
   - `test_post_returns_three_skill_cards_with_fixes`
   - `test_post_before_job_finished_is_409_session_not_analyzed_and_coach_untouched`
   - `test_get_before_generate_is_404` and `test_get_has_no_side_effects` (coach call count and row count unchanged)
   - `test_unknown_session_is_404` and `test_baseline_session_is_409_not_daily`
   - `test_capped_coach_returns_200_degraded_with_reason`
   - `test_post_twice_is_idempotent`
-  - `test_response_and_openapi_contain_no_planted_key` (set a planted `NOSOLEAR_ANTHROPIC_API_KEY`, have the fake coach raise an error mentioning it, assert it is absent from the body, the logs captured by `caplog`, and `app.openapi()`); also add the two new routes to 0d's planted-key route sweep if it exists.
+  - `test_response_and_openapi_contain_no_planted_key` (0b's `planted_settings`, have the fake coach raise an error mentioning `PLANTED_ANTHROPIC_KEY`, assert it is absent from the body, the logs captured by `caplog`, and `app.openapi()`); also append a `@leak_surface` producer for the two routes to 0b's `tests/security/test_no_key_leaks.py`.
   - `test_hostile_coach_text_is_returned_as_plain_text_without_control_chars`
 
 - [ ] **Step 2: Run to verify they fail.** Run: `uv run pytest tests/api/test_feedback_api.py -q`. Expected: FAIL.
@@ -491,35 +493,34 @@ Expected: all PASS / clean.
 
 **Files:**
 - Create: `app/complete_daily_session.py`, `tests/e2e/test_daily_loop.py`
-- Modify: `app/rebuild_profile.py` (accept `session_id` and `reason`), `ports/stores.py`, `api/plan_routes.py`, `api/schemas.py`, `cli.py`, regenerated web API files
-- Test: `tests/app/test_complete_daily_session.py`, `tests/app/test_rebuild_profile.py`, `tests/api/test_complete_api.py`, `tests/test_cli.py`
+- Modify: `ports/stores.py`, `api/plan_routes.py`, `api/schemas.py`, `cli.py`, regenerated web API files
+- Test: `tests/app/test_complete_daily_session.py`, `tests/api/test_complete_api.py`, `tests/test_cli.py`
 
 **Interfaces:**
-- Consumes: Tasks 1–9; `advance_rechecks`, `RecheckStore`, `SessionJobStatus`, `ObservationRepository`, `ProfileRepository`. **Assumes (0c/0d/0e):** fakes `FakePronunciationScorer`, `FakeTranscriber`, `FakeCoach`, a synchronous way to run queued jobs in tests (`JobRunner.run_pending()` or the app's test hook), a synthetic WAV factory in `tests/audio.py`, and a 0e extraction that turns the fakes' canned results into observations on `sound.sub.v.w`, `fluency.filler`, `grammar.article`.
+- Consumes: Tasks 1–9; `advance_rechecks`, `RecheckStore`, `SessionJobStatus`, `ObservationRepository`, `ProfileRepository`; 0e's `rebuild_profile(..., session_id=..., reason=...)`, `make_harness` (oracle raw ports with `user_errors`, `drain()` over 0c's `run_pending()`, a mutable clock) and `extract` step; 0d's `FakeCoach` returning a `grammar.article` finding; 0c's `tests/wavs.py`. The oracle's `{"v": "w"}` error, a transcript with a filler and that finding give misses on `sound.sub.v.w`, `fluency.filler` and `grammar.article`.
 - Produces:
-  - `rebuild_profile(..., session_id: str | None = None, reason: str = "rebuild")` (backwards compatible; existing callers and `test_rebuild_profile.py` unchanged).
   - `complete_daily_session(*, session_id: str, sessions: SessionReader, sessions_writer: SessionCompleter, jobs: SessionJobStatus, observations: SessionObservationReader, all_observations: ObservationReader, profiles: ProfileWriter, rechecks: RecheckStore, taxonomy: Taxonomy, clock: Clock) -> CompletedSession`, with `class SessionCompleter(Protocol): def completed_at(self, session_id: str) -> datetime | None; def complete(self, session_id: str, at: datetime) -> None` and `CompletedSession(session_id: str, completed_at: datetime, already_completed: bool)`. Order: typed checks (`SessionNotFound`, `SessionNotDaily`, `SessionNotAnalyzed`); if `completed_at` is already set, return `already_completed=True` and change nothing (so re-calling can't advance re-check stages twice); otherwise rebuild and snapshot the profile with `reason="daily"` and this `session_id` (§6.8), then `advance_rechecks` with `checked` = keys that have at least one observation in this session, `rechecks.save`, `complete`.
   - `POST /api/sessions/{session_id}/complete` (`completeDailySession`): 200 `CompleteOut(session_id, completed_at, already_completed)`; errors as in Task 9.
   - CLI: `nosolear daily complete SESSION_ID`; `nosolear daily run WAV [--no-generate]`: `start` → `ApiClient.upload_wav` → `ApiClient.follow_job` (stop with a non-zero exit and the job's safe error if it ends `failed`) → `POST feedback` → print cards → `complete`. The feedback step is the only one that can reach the coach.
 
-- [ ] **Step 1: Write failing use-case tests** (`tests/app/test_complete_daily_session.py`): `test_snapshot_has_daily_reason_and_session_id`, `test_second_complete_is_a_noop` (rows and re-check stage unchanged, `already_completed=True`), `test_checked_mastered_key_advances_recheck`, `test_unfinished_job_refuses`, `test_non_daily_session_refuses`. Plus `test_rebuild_profile_accepts_reason_and_session` in `tests/app/test_rebuild_profile.py`.
+- [ ] **Step 1: Write failing use-case tests** (`tests/app/test_complete_daily_session.py`): `test_snapshot_has_daily_reason_and_session_id`, `test_second_complete_is_a_noop` (rows and re-check stage unchanged, `already_completed=True`), `test_checked_mastered_key_advances_recheck`, `test_unfinished_job_refuses`, `test_non_daily_session_refuses`.
 
-- [ ] **Step 2: Run to verify they fail, implement, run to pass.** Run: `uv run pytest tests/app/test_complete_daily_session.py tests/app/test_rebuild_profile.py -q`. Expected: FAIL first, then PASS after implementing `complete_daily_session` and the `rebuild_profile` parameters.
+- [ ] **Step 2: Run to verify they fail, implement, run to pass.** Run: `uv run pytest tests/app/test_complete_daily_session.py -q`. Expected: FAIL first, then PASS after implementing `complete_daily_session`.
 
 - [ ] **Step 3: Write failing API and CLI tests** (`tests/api/test_complete_api.py`: 200, idempotent second call, 409 while a job is queued; `tests/test_cli.py`: `test_daily_complete_prints_confirmation`).
 
 - [ ] **Step 4: Implement the route and CLI commands, run to pass.** Run: `uv run pytest tests/api/test_complete_api.py tests/test_cli.py -q`. Expected: PASS.
 
-- [ ] **Step 5: Write the end-to-end test** `tests/e2e/test_daily_loop.py::test_full_daily_loop_through_api` using `TestClient`, a seeded post-baseline profile (via `dev/seed.py` observations rebuilt into the profile), a seeded prompt bank in `content_items`, the fakes above, and a mutable test clock:
+- [ ] **Step 5: Write the end-to-end test** `tests/e2e/test_daily_loop.py::test_full_daily_loop_through_api` using 0e's `make_harness(clock=<mutable clock>)` (its `loopback_client`), a seeded post-baseline profile (via `dev/seed.py` observations rebuilt into the profile), the seed prompts 0e syncs into `content_items`, and the fakes above:
   1. `POST /api/plan/today` → 201; foci include one key per skill.
   2. `POST /api/plan/today/session` → attempt id.
-  3. `POST /api/attempts/{id}/recording` with the synthetic WAV → 202, job id; run the queued job; `GET /api/jobs/{id}` is `done`.
+  3. `harness.upload(attempt_id, text)` (the oracle's synthesized clip through `POST /api/attempts/{id}/recording`) → job id; `harness.drain()`; `GET /api/jobs/{id}` is `done`.
   4. `POST /api/sessions/{id}/feedback` → three `fix` cards, `degraded=False`, every `error_key` in the taxonomy and equal to a key the fakes made miss.
   5. `POST /api/sessions/{id}/complete` → 200; `profile_snapshots` has a `daily` snapshot for the session.
-  6. Advance the clock one UTC day; `POST /api/plan/today` → the plan's focus for the skill of today's worst miss equals that key (seed the fakes so it dominates), proving tomorrow's plan reflects today's misses.
-  - Variants in the same file: `test_loop_with_capped_coach_still_gives_template_feedback_and_a_plan` (`FakeCoach` raising `CapExceeded`: cards are `source='template'` with reason `cap_exceeded`, completion and tomorrow's plan still work); `test_loop_without_pronunciation_scorer_marks_sounds_not_scored` (scorer fake raising `CapabilityMissing`: sounds card is `not_scored`, the other two still have fixes); `test_feedback_before_job_run_is_409`.
+  6. Advance the clock past local midnight; `POST /api/plan/today` → the plan's focus for the skill of today's worst miss equals that key (seed the fakes so it dominates), proving tomorrow's plan reflects today's misses.
+  - Variants in the same file: `test_loop_with_capped_coach_still_gives_template_feedback_and_a_plan` (`FakeCoach` raising `CapExceeded`: cards are `source='template'` with reason `cap_exceeded`, completion and tomorrow's plan still work); `test_loop_without_pronunciation_scorer_marks_sounds_not_scored` (`harness.voice` scorer raising `CapabilityMissing`: the score step fails and the job ends `failed`, the extract step still runs, and feedback shows the sounds card `not_scored` while the other two still have fixes); `test_feedback_before_job_run_is_409`.
 
-- [ ] **Step 6: Write the CLI end-to-end test** `tests/e2e/test_daily_loop_cli.py::test_daily_run_through_cli`: the same fakes and app, `cli.main(["daily", "run", str(wav)], client=ApiClient(TestClient(app)))` returns 0 and prints three cards; running `["plan"]` the next UTC day prints the focus key of today's worst miss.
+- [ ] **Step 6: Write the CLI end-to-end test** `tests/e2e/test_daily_loop_cli.py::test_daily_run_through_cli`: the same harness, a WAV the oracle synthesized and saved under `tmp_path`, `cli.main(["daily", "run", str(wav)], client=ApiClient(harness.client))` returns 0 and prints three cards (this test uses `make_harness(start_runner=True)`, so `follow_job` sees the job finish on its own); running `["plan"]` after moving the clock past local midnight prints the focus key of today's worst miss.
 
 - [ ] **Step 7: Run to verify the e2e tests fail, then fix wiring until they pass.** Run: `uv run pytest tests/e2e -q`. Expected: FAIL first (missing wiring), then PASS. Any missing seam in 0c–0e that cannot be bridged by an adapter in `api/deps.py` goes into HANDOFF as a blocker rather than being patched in their modules.
 
@@ -534,19 +535,19 @@ Expected: all PASS / clean.
 **Branch:** `p1/11-phase-verification`
 
 **Files:**
-- Modify: `docs/superpowers/HANDOFF.md`, `docs/ARCHITECTURE.md` (record the Phase 1 additions to §7: `feedback_items.source`, `feedback_items.fallback_reason`, `profile_entries.recheck_stage`; the `POST` plan and feedback endpoints; `nosolear plan` and `nosolear daily` commands; mark Phase 1 done)
+- Modify: `docs/superpowers/HANDOFF.md`, `docs/ARCHITECTURE.md` (record the Phase 1 additions to §7: `feedback_items.source`, `feedback_items.fallback_reason`, `feedback_items.created_at`, `profile_entries.recheck_stage`; the plan's local-date rule against `NOSOLEAR_TIMEZONE` in §11 and §14, unless the orchestrator's spec follow-up already did; the `POST` plan and feedback endpoints; `nosolear plan` and `nosolear daily` commands; mark Phase 1 done)
 
 - [ ] **Step 1: Whole-phase gate.** Run from the repo root: `make test && make lint`, then `cd apps/api && HYPOTHESIS_PROFILE=heavy uv run pytest tests/domain -q`. Expected: all green.
 
 - [ ] **Step 2: Confirm the contract is current.** Run: `make gen-api && git status --short`. Expected: no changes.
 
-- [ ] **Step 3: List live tests, do not run them without keys.** Run: `cd apps/api && uv run pytest -m live --collect-only -q`. Expected: the Phase 1 live test `test_claude_explain_fixes_live` is listed. Record in HANDOFF that it is unverified against the live service and on which platform.
+- [ ] **Step 3: List live tests, do not run them without keys.** Run: `cd apps/api && uv run pytest -m live --collect-only -q`. Expected: the Phase 1 live test `tests/live/test_feedback_explain_live.py` is listed. Record in HANDOFF that it is unverified against the live service and on which platform.
 
 - [ ] **Step 4: Check the security properties by test.** Confirm these exist and pass: GET routes side-effect free (plan, feedback), hostile coach output rejected, planted key absent from feedback responses, logs and OpenAPI, and the composition-order test still passes with `Coach` used by `generate_feedback`.
 
 - [ ] **Step 5: Run `/security-review`** on the phase's diff (`git diff origin/main...`) and fix every finding in a follow-up commit on this branch, test first.
 
-- [ ] **Step 6: Update `HANDOFF.md` and `ARCHITECTURE.md`** as listed under Files; mark Phase 1 done with today's date; list adapters still unverified live; note the owner question about timezone-local days.
+- [ ] **Step 6: Update `HANDOFF.md` and `ARCHITECTURE.md`** as listed under Files; mark Phase 1 done with today's date; list adapters still unverified live.
 
 - [ ] **Step 7: Deliver** (branch `p1/11-phase-verification`).
 
@@ -555,26 +556,17 @@ Expected: all PASS / clean.
 ## Self-review notes
 
 - **Spec coverage (§13 Phase 1 and the referenced sections):** selection policy with Thompson sampling, variety, 2/4/8/16/32 re-checks, seed from the date (Tasks 1–2); daily plan with prompt, drills, steps and persistence in `daily_plans` (Tasks 3–4); plan endpoint and CLI (Task 5); recordings through the existing upload path (Task 6, 10); one-fix-per-skill chosen in the domain, coach explains only (Tasks 7–8); typed-error fallbacks to templates, never silent (Tasks 7–9); profile snapshot per daily session (Task 10); tomorrow's plan reflects today's misses (Task 10 e2e); `make gen-api` after each API change (Tasks 5, 6, 9, 10).
-- **Decisions the spec left open:** day is the UTC date (§11); plan and feedback creation are `POST` because §15 forbids state-changing GETs; coach-written prompts deferred; focus never comes from keys the scoring config cannot score; a re-check counts as done when the session had an opportunity for the key.
+- **Decisions:** the plan's day is the local date in `NOSOLEAR_TIMEZONE` (owner decision; ledger periods stay UTC); plan and feedback creation are `POST` because §15 forbids state-changing GETs, and `GET /api/plan/today` is read-only; coach-written prompts deferred (seed bank only, owner decision); focus never comes from keys the scoring config cannot score; a re-check counts as done when the session had an opportunity for the key; feedback asks the coach once per fix through 0d's `explain`; a failed analyze job still allows feedback, with the failed skill `not_scored` (§8.2).
 
 ## Cross-phase assumptions
 
-- **0e:** `ProfileEntry.provisional: bool` (default `False`) on the domain dataclass and the repository round trip.
-- **0e:** table `content_items` as in §7 with `target_keys` stored as JSON text; `attempts.content_item_id` nullable FK.
-- **0e:** `ScoringConfigRepository.latest() -> ScoringConfig` and `ScoringConfig.scores_key(error_key: str) -> bool` (true when at least one detector is enabled for the key).
-- **0e:** observation `evidence` carries `word`, `quote`, `start_ms`, `end_ms` where applicable.
-- **0e:** extraction plus the 0c job's profile rebuild leave the profile current when the job is `done`.
-- **0d:** `Coach.explain_fixes(fixes: Sequence[FixRequest]) -> Sequence[RawExplanation]` in `nosolear/ports/coach.py`, with `FixRequest(error_key, description, word, quote)` and `RawExplanation(error_key, message, model_text)`, and a structured-output schema whose `error_key` is the taxonomy enum; wrapped by cache → retry → metered in `api/deps.py`; a `FakeCoach` that records calls and can raise typed errors.
-- **0c/0d:** `CapExceeded`, `ProviderUnavailable`, `CapabilityMissing` importable from `nosolear.domain.errors`.
-- **0c:** `jobs(attempt_id, status)` as in §7; `POST /api/attempts/{id}/recording`; `GET /api/jobs/{id}`; a test hook to run queued jobs synchronously; `tests/audio.py` synthetic WAV factory.
-- **0c:** CLI HTTP helper `nosolear.cli_client.ApiClient` (`get_json`, `post_json`, `upload_wav(attempt_id, path) -> job_id`, `follow_job(job_id) -> dict`) constructible from an `httpx.Client`, and `cli.main(argv, *, client=None)`.
-- **0b:** `PRIVACY.md` exists with a per-provider "what is sent" table; `make test-live` and the `live` marker exist.
+None open. Consumed names are those 0b–0e produce: 0b's `Settings.timezone`/`tzinfo`, `LanguagePack.prior_for`, `load_active_pack`, `make_settings`, `loopback_client`, `planted_settings`, `@leak_surface`; 0c's errors, `ErrorOut`, `ApiClient`, `cli.main(..., client=)`, `get_clock`, `run_pending()` and `tests/wavs.py`; 0d's `Coach.explain`, `CoachExplanation`, the coach length limits, `get_providers` and `FakeCoach`; 0e's `ProfileEntry.provisional`, `content_items`, `attempts.content_item_id`, `ScoringConfigRepository.newest()`, `rule_for`, `current_observations`, `rebuild_profile(session_id=, reason=)`, `ProfileRepository.replace`, the evidence keys and `make_harness`. Migrations 0008–0011 follow 0e's 0007.
 
 ## Produces for later phases
 
 - `select(...) -> Selection`, `Focus`, `RecheckProbe`, `seed_for_date(day) -> int` (`domain/selection.py`), and `RecheckState`, `advance_rechecks`, `RECHECK_DAYS` (`domain/rechecks.py`): Phase 3 drills and Phase 5 re-tests read foci and re-check state.
-- `DailyPlan`, `PromptCandidate`, `DrillSpec`, `PlanStep`, `PLAN_STEPS`, `assemble_plan`, `choose_prompt` (`domain/daily_plan.py`); `build_daily_plan(...) -> StoredPlan` (`app/build_daily_plan.py`); tables `daily_plans`, `sessions.plan_id`, `profile_entries.next_recheck_at` and `recheck_stage`.
-- HTTP: `POST /api/plan/today` (201/200), `GET /api/plan/today` (404 `no_plan_for_today`), `POST /api/plan/today/session`, `POST` and `GET /api/sessions/{id}/feedback`, `POST /api/sessions/{id}/complete`; generated TS types for them (Phase 2 screens).
+- `DailyPlan`, `PromptCandidate`, `DrillSpec`, `PlanStep`, `PLAN_STEPS`, `assemble_plan`, `choose_prompt` (`domain/daily_plan.py`); `build_daily_plan(...) -> StoredPlan` (`app/build_daily_plan.py`); tables `daily_plans`, `sessions.plan_id`, `profile_entries.next_recheck_at` and `recheck_stage` (migrations 0008–0011). The plan's date is the local date in `NOSOLEAR_TIMEZONE`.
+- HTTP: `POST /api/plan/today` (201/200), `GET /api/plan/today` (read-only; 404 `ErrorOut` `no_plan_for_today`), `POST /api/plan/today/session`, `POST` and `GET /api/sessions/{id}/feedback`, `POST /api/sessions/{id}/complete`; generated TS types for them (Phase 2 screens).
 - `FeedbackItem` / `feedback_items` rows with `source` and `fallback_reason`; `model_text` per card for Phase 2 to synthesize through the TTS cache.
 - `generate_feedback`, `complete_daily_session`, `start_daily_session` use cases; CLI `nosolear plan`, `nosolear daily start|feedback|complete|run`.
 - Phase 3 should replace `DrillSpec` stubs with real drill content and may call `choose_prompt` with a coach-extended bank.
