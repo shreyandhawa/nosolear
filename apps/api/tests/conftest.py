@@ -24,14 +24,18 @@ def db_engine(tmp_path: Path) -> Iterator[Engine]:
 
 
 @pytest.fixture(autouse=True)
-def _isolated_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+def _isolated_settings(
+    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> Iterator[None]:
     """No test sees the developer's environment or real `.env` (which holds real keys).
 
-    Live tests (added in Task 9) will be exempted from this fixture.
+    Tests marked `live` are exempt from the env and `.env` isolation (they need the real keys);
+    the scrubbing, umask and HF restore below still apply to them.
     """
-    for name in [n for n in os.environ if n.startswith("NOSOLEAR_")]:
-        monkeypatch.delenv(name)
-    monkeypatch.setitem(Settings.model_config, "env_file", None)
+    if request.node.get_closest_marker("live") is None:
+        for name in [n for n in os.environ if n.startswith("NOSOLEAR_")]:
+            monkeypatch.delenv(name)
+        monkeypatch.setitem(Settings.model_config, "env_file", None)
     # prepare_process sets HF_HUB_DISABLE_TELEMETRY, the umask and the log record factory;
     # none of them may leak between tests
     telemetry = os.environ.pop("HF_HUB_DISABLE_TELEMETRY", None)
