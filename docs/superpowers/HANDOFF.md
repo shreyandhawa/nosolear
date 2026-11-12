@@ -4,25 +4,25 @@ Read this first in a new session, then continue from **Next**.
 
 ## Current phase
 
-Re-plan for the open-source, bring-your-own-keys direction. Gate 2 of 2: the five phase plans are in a PR that is waiting for the owner's approval. Gate 1, the architecture revision, merged as #12.
+Phase 0b execution (open-source foundation). Gate 2 is passed: the phase plans PR #13 merged as 391b639.
 
 ## Done
 
 - 2026-11-12: Surveyed the docs, `apps/api`, CI, tooling and `p0b/spikes`. Baseline on `main` was green (191 API tests and 10 web tests; lint clean).
 - 2026-11-12: Brainstormed the design with the owner. All sections were approved.
 - 2026-11-12: [PR #12](https://github.com/shreyandhawa/nosolear/pull/12) merged as 19097e7: the revised `docs/ARCHITECTURE.md`, independently reviewed for security and consistency.
-- 2026-11-12: Wrote the five phase plans. A cross-plan reconciler then aligned their interfaces, migrations and settings, and `ARCHITECTURE.md` was updated with the deviations the owner approved.
+- 2026-11-12: Wrote the five phase plans, reconciled across plans; merged as [PR #13](https://github.com/shreyandhawa/nosolear/pull/13), 391b639 (Gate 2).
 - 2026-11-12: Turned on GitHub private vulnerability reporting for the repo. `gh api repos/shreyandhawa/nosolear/private-vulnerability-reporting -q .enabled` prints `true`.
+- 2026-11-12: Phase 0b Task 1: `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, `PRIVACY.md` and their test.
 
 ## In progress
 
-- Branch `docs/phase-plans`: the five plans, the `ARCHITECTURE.md` sync and this file. **Gate 2: do not merge without the owner's explicit approval.**
+- Branch `p0b/01-community-files`: Task 1, awaiting review and merge (PR open).
 
 ## Next
 
-1. The owner approves the plans PR. Then squash-merge it, without `--delete-branch`.
-2. Start Phase 0b, Task 1, using `superpowers:subagent-driven-development`. The plan is `docs/superpowers/plans/2026-11-12-phase-0b-open-source-foundation.md`. Work one task at a time: one branch and one PR per task, with a fresh implementer subagent and a different reviewer subagent each time. Run pr-review-toolkit's code-reviewer, silent-failure-hunter and pr-test-analyzer on every PR. Squash-merge on green CI.
-3. At the end of each phase: run `/security-review`, update this file, and hand off to a fresh session.
+1. Task 2: THIRD_PARTY_NOTICES. The plan is `docs/superpowers/plans/2026-11-12-phase-0b-open-source-foundation.md`. One branch and one PR per task, with a fresh implementer subagent and a different reviewer subagent each time. Squash-merge on green CI.
+2. At the end of each phase: run `/security-review`, update this file, and hand off to a fresh session.
 
 ## Plans, in execution order
 
@@ -68,8 +68,9 @@ None right now.
 
 ## Branch and PR state
 
-- `main`: 19097e7 "Revise architecture for open-source BYOK direction (#12)".
-- `docs/phase-plans`: the gate-2 plans, [PR #13](https://github.com/shreyandhawa/nosolear/pull/13).
+- `main`: 391b639 "Add phase plans 0b–1 for the open-source BYOK backend (#13)".
+- `docs/phase-plans`: merged (#13) and kept.
+- `p0b/01-community-files`: Task 1 PR.
 - `docs/byok-architecture`: merged and kept (deleting branches needs the owner's approval).
 - `p0b/spikes`: unmerged and kept. Everything is under `spikes/`, with no audio and no data.
 

@@ -1,0 +1,31 @@
+# Security
+
+## Scope
+
+Nosolear is a local-only app: an API on your machine and a web app that talks to it. You bring your own Azure and Anthropic keys. There is no hosted service, so the things to protect are your keys (which spend your money and quota), your recordings, and your transcripts and profile.
+
+## Single-user machines only
+
+**Run Nosolear only on a single-user machine.** The API is bound to loopback and refuses other hosts, but until token mode arrives (planned for Phase 6) any local user on the same machine can call it, play back your recordings and spend your quota. On a shared machine, do not run it.
+
+## Threat model in short
+
+The full model is in section 15 of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+- **Network:** the server binds 127.0.0.1 and refuses to start on anything else. Requests from non-loopback peers are refused, and Host and Origin checks defend against DNS rebinding and cross-site requests from web pages.
+- **Secrets:** keys are held as secrets, scrubbed from logs and errors, never returned by the API, and live in `.env`, which is git-ignored. The repo holds no keys, not even example values.
+- **Uploads:** size, duration and format are checked, client file names are ignored, and every path must stay inside the data directory.
+- **Supply chain:** exact pins and lockfiles, model files fetched at pinned revisions, no `trust_remote_code`, and CI audits the lockfiles.
+- **Untrusted text:** transcripts and coach output never build paths, SQL or shell commands.
+
+## Reporting a vulnerability
+
+Please report it privately, using the repository's private advisory form:
+
+https://github.com/shreyandhawa/nosolear/security/advisories/new
+
+## What not to put in a public issue
+
+- API keys or tokens, even expired ones. If a key leaked, revoke it first.
+- Recordings of your voice, or transcripts you would not want public.
+- Contents of your `.env` or data directory.
