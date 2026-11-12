@@ -217,7 +217,7 @@ def test_doctor_with_an_unknown_pack_still_prints_every_row(
 ) -> None:
     monkeypatch.setenv("NOSOLEAR_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("NOSOLEAR_PACK", "nosuchpack")
-    main(["doctor"])
+    assert main(["doctor"]) == 1
     out = capsys.readouterr().out
     labels = [
         "Azure Speech",
@@ -231,6 +231,7 @@ def test_doctor_with_an_unknown_pack_still_prints_every_row(
     ]
     assert all(label in out for label in labels)
     assert "nosuchpack" in out
+    assert not (tmp_path / "data").exists()
 
 
 def test_doctor_keeps_the_invalid_settings_exit(
