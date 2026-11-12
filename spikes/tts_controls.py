@@ -42,6 +42,8 @@ def _synth(text: str, path, rate: str | None = None, boundaries: list | None = N
         log_usage("azure_tts", 0, chars=len(ssml))
         result = with_backoff(lambda: synth.speak_ssml_async(ssml).get(), label=f"tts {path.name}")
         if result is None:
+            del synth
+            path.unlink(missing_ok=True)
             return False
         if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
             del synth  # release the file handle
@@ -73,9 +75,13 @@ def main() -> None:
     normal, slow = SENT_DIR / "ra1_normal.wav", SENT_DIR / "ra1_slow.wav"
     bfile = TTS_DIR / "word_boundaries.json"
     if not (normal.exists() and slow.exists() and bfile.exists()):
-        _synth(SENTENCE, normal)
         events: list = []
-        _synth(SENTENCE, slow, rate="-25%", boundaries=events)
+        ok_normal = normal.exists() or _synth(SENTENCE, normal)
+        ok_slow = _synth(SENTENCE, slow, rate="-25%", boundaries=events)
+        if not (ok_normal and ok_slow):
+            print("sentence clips incomplete (skipped after 429s, see skipped.jsonl); "
+                  "no word_boundaries.json written, no slow_rate_ok claim. Rerun later.")
+            return
         bfile.write_text(json.dumps({"voice": _voice, "rate": "-25%", "events": events}, indent=1, ensure_ascii=False))
     events = json.loads(bfile.read_text())["events"]
     d_normal, d_slow = sf.info(str(normal)).duration, sf.info(str(slow)).duration
@@ -83,7 +89,6 @@ def main() -> None:
     print(f"normal={d_normal:.2f}s slow={d_slow:.2f}s")
     print(f"word_boundary_events={len(events)}")
     print(f"slow_rate_ok={d_slow >= 1.2 * d_normal}")
-
 
 if __name__ == "__main__":
     main()

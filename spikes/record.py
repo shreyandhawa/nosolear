@@ -1,5 +1,6 @@
 """Record the spike sets from the mic: uv run python record.py {calibration|read_aloud|free_talk} [--list]."""
 import argparse
+import os
 import sys
 import threading
 import time
@@ -22,13 +23,31 @@ def build_items(which: str) -> list[tuple[str, str]]:
     return [("free_talk", f"Free talk, {FREE_TALK_SECONDS} s: {FREE_TALK_PROMPT}")]
 
 
-def capture(rate: int, fixed_seconds: int | None) -> np.ndarray:
+def take_warnings(audio: np.ndarray, status_seen: bool) -> list[str]:
+    """Reasons a take should default to redo (empty list = fine)."""
+    warns = []
+    if status_seen:
+        warns.append("audio stream reported an overflow/status flag: samples may have been dropped")
+    if len(audio):
+        a = np.abs(audio)
+        if a.max() >= 0.99 or float(np.mean(a >= 0.999)) > 0.001:
+            warns.append("clipped: move the mic away or lower input volume")
+    return warns
+
+
+def capture(rate: int, fixed_seconds: int | None) -> tuple[np.ndarray, bool]:
     import sounddevice as sd
 
     chunks: list[np.ndarray] = []
     stop = threading.Event()
-    stream = sd.InputStream(samplerate=rate, channels=1, dtype="float32",
-                            callback=lambda indata, f, t, s: chunks.append(indata[:, 0].copy()))
+    status_seen = []
+
+    def cb(indata, frames, t, status):
+        if status:
+            status_seen.append(str(status))
+        chunks.append(indata[:, 0].copy())
+
+    stream = sd.InputStream(samplerate=rate, channels=1, dtype="float32", callback=cb)
     with stream:
         if fixed_seconds:
             for left in range(fixed_seconds, 0, -1):
@@ -39,7 +58,8 @@ def capture(rate: int, fixed_seconds: int | None) -> np.ndarray:
             threading.Thread(target=lambda: (input("  recording... press Enter to stop "), stop.set()),
                              daemon=True).start()
             stop.wait()
-    return np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.float32)
+    audio = np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.float32)
+    return audio, bool(status_seen)
 
 
 def peak_dbfs(x: np.ndarray) -> float:
@@ -72,7 +92,7 @@ def main() -> int:
         while True:
             print(f"\n[{n}/{len(items)}] {item_id}\n  {instruction}")
             input("  Press Enter to start ")
-            audio = capture(rate, FREE_TALK_SECONDS if args.set == "free_talk" else None)
+            audio, status_seen = capture(rate, FREE_TALK_SECONDS if args.set == "free_talk" else None)
             peak = peak_dbfs(audio)
             print(f"  duration {len(audio) / rate:.2f}s, peak {peak:.1f} dBFS")
             if peak < MIN_PEAK_DBFS:
@@ -82,14 +102,20 @@ def main() -> int:
                 if choice == "q":
                     return 0
                 continue
-            choice = input("  [Enter]=keep  r=redo  q=quit ").strip().lower()
+            warns = take_warnings(audio, status_seen)
+            for w in warns:
+                print(f"  WARNING: {w}")
+            prompt = "  [Enter]=redo (warning)  k=keep anyway  q=quit " if warns else "  [Enter]=keep  r=redo  q=quit "
+            choice = input(prompt).strip().lower()
             if choice == "q":
                 return 0
-            if choice == "r":
+            if (warns and choice != "k") or choice == "r":
                 continue
-            write_wav16k(path, audio, rate)
-            info = sf.info(str(path))
-            assert (info.samplerate, info.channels) == (TARGET_RATE, 1), f"bad format: {path}"
+            tmp = path.with_name(f"{item_id}.tmp.wav")
+            write_wav16k(tmp, audio, rate)
+            info = sf.info(str(tmp))
+            assert (info.samplerate, info.channels) == (TARGET_RATE, 1), f"bad format: {tmp}"
+            os.replace(tmp, path)
             break
     print("\nDone.")
     return 0
