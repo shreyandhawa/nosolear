@@ -6,6 +6,7 @@ from nosolear.cli import main
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY
 from nosolear.persistence.db import create_engine_for
 from nosolear.persistence.repositories import ProfileRepository
+from nosolear.settings import Settings
 
 
 def _env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -160,3 +161,127 @@ def test_path_like_pack_exits_2(
     monkeypatch.setenv("NOSOLEAR_PACK", "../x")
     assert main(["rebuild-profile"]) == 2
     assert "Traceback" not in capsys.readouterr().err
+
+
+_LABELS = [
+    "Azure Speech",
+    "Azure capabilities",
+    "Anthropic",
+    "Transcriber",
+    "Phone probe",
+    "Language pack",
+    "Data dir",
+    "Usage",
+]
+AZURE_KEY = "AzurePlantedKey-0123456789abcdef"
+CLAUDE_KEY = "AnthropicPlantedKey-0123456789abcdef"
+
+
+def test_doctor_reports_missing_keys_and_exits_1(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    data = tmp_path / "data"
+    monkeypatch.setenv("NOSOLEAR_DATA_DIR", str(data))
+    assert main(["doctor"]) == 1
+    out = capsys.readouterr().out
+    assert "Azure Speech" in out and "NOSOLEAR_AZURE_SPEECH_KEY" in out
+    assert not data.exists()
+
+
+def test_doctor_exits_0_when_configured_and_never_prints_keys(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("NOSOLEAR_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("NOSOLEAR_AZURE_SPEECH_KEY", AZURE_KEY)
+    monkeypatch.setenv("NOSOLEAR_AZURE_SPEECH_REGION", "westus2")
+    monkeypatch.setenv("NOSOLEAR_ANTHROPIC_API_KEY", CLAUDE_KEY)
+    assert main(["doctor"]) == 0
+    captured = capsys.readouterr()
+    assert all(label in captured.out for label in _LABELS)
+    assert not (tmp_path / "data").exists()
+    for key in (AZURE_KEY, CLAUDE_KEY):
+        assert key not in captured.out and key not in captured.err
+
+
+def test_doctor_probe_is_not_available_yet(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("NOSOLEAR_DATA_DIR", str(tmp_path / "data"))
+    assert main(["doctor", "--probe"]) == 2
+    captured = capsys.readouterr()
+    assert "probes arrive in Phase 0d" in captured.err and captured.out == ""
+
+
+def test_doctor_with_an_unknown_pack_still_prints_every_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("NOSOLEAR_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("NOSOLEAR_PACK", "nosuchpack")
+    assert main(["doctor"]) == 1
+    out = capsys.readouterr().out
+    labels = [
+        "Azure Speech",
+        "Azure capabilities",
+        "Anthropic",
+        "Transcriber",
+        "Phone probe",
+        "Language pack",
+        "Data dir",
+        "Usage",
+    ]
+    assert all(label in out for label in labels)
+    assert "nosuchpack" in out
+    assert not (tmp_path / "data").exists()
+
+
+def test_doctor_keeps_the_invalid_settings_exit(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("NOSOLEAR_HOST", "0.0.0.0")
+    assert main(["doctor"]) == 2
+    assert "NOSOLEAR_HOST" in capsys.readouterr().err
+
+
+def test_doctor_reports_a_loose_existing_data_dir_without_touching_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    data.chmod(0o755)
+    monkeypatch.setenv("NOSOLEAR_DATA_DIR", str(data))
+    before = sorted(p.name for p in tmp_path.rglob("*"))
+    main(["doctor"])
+    out = capsys.readouterr().out
+    line = next(line for line in out.splitlines() if line.startswith("Data dir"))
+    assert "degraded" in line and "chmod 700" in out
+    assert data.stat().st_mode & 0o777 == 0o755
+    assert sorted(p.name for p in tmp_path.rglob("*")) == before
+
+
+def _env_file(monkeypatch: pytest.MonkeyPatch, path: Path) -> None:
+    monkeypatch.setitem(Settings.model_config, "env_file", path)
+
+
+def test_doctor_unreadable_env_file_exits_2(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    env = tmp_path / ".env"
+    env.write_text("NOSOLEAR_PORT=9000\n")
+    env.chmod(0o000)
+    _env_file(monkeypatch, env)
+    try:
+        assert main(["doctor"]) == 2
+    finally:
+        env.chmod(0o600)
+    err = capsys.readouterr().err
+    assert err.startswith("cannot read settings:") and "NOSOLEAR_PORT" not in err
+
+
+def test_doctor_non_utf8_env_file_exits_2(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    env = tmp_path / ".env"
+    env.write_bytes(b"NOSOLEAR_PORT=\xff\xfe\n")
+    _env_file(monkeypatch, env)
+    assert main(["doctor"]) == 2
+    assert "cannot read settings: .env is not valid UTF-8" in capsys.readouterr().err

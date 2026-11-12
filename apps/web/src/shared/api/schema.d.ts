@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Readiness */
+        get: operations["getReadiness"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -97,6 +114,32 @@ export interface components {
             /** Taxonomy Version */
             taxonomy_version: number;
         };
+        /** ReadinessOut */
+        ReadinessOut: {
+            /** Ready */
+            ready: boolean;
+            /** Rows */
+            rows: components["schemas"]["ReadinessRowOut"][];
+        };
+        /** ReadinessRowOut */
+        ReadinessRowOut: {
+            /**
+             * Component
+             * @enum {string}
+             */
+            component: "azure_speech" | "azure_capabilities" | "anthropic" | "transcriber" | "phone_probe" | "language_pack" | "data_dir" | "usage";
+            /** Fix */
+            fix: string | null;
+            /** Label */
+            label: string;
+            /** Reason */
+            reason: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ready" | "missing" | "not_installed" | "not_probed" | "degraded";
+        };
     };
     responses: never;
     parameters: never;
@@ -142,6 +185,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProfileOut"];
+                };
+            };
+        };
+    };
+    getReadiness: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadinessOut"];
                 };
             };
         };

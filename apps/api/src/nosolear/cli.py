@@ -9,10 +9,12 @@ from sqlalchemy import Engine
 
 from nosolear.adapters.private_fs import DataDirError
 from nosolear.adapters.system_clock import SystemClock
-from nosolear.api.deps import load_active_pack
+from nosolear.api.deps import get_environment, load_active_pack
+from nosolear.app.check_readiness import check_readiness
 from nosolear.app.rebuild_profile import rebuild_profile
 from nosolear.dev.seed import seed_observations
 from nosolear.domain.packs import LanguagePack, PackError
+from nosolear.domain.readiness import format_readiness
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY
 from nosolear.persistence.db import create_engine_for, upgrade_to_head
 from nosolear.persistence.repositories import ObservationRepository, ProfileRepository
@@ -31,6 +33,8 @@ def _parser() -> argparse.ArgumentParser:
     seed.add_argument("--days", type=int, default=14)
     seed.add_argument("--seed", type=int, default=7)
     seed.add_argument("--force", action="store_true", help="append even if observations exist")
+    doctor = commands.add_parser("doctor", help="show what is configured and what is missing")
+    doctor.add_argument("--probe", action="store_true", help="check live providers (Phase 0d)")
     return parser
 
 
@@ -52,6 +56,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ValidationError as exc:
         print(f"invalid settings:\n{settings_error_summary(exc)}", file=sys.stderr)
         return 2
+    except UnicodeDecodeError:
+        print("cannot read settings: .env is not valid UTF-8", file=sys.stderr)
+        return 2
+    except OSError as exc:
+        print(f"cannot read settings: {exc.strerror or type(exc).__name__}", file=sys.stderr)
+        return 2
+    if args.command == "doctor":
+        if args.probe:
+            print("probes arrive in Phase 0d", file=sys.stderr)
+            return 2
+        prepare_process(settings, create_data_dir=False)
+        report = check_readiness(settings, get_environment())
+        print(format_readiness(report))
+        return 0 if report.ready else 1
     if args.command == "dev-seed" and settings.data_dir == REPO_ROOT / "data":
         print(
             "refusing to seed the real data directory (the observation log has no delete path);"
