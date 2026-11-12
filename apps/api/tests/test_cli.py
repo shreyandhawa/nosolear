@@ -63,3 +63,12 @@ def test_dev_seed_refuses_the_default_data_dir(
     assert main(["dev-seed", "--force"]) == 2
     err = capsys.readouterr().err
     assert "NOSOLEAR_DATA_DIR" in err and "data/dev" in err
+
+
+def test_cli_reports_bad_settings_without_input(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("NOSOLEAR_HOST", "0.0.0.0")
+    assert main(["rebuild-profile"]) == 2
+    err = capsys.readouterr().err
+    assert "NOSOLEAR_HOST" in err and "0.0.0.0" not in err

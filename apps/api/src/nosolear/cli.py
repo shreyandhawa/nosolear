@@ -4,6 +4,7 @@ import argparse
 import sys
 from collections.abc import Sequence
 
+from pydantic import ValidationError
 from sqlalchemy import Engine
 
 from nosolear.adapters.system_clock import SystemClock
@@ -12,7 +13,7 @@ from nosolear.dev.seed import seed_observations
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY
 from nosolear.persistence.db import create_engine_for, upgrade_to_head
 from nosolear.persistence.repositories import ObservationRepository, ProfileRepository
-from nosolear.settings import REPO_ROOT, Settings
+from nosolear.settings import REPO_ROOT, Settings, settings_error_summary
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -41,7 +42,11 @@ def _rebuild(engine: Engine) -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    settings = Settings()
+    try:
+        settings = Settings()
+    except ValidationError as exc:
+        print(f"invalid settings:\n{settings_error_summary(exc)}", file=sys.stderr)
+        return 2
     if args.command == "dev-seed" and settings.data_dir == REPO_ROOT / "data":
         print(
             "refusing to seed the real data directory (the observation log has no delete path);"

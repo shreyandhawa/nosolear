@@ -7,6 +7,7 @@ from hypothesis import settings
 from sqlalchemy import Engine
 
 from nosolear.persistence.db import create_engine_for, upgrade_to_head
+from nosolear.settings import Settings
 
 settings.register_profile("default", max_examples=100, deadline=None)
 settings.register_profile("heavy", max_examples=1000, deadline=None)
@@ -19,3 +20,14 @@ def db_engine(tmp_path: Path) -> Iterator[Engine]:
     upgrade_to_head(engine)
     yield engine
     engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def _isolated_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test sees the developer's environment or real `.env` (which holds real keys).
+
+    Live tests (added in Task 9) will be exempted from this fixture.
+    """
+    for name in [n for n in os.environ if n.startswith("NOSOLEAR_")]:
+        monkeypatch.delenv(name)
+    monkeypatch.setitem(Settings.model_config, "env_file", None)

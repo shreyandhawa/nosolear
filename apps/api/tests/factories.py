@@ -7,6 +7,7 @@ from sqlalchemy import Engine, text
 
 from nosolear.domain.observations import Context, Observation, Outcome, make_observation
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY, Detector
+from nosolear.settings import Settings
 
 TAX = DEFAULT_TAXONOMY
 T0 = datetime(2026, 11, 12, 8, 0, tzinfo=UTC)
@@ -57,3 +58,8 @@ class FixedClock:
 
     def now(self) -> datetime:
         return self._now
+
+
+def make_settings(**kw: object) -> Settings:
+    """Settings that never read a `.env` file; environment variables still apply."""
+    return Settings(_env_file=None, **kw)  # pyright: ignore[reportCallIssue,reportArgumentType]
