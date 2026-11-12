@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from nosolear.api.profile_routes import router as profile_router
 from nosolear.persistence.db import create_engine_for, upgrade_to_head
 from nosolear.settings import Settings
+from nosolear.startup import prepare_process
 
 
 class HealthResponse(BaseModel):
@@ -17,6 +18,7 @@ class HealthResponse(BaseModel):
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     settings: Settings = app.state.settings
+    prepare_process(settings, create_data_dir=True)
     engine = create_engine_for(settings.database_url)
     upgrade_to_head(engine)
     app.state.engine = engine

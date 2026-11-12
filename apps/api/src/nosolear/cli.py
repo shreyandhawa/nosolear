@@ -14,6 +14,7 @@ from nosolear.domain.taxonomy import DEFAULT_TAXONOMY
 from nosolear.persistence.db import create_engine_for, upgrade_to_head
 from nosolear.persistence.repositories import ObservationRepository, ProfileRepository
 from nosolear.settings import REPO_ROOT, Settings, settings_error_summary
+from nosolear.startup import prepare_process
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -54,6 +55,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    prepare_process(settings, create_data_dir=True)
     engine = create_engine_for(settings.database_url)
     try:
         if args.command == "db":

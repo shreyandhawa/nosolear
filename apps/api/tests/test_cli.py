@@ -84,3 +84,12 @@ def test_cli_short_key_exits_2_without_leaking(
     assert "NOSOLEAR_ANTHROPIC_API_KEY" in captured.err
     assert key not in captured.err and key not in captured.out
     assert captured.out == ""
+
+
+def test_db_upgrade_tightens_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    data = tmp_path / "loose"
+    data.mkdir()
+    data.chmod(0o755)
+    monkeypatch.setenv("NOSOLEAR_DATA_DIR", str(data))
+    assert main(["db", "upgrade"]) == 0
+    assert data.stat().st_mode & 0o777 == 0o700

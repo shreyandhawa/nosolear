@@ -6,6 +6,7 @@ import pytest
 from hypothesis import settings
 from sqlalchemy import Engine
 
+from nosolear.logging_setup import uninstall_secret_scrubbing
 from nosolear.persistence.db import create_engine_for, upgrade_to_head
 from nosolear.settings import Settings
 
@@ -23,7 +24,7 @@ def db_engine(tmp_path: Path) -> Iterator[Engine]:
 
 
 @pytest.fixture(autouse=True)
-def _isolated_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+def _isolated_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """No test sees the developer's environment or real `.env` (which holds real keys).
 
     Live tests (added in Task 9) will be exempted from this fixture.
@@ -31,3 +32,7 @@ def _isolated_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in [n for n in os.environ if n.startswith("NOSOLEAR_")]:
         monkeypatch.delenv(name)
     monkeypatch.setitem(Settings.model_config, "env_file", None)
+    # prepare_process sets this and installs the log record factory; neither may leak between tests
+    monkeypatch.delenv("HF_HUB_DISABLE_TELEMETRY", raising=False)
+    yield
+    uninstall_secret_scrubbing()
