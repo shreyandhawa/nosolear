@@ -14,13 +14,14 @@ Used only as an opt-in transcriber, never chosen by `auto`.
 - Code: MIT (Nyra Health GmbH).
 - Model weights (`nyralabs/CrisperWhisper`, formerly `nyrahealth/CrisperWhisper`):
   CC BY-NC 4.0. The upstream README says the weights are not MIT and are free for research
-  and non-commercial use only; commercial use needs a licence from Nyra. Newer Nyra
-  releases use a separate non-commercial research licence.
+  and non-commercial use only; commercial use needs a licence from Nyra. The same README
+  names a "Nyra Health Non-Commercial Research License" for the model weights.
 - The MIT licence does not cover these weights. Enable CrisperWhisper only if your use is
   non-commercial. It is off unless you turn it on, because it is opt-in.
 
 Source: https://huggingface.co/nyralabs/CrisperWhisper
 Source: https://github.com/nyrahealth/CrisperWhisper/blob/main/LICENSE
+Source: https://github.com/nyrahealth/CrisperWhisper#license
 Verified: 2026-11-12
 
 ## espeak-ng
