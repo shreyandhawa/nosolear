@@ -67,3 +67,54 @@ def test_parse_rejects_malformed():
         )
     with pytest.raises(ValueError):
         parse_calibration_specs({})
+
+
+# The shipped table, typed out independently of items.toml so a typo there fails.
+EXPECTED_SPECS = (
+    ("sound.sub.v.w", "W instead of V", (("vest", "west"), ("very", "werry"), ("van", "wan"))),
+    ("sound.sub.w.v", "V instead of W", (("west", "vest"), ("wine", "vine"))),
+    ("sound.sub.f.p", "P instead of F", (("fan", "pan"), ("fine", "pine"), ("coffee", "coppee"))),
+    (
+        "sound.sub.θ.t",
+        "T instead of TH",
+        (("think", "tink"), ("three", "tree"), ("thanks", "tanks")),
+    ),
+    ("sound.sub.ð.d", "D instead of the voiced TH", (("this", "dis"), ("they", "day"))),
+    ("sound.sub.ʃ.s", "S instead of SH", (("ship", "sip"), ("she", "see"), ("shop", "sop"))),
+    ("sound.sub.s.ʃ", "SH instead of S", (("sip", "ship"), ("see", "she"))),
+    ("sound.sub.z.dʒ", "a J sound instead of Z", (("zoo", "joo"), ("zero", "jero"))),
+    ("sound.sub.z.s", "S instead of Z", (("zip", "sip"), ("buzz", "buss"))),
+    (
+        "sound.ins.epenthesis_sC",
+        "a vowel before it",
+        (("school", "ischool"), ("speak", "ispeak"), ("street", "istreet"), ("sport", "isport")),
+    ),
+)
+
+
+def _expected_pairs() -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
+    for key, description, words in EXPECTED_SPECS:
+        for word, respelling in words:
+            tail = f'"{respelling}"' if key.endswith("sC") else f'sounds like "{respelling}"'
+            pairs.append(
+                (f"{word}__correct", f'Say "{word}" as correctly as possible, in General American.')
+            )
+            for take in (1, 2):
+                pairs.append(
+                    (
+                        f"{word}__err{take}",
+                        f'Say "{word}" with {description}: {tail} (take {take} of 2)',
+                    )
+                )
+    return pairs
+
+
+def test_shipped_specs_match_the_pinned_table():
+    assert tuple((s.error_key, s.description, s.words) for s in SPECS) == EXPECTED_SPECS
+
+
+def test_shipped_items_match_the_pinned_78_id_instruction_pairs():
+    pairs = [(i.id, i.instruction) for i in build_calibration_items(SPECS)]
+    assert len(pairs) == 78
+    assert pairs == _expected_pairs()

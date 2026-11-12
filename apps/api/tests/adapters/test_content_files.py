@@ -182,3 +182,11 @@ def test_calibration_wrong_structure_is_a_pack_error(tmp_path: Path):
     path.write_text('specs = "no"\n', encoding="utf-8")
     with pytest.raises(PackError, match="specs"):
         load_calibration_specs(path)
+
+
+@pytest.mark.parametrize("loader", LOADERS)
+def test_integer_beyond_python_digit_limit_is_a_pack_error(tmp_path: Path, loader):
+    call = loader(tmp_path, b"a0 = " + b"1" * 5000 + b"\n")
+    with pytest.raises(PackError) as err:
+        call()  # type: ignore[operator]
+    assert "\n" not in str(err.value) and "invalid TOML" in str(err.value)
