@@ -1,0 +1,52 @@
+# Calibration recording items, ported from the Phase 0b spike.
+# Each spec yields a correct take and two deliberate-error takes per word.
+
+[[specs]]
+error_key = "sound.sub.v.w"
+description = "W instead of V"
+words = [["vest", "west"], ["very", "werry"], ["van", "wan"]]
+
+[[specs]]
+error_key = "sound.sub.w.v"
+description = "V instead of W"
+words = [["west", "vest"], ["wine", "vine"]]
+
+[[specs]]
+error_key = "sound.sub.f.p"
+description = "P instead of F"
+words = [["fan", "pan"], ["fine", "pine"], ["coffee", "coppee"]]
+
+[[specs]]
+error_key = "sound.sub.θ.t"
+description = "T instead of TH"
+words = [["think", "tink"], ["three", "tree"], ["thanks", "tanks"]]
+
+[[specs]]
+error_key = "sound.sub.ð.d"
+description = "D instead of the voiced TH"
+words = [["this", "dis"], ["they", "day"]]
+
+[[specs]]
+error_key = "sound.sub.ʃ.s"
+description = "S instead of SH"
+words = [["ship", "sip"], ["she", "see"], ["shop", "sop"]]
+
+[[specs]]
+error_key = "sound.sub.s.ʃ"
+description = "SH instead of S"
+words = [["sip", "ship"], ["see", "she"]]
+
+[[specs]]
+error_key = "sound.sub.z.dʒ"
+description = "a J sound instead of Z"
+words = [["zoo", "joo"], ["zero", "jero"]]
+
+[[specs]]
+error_key = "sound.sub.z.s"
+description = "S instead of Z"
+words = [["zip", "sip"], ["buzz", "buss"]]
+
+[[specs]]
+error_key = "sound.ins.epenthesis_sC"
+description = "a vowel before it"
+words = [["school", "ischool"], ["speak", "ispeak"], ["street", "istreet"], ["sport", "isport"]]

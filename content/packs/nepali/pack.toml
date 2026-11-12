@@ -1,0 +1,110 @@
+id = "nepali"
+name = "Nepali"
+description = "Guesses for a Nepali speaker aiming at General American. Nepali has no /f/, /z/, /θ/ or /ð/, one v-w-like sound, one sibilant where English has /s/ and /ʃ/, dental and retroflex stops, and no articles."
+
+[[hypotheses]]
+key = "sound.sub.v.w"
+reason = "Nepali has one v-w-like sound, so /v/ can come out as /w/."
+
+[[hypotheses]]
+key = "sound.sub.w.v"
+reason = "Nepali has one v-w-like sound, so /w/ can come out as /v/."
+
+[[hypotheses]]
+key = "sound.sub.f.p"
+reason = "Nepali has no /f/, so it is often replaced by /p/."
+
+[[hypotheses]]
+key = "sound.sub.ʃ.s"
+reason = "Nepali has one sibilant where English has /s/ and /ʃ/, so sh can come out as s."
+
+[[hypotheses]]
+key = "sound.sub.s.ʃ"
+reason = "Nepali has one sibilant where English has /s/ and /ʃ/, so s can come out as sh."
+
+[[hypotheses]]
+key = "sound.sub.θ.t"
+reason = "Nepali has no /θ/, so it is often replaced by /t/."
+
+[[hypotheses]]
+key = "sound.sub.z.dʒ"
+reason = "Nepali has no /z/, so it can come out as a j sound."
+
+[[hypotheses]]
+key = "sound.sub.z.s"
+reason = "Nepali has no /z/, so it can come out as /s/."
+
+[[hypotheses]]
+key = "sound.sub.ð.d"
+reason = "Nepali has no /ð/, so it is often replaced by /d/."
+
+[[hypotheses]]
+key = "sound.sub.ʒ.dʒ"
+reason = "Nepali has no /ʒ/, so it can come out as a j sound."
+
+[[hypotheses]]
+key = "sound.sub.i.ɪ"
+reason = "Vowel contrast: ship and sheep can merge."
+
+[[hypotheses]]
+key = "sound.sub.ɪ.i"
+reason = "Vowel contrast: ship and sheep can merge."
+
+[[hypotheses]]
+key = "sound.sub.æ.ɛ"
+reason = "Vowel contrast: bad and bed can merge."
+
+[[hypotheses]]
+key = "sound.sub.ʌ.ɑ"
+reason = "Vowel contrast: cut and cot can merge."
+
+[[hypotheses]]
+key = "sound.low.t"
+reason = "Dental and retroflex stops: a retroflex-sounding t shows up as low accuracy."
+
+[[hypotheses]]
+key = "sound.low.d"
+reason = "Dental and retroflex stops: a retroflex-sounding d shows up as low accuracy."
+
+[[hypotheses]]
+key = "sound.low.ɹ"
+reason = "General American has a rhotic r, which is unlike the Nepali r."
+
+[[hypotheses]]
+key = "sound.low.ɝ"
+reason = "The r-colored vowel in bird is new to Nepali speakers."
+
+[[hypotheses]]
+key = "sound.low.θ"
+reason = "Nepali has no /θ/, so it often comes out unclear."
+
+[[hypotheses]]
+key = "sound.low.ð"
+reason = "Nepali has no /ð/, so it often comes out unclear."
+
+[[hypotheses]]
+key = "sound.ins.epenthesis_sC"
+reason = "A vowel is often inserted before an s-cluster, as in ischool."
+
+[[hypotheses]]
+key = "prosody.word_stress"
+reason = "Syllable-timed rhythm can put word stress on the wrong syllable."
+
+[[hypotheses]]
+key = "prosody.unexpected_break"
+reason = "Syllable-timed rhythm can break phrases in unexpected places."
+
+[[hypotheses]]
+key = "prosody.monotone"
+reason = "Syllable-timed rhythm can flatten English pitch movement."
+
+[[hypotheses]]
+key = "grammar.article"
+reason = "Nepali has no articles, so a, an and the are often missing or wrong."
+
+[[hypotheses]]
+key = "grammar.preposition"
+reason = "Nepali postpositions do not map to English prepositions, so the wrong one is often chosen."
+
+[calibration]
+emphasis = ["sound.sub.v.w", "sound.sub.w.v", "sound.sub.f.p", "sound.sub.θ.t", "sound.sub.ð.d", "sound.sub.ʃ.s", "sound.sub.s.ʃ", "sound.sub.z.dʒ", "sound.sub.z.s", "sound.ins.epenthesis_sC"]

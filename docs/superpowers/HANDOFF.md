@@ -17,14 +17,15 @@ Phase 0b execution (open-source foundation). Gate 2 is passed: the phase plans P
 - 2026-11-12: Phase 0b Task 2: `THIRD_PARTY_NOTICES`, `scripts/third_party_licences.py` (`--check` for drift) and `test_notices.py`. Licences verified against upstream on 2026-11-12.
 - 2026-11-12: Phase 0b Task 3: the full `Settings` tree (loopback-only host and origins, key-length and pattern checks, timezone, caps), `.env.example` and the CLI error path; tests never load the real `.env`.
 - 2026-11-12: Phase 0b Task 4: `scrub` (domain), log-record-factory secret scrubbing, private data dir (0700/0600, symlinks skipped, foreign owner refused) and `prepare_process` wired into the CLI and the app lifespan.
+- 2026-11-12: Phase 0b Task 5: language packs (`domain/packs.py`, `calibration_items.py`, `adapters/content_files.py`, `content/packs/{neutral,nepali}`, `content/calibration/items.toml`) with the Phase 0a hypothesis keys moved into the `nepali` pack.
 
 ## In progress
 
-- Branch `p0b/04-scrubbing-and-private-data-dir`: Task 4, PR open for review. Earlier task PRs may still be open; check `gh pr list`.
+- Branch `p0b/05-language-packs`: Task 5, PR open for review. Earlier task PRs may still be open; check `gh pr list`.
 
 ## Next
 
-1. Task 5: language packs. The plan is `docs/superpowers/plans/2026-11-12-phase-0b-open-source-foundation.md`. One branch and one PR per task, with a fresh implementer subagent and a different reviewer subagent each time. Squash-merge on green CI.
+1. Task 6: wire the active pack into the profile. The plan is `docs/superpowers/plans/2026-11-12-phase-0b-open-source-foundation.md`. One branch and one PR per task, with a fresh implementer subagent and a different reviewer subagent each time. Squash-merge on green CI.
 2. Any task that adds a dependency reruns `uv run --project apps/api python scripts/third_party_licences.py`.
 3. Correct `docs/ARCHITECTURE.md` §17/§18 for the licence discrepancy below.
 4. At the end of each phase: run `/security-review`, update this file, and hand off to a fresh session.
