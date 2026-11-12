@@ -67,26 +67,28 @@ def test_planted_keys_never_appear(
     assert KEY_A not in text and KEY_B not in text
 
 
-key_text = st.text(
+# every generated key is built around a sentinel that never occurs in report text, so a hit can
+# only mean the key itself leaked (a bare generated key can match ordinary report words)
+key_suffix = st.text(
     alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_",
-    min_size=16,
-    max_size=40,
+    min_size=6,
+    max_size=30,
 )
 
 
-@given(azure=key_text, claude=key_text)
+@given(azure=key_suffix, claude=key_suffix)
 def test_generated_keys_never_appear(azure: str, claude: str):
+    azure_key, claude_key = "PLANTEDKEY" + azure, "PLANTEDKEY" + claude
     settings = make_settings(
         data_dir=Path("/nonexistent-nosolear"),
-        azure_speech_key=azure,
+        azure_speech_key=azure_key,
         azure_speech_region="westus2",
-        anthropic_api_key=claude,
+        anthropic_api_key=claude_key,
     )
     report = check_readiness(settings, FakeEnvironment())
     text = repr(report) + format_readiness(report)
-    # a key that is a substring of an ordinary word ("neutral") would be a false alarm; 16+
-    # characters of mixed alphabet cannot be, except by being copied from the report itself
-    assert azure not in text and claude not in text
+    assert "PLANTEDKEY" not in text
+    assert azure_key not in text and claude_key not in text
 
 
 def test_configured_settings_are_ready(tmp_path: Path):

@@ -3,6 +3,7 @@
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -104,6 +105,11 @@ class FakeEnvironment:
         return self._platform
 
 
-def loopback_client(app: FastAPI, *, port: int = 8000) -> TestClient:
-    """A client the request guard accepts: loopback peer, loopback Host."""
-    return TestClient(app, base_url=f"http://127.0.0.1:{port}", client=("127.0.0.1", 50000))
+def loopback_client(app: FastAPI, *, port: int = 8000, **kwargs: Any) -> TestClient:
+    """A client the request guard accepts: loopback peer, loopback Host.
+
+    Extra keyword arguments (e.g. `raise_server_exceptions=False`) go to `TestClient`.
+    """
+    return TestClient(
+        app, base_url=f"http://127.0.0.1:{port}", client=("127.0.0.1", 50000), **kwargs
+    )
