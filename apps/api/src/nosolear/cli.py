@@ -7,10 +7,9 @@ from collections.abc import Sequence
 from pydantic import ValidationError
 from sqlalchemy import Engine
 
-from nosolear.adapters.environment import SystemEnvironment
 from nosolear.adapters.private_fs import DataDirError
 from nosolear.adapters.system_clock import SystemClock
-from nosolear.api.deps import load_active_pack
+from nosolear.api.deps import get_environment, load_active_pack
 from nosolear.app.check_readiness import check_readiness
 from nosolear.app.rebuild_profile import rebuild_profile
 from nosolear.dev.seed import seed_observations
@@ -57,12 +56,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ValidationError as exc:
         print(f"invalid settings:\n{settings_error_summary(exc)}", file=sys.stderr)
         return 2
+    except UnicodeDecodeError:
+        print("cannot read settings: .env is not valid UTF-8", file=sys.stderr)
+        return 2
+    except OSError as exc:
+        print(f"cannot read settings: {exc.strerror or type(exc).__name__}", file=sys.stderr)
+        return 2
     if args.command == "doctor":
         if args.probe:
             print("probes arrive in Phase 0d", file=sys.stderr)
             return 2
         prepare_process(settings, create_data_dir=False)
-        report = check_readiness(settings, SystemEnvironment())
+        report = check_readiness(settings, get_environment())
         print(format_readiness(report))
         return 0 if report.ready else 1
     if args.command == "dev-seed" and settings.data_dir == REPO_ROOT / "data":

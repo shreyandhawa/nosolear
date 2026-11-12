@@ -19,7 +19,9 @@ class SystemEnvironment:
     def path_mode(self, path: Path) -> int | None:
         try:
             return os.stat(path).st_mode & 0o777
-        except OSError:
+        except FileNotFoundError:
+            if os.path.lexists(path):  # a dangling link is not an absent path
+                raise
             return None
 
     def platform(self) -> tuple[str, str]:

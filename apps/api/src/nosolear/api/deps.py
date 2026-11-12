@@ -1,8 +1,8 @@
 """Composition root: wires adapters to the routes."""
 
-from typing import cast
+from typing import Annotated, cast
 
-from fastapi import Request
+from fastapi import Depends, Request
 from sqlalchemy import Engine
 
 from nosolear.adapters.content_files import load_pack
@@ -34,6 +34,9 @@ def get_environment() -> EnvironmentProbe:
     return SystemEnvironment()
 
 
-def get_readiness_report(request: Request) -> ReadinessReport:
+def get_readiness_report(
+    settings: Annotated[Settings, Depends(get_settings)],
+    env: Annotated[EnvironmentProbe, Depends(get_environment)],
+) -> ReadinessReport:
     """The route's only dependency; tests override it."""
-    return check_readiness(get_settings(request), get_environment())
+    return check_readiness(settings, env)

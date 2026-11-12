@@ -10,7 +10,10 @@ class EnvironmentProbe(Protocol):
     def executable_available(self, name: str) -> bool: ...
 
     def path_mode(self, path: Path) -> int | None:
-        """Permission bits (`& 0o777`), or None when the path does not exist."""
+        """Permission bits (`& 0o777`), or None only when the path is truly absent.
+
+        Any other failure (broken link, file as parent, no search permission) raises `OSError`.
+        """
         ...
 
     def platform(self) -> tuple[str, str]:

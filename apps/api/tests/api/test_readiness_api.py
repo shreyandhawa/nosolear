@@ -2,11 +2,18 @@ import json
 import typing
 from pathlib import Path
 
+from factories import FakeEnvironment
 from fastapi.testclient import TestClient
 
 from nosolear.api.app import create_app
+from nosolear.api.deps import get_environment, get_readiness_report
 from nosolear.api.schemas import ReadinessRowOut
-from nosolear.domain.readiness import Component, ReadinessStatus
+from nosolear.domain.readiness import (
+    Component,
+    ReadinessReport,
+    ReadinessRow,
+    ReadinessStatus,
+)
 from nosolear.settings import Settings
 
 KEY_A = "AzurePlantedKey-0123456789abcdef"
@@ -63,3 +70,37 @@ def test_literals_match_the_enums():
     hints = typing.get_type_hints(ReadinessRowOut)
     assert set(typing.get_args(hints["component"])) == {c.value for c in Component}
     assert set(typing.get_args(hints["status"])) == {s.value for s in ReadinessStatus}
+
+
+def test_route_maps_a_hand_built_report(tmp_path: Path):
+    rows = tuple(ReadinessRow(c, ReadinessStatus.READY, "fine", None) for c in Component)
+    rows = (
+        ReadinessRow(Component.AZURE_SPEECH, ReadinessStatus.MISSING, "no key", "set it"),
+        *rows[1:],
+    )
+    app = create_app(_settings(tmp_path))
+    app.dependency_overrides[get_readiness_report] = lambda: ReadinessReport(rows)
+    with TestClient(app) as client:
+        body = client.get("/api/readiness").json()
+    assert body["ready"] is False
+    assert [r["label"] for r in body["rows"]] == [
+        "Azure Speech",
+        "Azure capabilities",
+        "Anthropic",
+        "Transcriber",
+        "Phone probe",
+        "Language pack",
+        "Data dir",
+        "Usage",
+    ]
+    assert body["rows"][0]["fix"] == "set it"
+    assert body["rows"][1]["fix"] is None
+
+
+def test_environment_dependency_can_be_overridden(tmp_path: Path):
+    app = create_app(_settings(tmp_path))
+    env = FakeEnvironment(modules={"torch", "transformers"}, executables={"espeak-ng"})
+    app.dependency_overrides[get_environment] = lambda: env
+    with TestClient(app) as client:
+        rows = {r["component"]: r for r in client.get("/api/readiness").json()["rows"]}
+    assert rows["phone_probe"]["status"] == "ready"

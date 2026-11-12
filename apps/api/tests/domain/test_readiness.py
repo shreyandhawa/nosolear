@@ -7,7 +7,6 @@ from hypothesis import strategies as st
 
 from nosolear.domain.readiness import (
     COMPONENT_LABELS,
-    COMPONENT_ORDER,
     CapabilityFindings,
     Caps,
     Component,
@@ -213,7 +212,6 @@ def test_report_has_eight_rows_in_enum_order():
     report = build_readiness(make_inputs())
     assert [r.component for r in report.rows] == list(Component)
     assert len(report.rows) == 8
-    assert tuple(Component) == COMPONENT_ORDER
     assert set(COMPONENT_LABELS) == set(Component)
 
 
@@ -267,3 +265,138 @@ def test_no_row_text_contains_a_planted_secret(
     # the only caller-supplied text that can appear is the exact fields given
     for part in (region, model, locale, pack_name):
         assert part in text
+
+
+def test_azure_stt_missing_names_both_variables_even_when_only_region_is_missing():
+    for kw in ({"azure_key_set": False}, {"azure_region": None}):
+        r = row(make_inputs(transcriber="azure_stt", **kw), C.TRANSCRIBER)
+        assert r.status is S.MISSING
+        assert r.fix and "NOSOLEAR_AZURE_SPEECH_KEY" in r.fix
+        assert "NOSOLEAR_AZURE_SPEECH_REGION" in r.fix
+
+
+def test_azure_reason_says_which_part_is_missing():
+    assert "key" in row(make_inputs(azure_key_set=False), C.AZURE_SPEECH).reason
+    assert "region" in row(make_inputs(azure_region=None), C.AZURE_SPEECH).reason
+    assert "region" not in row(make_inputs(azure_key_set=False), C.AZURE_SPEECH).reason
+
+
+@pytest.mark.parametrize(
+    ("system", "machine", "present", "absent"),
+    [
+        (
+            "darwin",
+            "arm64",
+            [
+                "uv sync --extra apple",
+                "uv sync --extra local",
+                "NOSOLEAR_AZURE_SPEECH_KEY",
+                "NOSOLEAR_AZURE_SPEECH_REGION",
+            ],
+            [],
+        ),
+        (
+            "linux",
+            "x86_64",
+            ["uv sync --extra local", "NOSOLEAR_AZURE_SPEECH_KEY", "NOSOLEAR_AZURE_SPEECH_REGION"],
+            ["--extra apple"],
+        ),
+        (
+            "win32",
+            "AMD64",
+            ["NOSOLEAR_AZURE_SPEECH_KEY", "NOSOLEAR_AZURE_SPEECH_REGION"],
+            ["--extra"],
+        ),
+        ("darwin", "x86_64", ["NOSOLEAR_AZURE_SPEECH_KEY"], ["--extra"]),
+    ],
+)
+def test_auto_missing_fix_only_suggests_what_helps_here(
+    system: str, machine: str, present: list[str], absent: list[str]
+):
+    r = row(
+        make_inputs(
+            transcriber="auto",
+            system=system,
+            machine=machine,
+            modules=frozenset(),
+            azure_key_set=False,
+        ),
+        C.TRANSCRIBER,
+    )
+    assert r.status is S.MISSING and r.fix
+    assert all(p in r.fix for p in present)
+    assert not any(a in r.fix for a in absent)
+
+
+def test_auto_never_picks_crisper_whisper():
+    r = row(
+        make_inputs(modules=frozenset({"torch", "transformers"}), azure_key_set=False),
+        C.TRANSCRIBER,
+    )
+    assert r.status is S.MISSING
+
+
+@pytest.mark.parametrize("modules", [frozenset({"transformers"}), frozenset[str]()])
+def test_crisper_not_installed_keeps_the_licence_note(modules: frozenset[str]):
+    r = row(make_inputs(transcriber="crisper_whisper", modules=modules), C.TRANSCRIBER)
+    assert r.status is S.NOT_INSTALLED and "non-commercial licence, opt-in" in r.reason
+
+
+def test_capabilities_degraded_cases_and_missing_region():
+    day = date(2026, 11, 12)
+    for nbest, prosody in ((False, True), (False, False)):
+        r = row(
+            make_inputs(capabilities=CapabilityFindings(nbest, prosody, day)), C.AZURE_CAPABILITIES
+        )
+        assert r.status is S.DEGRADED
+        assert r.fix is None
+    r = row(make_inputs(azure_region=None), C.AZURE_CAPABILITIES)
+    assert r.status is S.NOT_PROBED
+
+
+@pytest.mark.parametrize("mode", [0o750, 0o707, 0o701])
+def test_data_dir_any_group_or_other_bit_is_degraded(mode: int):
+    r = row(make_inputs(data_dir_mode=mode), C.DATA_DIR)
+    assert r.status is S.DEGRADED
+
+
+def test_data_dir_combined_reason_names_both_and_ready_reason():
+    r = row(make_inputs(data_dir_mode=0o755, env_file_mode=0o644), C.DATA_DIR)
+    assert "/data" in r.reason and ".env" in r.reason
+    assert "group or other users have access" in r.reason
+    ok = row(make_inputs(), C.DATA_DIR)
+    assert ok.reason == "/data exists, owner-only" and ok.fix is None
+
+
+def test_data_dir_missing_with_loose_env_is_degraded_for_env_only():
+    r = row(make_inputs(data_dir_mode=None, env_file_mode=0o644), C.DATA_DIR)
+    assert r.status is S.DEGRADED and r.fix == "chmod 600 .env"
+
+
+def test_data_dir_fix_quotes_the_path():
+    r = row(make_inputs(data_dir="/my data", data_dir_mode=0o755), C.DATA_DIR)
+    assert r.fix == "chmod 700 '/my data'"
+
+
+def test_inspect_errors_make_the_data_dir_row_missing():
+    err = "cannot inspect /data: Not a directory"
+    r = row(make_inputs(data_dir_mode=None, inspect_errors=(err,)), C.DATA_DIR)
+    assert r.status is S.MISSING and err in r.reason
+    assert r.fix and "directory you own and can open" in r.fix
+    assert build_readiness(make_inputs(inspect_errors=(err,))).ready is False
+
+
+def test_invalid_pack_reason_does_not_repeat_the_prefix():
+    r = row(
+        make_inputs(pack=PackStatus("bad", None, 0, ("pack bad: id is wrong",))), C.LANGUAGE_PACK
+    )
+    assert r.reason == "pack 'bad' is invalid: id is wrong"
+
+
+def test_key_named_inputs_are_booleans():
+    import dataclasses
+    import typing
+
+    hints = typing.get_type_hints(ReadinessInputs)
+    keyed = [f.name for f in dataclasses.fields(ReadinessInputs) if "key" in f.name]
+    assert keyed and all(hints[name] is bool for name in keyed)

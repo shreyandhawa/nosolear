@@ -79,11 +79,13 @@ class FakeEnvironment:
         executables: Iterable[str] = (),
         modes: Mapping[Path, int] | None = None,
         platform: tuple[str, str] = ("linux", "x86_64"),
+        raises: Mapping[Path, OSError] | None = None,
     ) -> None:
         self._modules = frozenset(modules)
         self._executables = frozenset(executables)
         self._modes = dict(modes or {})
         self._platform = platform
+        self._raises = dict(raises or {})
 
     def module_available(self, name: str) -> bool:
         return name in self._modules
@@ -92,6 +94,8 @@ class FakeEnvironment:
         return name in self._executables
 
     def path_mode(self, path: Path) -> int | None:
+        if path in self._raises:
+            raise self._raises[path]
         return self._modes.get(path)
 
     def platform(self) -> tuple[str, str]:

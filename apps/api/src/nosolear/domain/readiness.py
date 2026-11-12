@@ -1,5 +1,6 @@
 """What is configured and what is missing, as plain rows. Pure: no I/O, and no key ever enters."""
 
+import shlex
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
@@ -24,7 +25,6 @@ class ReadinessStatus(StrEnum):
     DEGRADED = "degraded"
 
 
-COMPONENT_ORDER: tuple[Component, ...] = tuple(Component)
 COMPONENT_LABELS: dict[Component, str] = {
     Component.AZURE_SPEECH: "Azure Speech",
     Component.AZURE_CAPABILITIES: "Azure capabilities",
@@ -90,6 +90,7 @@ class ReadinessInputs:
     caps: Caps
     usage: UsageSnapshot | None
     capabilities: CapabilityFindings | None
+    inspect_errors: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,11 +127,14 @@ def _azure_speech(i: ReadinessInputs) -> ReadinessRow:
             ReadinessStatus.READY,
             f"key set, region {i.azure_region}, locale {i.azure_locale}",
         )
+    missing = [
+        n for n, ok in (("key", i.azure_key_set), ("region", bool(i.azure_region))) if not ok
+    ]
     return _row(
         Component.AZURE_SPEECH,
         ReadinessStatus.MISSING,
-        "key or region not set",
-        "set NOSOLEAR_AZURE_SPEECH_KEY and NOSOLEAR_AZURE_SPEECH_REGION in .env",
+        f"{' and '.join(missing)} not set",
+        _AZURE_FIX,
     )
 
 
@@ -180,6 +184,18 @@ def _auto_order(i: ReadinessInputs) -> tuple[str, ...]:
     return ("azure_stt",)
 
 
+_AZURE_FIX = "set NOSOLEAR_AZURE_SPEECH_KEY and NOSOLEAR_AZURE_SPEECH_REGION in .env"
+
+
+def _auto_fix(i: ReadinessInputs) -> str:
+    order = _auto_order(i)
+    options = [f"run `{_APPLE_FIX}`"] if "mlx_whisper" in order else []
+    if "faster_whisper" in order:
+        options.append(f"run `{_LOCAL_FIX}`")
+    options.append(_AZURE_FIX)
+    return ", or ".join(options)
+
+
 def _usable(name: str, i: ReadinessInputs) -> bool:
     if name == "azure_stt":
         return _azure_ready(i)
@@ -196,8 +212,7 @@ def _transcriber(i: ReadinessInputs) -> ReadinessRow:
             c,
             ReadinessStatus.MISSING,
             "no transcriber is usable here",
-            f"configure Azure Speech, or run `{_LOCAL_FIX}`"
-            + (f" or `{_APPLE_FIX}`" if i.system == "darwin" and i.machine == "arm64" else ""),
+            _auto_fix(i),
         )
     name = i.transcriber
     note = " (non-commercial licence, opt-in)" if name == "crisper_whisper" else ""
@@ -208,7 +223,7 @@ def _transcriber(i: ReadinessInputs) -> ReadinessRow:
             c,
             ReadinessStatus.MISSING,
             "azure_stt needs Azure Speech",
-            "set NOSOLEAR_AZURE_SPEECH_KEY and NOSOLEAR_AZURE_SPEECH_REGION in .env",
+            _AZURE_FIX,
         )
     fix = _APPLE_FIX if name == "mlx_whisper" else _LOCAL_FIX
     return _row(c, ReadinessStatus.NOT_INSTALLED, f"{name} library is not installed{note}", fix)
@@ -233,10 +248,12 @@ def _language_pack(i: ReadinessInputs) -> ReadinessRow:
             ReadinessStatus.READY,
             f"{p.pack_id} ({p.name}), {p.hypotheses} hypotheses",
         )
+    prefix = f"pack {p.pack_id}: "
+    problems = "; ".join(x.removeprefix(prefix) for x in p.problems)
     return _row(
         Component.LANGUAGE_PACK,
         ReadinessStatus.MISSING,
-        f"pack '{p.pack_id}' is invalid: {'; '.join(p.problems)}",
+        f"pack '{p.pack_id}' is invalid: {problems}",
         f"edit content/packs/{p.pack_id}/pack.toml or set NOSOLEAR_PACK",
     )
 
@@ -247,13 +264,23 @@ def _loose(mode: int | None) -> bool:
 
 def _data_dir(i: ReadinessInputs) -> ReadinessRow:
     c = Component.DATA_DIR
+    if i.inspect_errors:
+        return _row(
+            c,
+            ReadinessStatus.MISSING,
+            "; ".join(i.inspect_errors),
+            f"make {shlex.quote(i.data_dir)} a directory you own and can open,"
+            " and make sure .env is readable",
+        )
     reasons: list[str] = []
     fixes: list[str] = []
     if _loose(i.data_dir_mode):
-        reasons.append(f"{i.data_dir} is readable by other users (`nosolear serve` tightens it)")
-        fixes.append(f"chmod 700 {i.data_dir}")
+        reasons.append(
+            f"{i.data_dir}: group or other users have access (`nosolear serve` tightens it)"
+        )
+        fixes.append(f"chmod 700 {shlex.quote(i.data_dir)}")
     if _loose(i.env_file_mode):
-        reasons.append(".env is readable by other users")
+        reasons.append(".env: group or other users have access")
         fixes.append("chmod 600 .env")
     if reasons:
         return _row(c, ReadinessStatus.DEGRADED, "; ".join(reasons), "; ".join(fixes))
