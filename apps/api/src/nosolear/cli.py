@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from pydantic import ValidationError
 from sqlalchemy import Engine
 
+from nosolear.adapters.private_fs import DataDirError
 from nosolear.adapters.system_clock import SystemClock
 from nosolear.app.rebuild_profile import rebuild_profile
 from nosolear.dev.seed import seed_observations
@@ -14,6 +15,7 @@ from nosolear.domain.taxonomy import DEFAULT_TAXONOMY
 from nosolear.persistence.db import create_engine_for, upgrade_to_head
 from nosolear.persistence.repositories import ObservationRepository, ProfileRepository
 from nosolear.settings import REPO_ROOT, Settings, settings_error_summary
+from nosolear.startup import prepare_process
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -53,6 +55,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             " set NOSOLEAR_DATA_DIR to a separate location, e.g. NOSOLEAR_DATA_DIR=data/dev",
             file=sys.stderr,
         )
+        return 2
+    try:
+        prepare_process(settings, create_data_dir=True)
+    except DataDirError as exc:
+        print(f"data directory problem: {exc}", file=sys.stderr)
         return 2
     engine = create_engine_for(settings.database_url)
     try:
