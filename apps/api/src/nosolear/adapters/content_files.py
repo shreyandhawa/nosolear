@@ -29,7 +29,9 @@ def _read_toml(path: Path, limit: int, label: str) -> dict[str, object]:
             raise PackError(f"{label}: file is too large")
         with path.open("rb") as handle:
             return tomllib.load(handle)
-    except tomllib.TOMLDecodeError, UnicodeDecodeError, RecursionError:
+    except PackError:
+        raise
+    except ValueError, RecursionError:  # bad TOML or UTF-8, int over the digit limit
         raise PackError(f"{label}: invalid TOML") from None
     except OSError:
         raise PackError(f"{label}: cannot be read") from None
