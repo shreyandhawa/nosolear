@@ -69,7 +69,7 @@ None right now.
 ## Branch and PR state
 
 - `main`: 19097e7 "Revise architecture for open-source BYOK direction (#12)".
-- `docs/phase-plans`: the gate-2 plans PR.
+- `docs/phase-plans`: the gate-2 plans, [PR #13](https://github.com/shreyandhawa/nosolear/pull/13).
 - `docs/byok-architecture`: merged and kept (deleting branches needs the owner's approval).
 - `p0b/spikes`: unmerged and kept. Everything is under `spikes/`, with no audio and no data.
 
