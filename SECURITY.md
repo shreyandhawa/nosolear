@@ -14,8 +14,9 @@ The full model is in section 15 of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 - **Network:** the server binds 127.0.0.1 and refuses to start on anything else. Requests from non-loopback peers are refused, and Host and Origin checks defend against DNS rebinding and cross-site requests from web pages.
 - **Secrets:** keys are held as secrets, scrubbed from logs and errors, never returned by the API, and live in `.env`, which is git-ignored. The repo holds no keys, not even example values.
-- **Uploads:** size, duration and format are checked, client file names are ignored, and every path must stay inside the data directory.
-- **Supply chain:** exact pins and lockfiles, model files fetched at pinned revisions, no `trust_remote_code`, and CI audits the lockfiles.
+- **Uploads:** planned (Phase 0c): size, duration and format will be checked, client file names ignored, and every path kept inside the data directory.
+- **Supply chain:** exact pins and lockfiles, no `trust_remote_code`, and CI audits the lockfiles. Planned (Phase 0d): model files fetched at pinned revisions.
+- **Local files:** the data directory is owner-only (0700, files 0600), and startup tightens a directory left looser by an earlier version. `nosolear doctor` warns when `.env` is readable by other users.
 - **Untrusted text:** transcripts and coach output never build paths, SQL or shell commands.
 
 ## Reporting a vulnerability
