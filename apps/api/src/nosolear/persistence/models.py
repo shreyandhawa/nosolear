@@ -132,6 +132,8 @@ profile_entries = Table(
     C("taxonomy_version", Integer, nullable=False),
     C("pack_id", String, nullable=False),
     C("provisional", Boolean, nullable=False, server_default=false()),
+    C("next_recheck_at", UTCDateTime, nullable=True),
+    C("recheck_stage", Integer, nullable=True),
     CheckConstraint(_in_list("status", Status), name="ck_profile_entries_status"),
 )
 
