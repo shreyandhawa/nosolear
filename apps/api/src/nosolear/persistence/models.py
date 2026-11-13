@@ -9,11 +9,13 @@ from sqlalchemy import (
     Dialect,
     Float,
     ForeignKey,
+    Index,
     Integer,
     MetaData,
     String,
     Table,
     Text,
+    text,
 )
 from sqlalchemy import Column as C
 from sqlalchemy.types import TypeDecorator
@@ -147,5 +149,106 @@ profile_snapshots = Table(
     C("pack_id", String, nullable=False),
     CheckConstraint(
         "reason IN ('rebuild', 'baseline', 'daily', 'retest')", name="ck_profile_snapshots_reason"
+    ),
+)
+
+recordings = Table(
+    "recordings",
+    metadata,
+    C("id", String, primary_key=True),
+    C("attempt_id", String, ForeignKey("attempts.id"), nullable=False, unique=True),
+    C("path", String, nullable=False, unique=True),
+    C("duration_ms", Integer, nullable=False),
+    C("sample_rate", Integer, nullable=False),
+    C("sha256", String, nullable=False),
+    C("created_at", UTCDateTime, nullable=False),
+    CheckConstraint("path GLOB 'recordings/*.wav'", name="ck_recordings_path"),
+    CheckConstraint("duration_ms >= 0", name="ck_recordings_duration"),
+    CheckConstraint("sample_rate = 16000", name="ck_recordings_sample_rate"),
+)
+
+jobs = Table(
+    "jobs",
+    metadata,
+    C("id", String, primary_key=True),
+    C("kind", String, nullable=False),
+    C("attempt_id", String, ForeignKey("attempts.id"), nullable=True),
+    C("status", String, nullable=False),
+    C("step", String, nullable=True),
+    C("progress", Float, nullable=False),
+    C("steps_json", Text, nullable=False),
+    C("tries", Integer, nullable=False),
+    C("created_at", UTCDateTime, nullable=False),
+    C("updated_at", UTCDateTime, nullable=False),
+    CheckConstraint("kind IN ('analyze', 'rescore')", name="ck_jobs_kind"),
+    CheckConstraint("status IN ('queued', 'running', 'done', 'failed')", name="ck_jobs_status"),
+    CheckConstraint("progress BETWEEN 0 AND 1", name="ck_jobs_progress"),
+    CheckConstraint("tries >= 0", name="ck_jobs_tries"),
+    Index("ix_jobs_status_created", "status", "created_at"),
+)
+
+usage_ledger = Table(
+    "usage_ledger",
+    metadata,
+    C("id", Integer, primary_key=True, autoincrement=True),
+    C("provider", String, nullable=False),
+    C("unit", String, nullable=False),
+    C("state", String, nullable=False),
+    C("estimate", Integer, nullable=False),
+    C("actual", Integer, nullable=True),
+    C("period", String, nullable=False),
+    C("job_id", String, ForeignKey("jobs.id"), nullable=True),
+    C("created_at", UTCDateTime, nullable=False),
+    C("settled_at", UTCDateTime, nullable=True),
+    CheckConstraint("provider IN ('azure', 'anthropic')", name="ck_usage_ledger_provider"),
+    CheckConstraint(
+        "unit IN ('audio_seconds', 'tts_chars', 'tokens')", name="ck_usage_ledger_unit"
+    ),
+    CheckConstraint("state IN ('reserved', 'recorded', 'released')", name="ck_usage_ledger_state"),
+    CheckConstraint("estimate >= 0", name="ck_usage_ledger_estimate"),
+    CheckConstraint("(state = 'recorded') = (actual IS NOT NULL)", name="ck_usage_ledger_actual"),
+    Index("ix_ledger_totals", "provider", "unit", "period", "state"),
+)
+
+# `tts_hash` and `calibration_run_id` get their foreign keys in 0d/0e, once those tables exist.
+_ANALYSES_ATTEMPT_KEY = "attempt_id IS NOT NULL"
+_ANALYSES_TTS_KEY = "attempt_id IS NULL"
+
+analyses = Table(
+    "analyses",
+    metadata,
+    C("id", Integer, primary_key=True, autoincrement=True),
+    C("attempt_id", String, ForeignKey("attempts.id"), nullable=True),
+    C("tts_hash", String, nullable=True),
+    C("calibration_run_id", String, nullable=True),
+    C("kind", String, nullable=False),
+    C("provider", String, nullable=False),
+    C("provider_version", String, nullable=False),
+    C("adapter", String, nullable=False),
+    C("adapter_version", Integer, nullable=False),
+    C("raw_json", Text, nullable=False),
+    C("created_at", UTCDateTime, nullable=False),
+    CheckConstraint(
+        "kind IN ('pronunciation', 'transcript', 'phone_probe', 'coach')", name="ck_analyses_kind"
+    ),
+    CheckConstraint(
+        "(attempt_id IS NOT NULL AND tts_hash IS NULL AND calibration_run_id IS NULL) OR "
+        "(attempt_id IS NULL AND tts_hash IS NOT NULL AND calibration_run_id IS NOT NULL)",
+        name="ck_analyses_key_shape",
+    ),
+    Index(
+        "uq_analyses_attempt_kind",
+        "attempt_id",
+        "kind",
+        unique=True,
+        sqlite_where=text(_ANALYSES_ATTEMPT_KEY),
+    ),
+    Index(
+        "uq_analyses_tts_kind_run",
+        "tts_hash",
+        "kind",
+        "calibration_run_id",
+        unique=True,
+        sqlite_where=text(_ANALYSES_TTS_KEY),
     ),
 )

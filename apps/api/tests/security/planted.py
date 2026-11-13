@@ -20,18 +20,25 @@ import math
 import pkgutil
 import traceback
 from collections.abc import Callable, Iterable, Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, quote_plus
 
 import pytest
-from factories import loopback_client, make_settings
+from factories import FixedClock, loopback_client, make_settings
 from pydantic import ValidationError
+from sqlalchemy import text
 
 from nosolear.api.app import create_app
+from nosolear.budget.meter import Meter
 from nosolear.cli import main
+from nosolear.domain.budget import Caps, Provider, Unit
+from nosolear.domain.errors import CapExceeded
 from nosolear.domain.redaction import REDACTED
 from nosolear.logging_setup import install_secret_scrubbing
+from nosolear.persistence.db import create_engine_for, upgrade_to_head
+from nosolear.persistence.ledger import SqliteUsageLedger
 from nosolear.settings import REPO_ROOT, Settings, settings_error_summary
 
 PLANTED_AZURE_KEY = "FAKEAZUREKEY" + "0123456789ABCDEFGHIJ"  # 32 chars
@@ -423,6 +430,62 @@ def env_example_and_repo_files(tmp: Path) -> tuple[str, str]:
     names = (".env.example", "README.md")
     return "repo files (.env.example, README.md)", "\n".join(
         (REPO_ROOT / name).read_text(encoding="utf-8") for name in names
+    )
+
+
+@leak_surface
+def usage_ledger_rows_and_cap_message(tmp: Path) -> tuple[str, str]:
+    """Ledger rows after a refused reservation, and the CapExceeded the caller sees."""
+    engine = create_engine_for(f"sqlite:///{tmp / 'ledger.sqlite'}")
+    try:
+        upgrade_to_head(engine)
+        caps = Caps(azure_audio_seconds=10, azure_tts_chars=10, claude_tokens=10)
+        ledger = SqliteUsageLedger(
+            engine, caps=caps, clock=FixedClock(datetime(2026, 11, 13, tzinfo=UTC))
+        )
+        ledger.reserve(Provider.ANTHROPIC, Unit.TOKENS, 4)
+        refusal: CapExceeded | None = None
+        try:
+            ledger.reserve(Provider.ANTHROPIC, Unit.TOKENS, 11)
+        except CapExceeded as exc:
+            refusal = exc
+        assert refusal is not None, "the over-cap reservation was not refused"
+        with engine.connect() as conn:
+            rows = [tuple(row) for row in conn.execute(text("SELECT * FROM usage_ledger"))]
+    finally:
+        engine.dispose()
+    assert len(rows) == 1, "the refused reservation must not write a row"
+    return "usage_ledger rows and CapExceeded", repr(rows) + str(refusal) + repr(refusal)
+
+
+@leak_surface
+def metered_failure_rows_and_log(tmp: Path) -> tuple[str, str]:
+    """A paid call that fails with a key in its message: the ledger rows and the logged failure."""
+    settings = planted_settings(tmp)
+    install_secret_scrubbing(settings.secret_values())
+    engine = create_engine_for(f"sqlite:///{tmp / 'metered.sqlite'}")
+    try:
+        upgrade_to_head(engine)
+        caps = Caps(azure_audio_seconds=1000, azure_tts_chars=1000, claude_tokens=1000)
+        ledger = SqliteUsageLedger(
+            engine, caps=caps, clock=FixedClock(datetime(2026, 11, 13, tzinfo=UTC))
+        )
+
+        def fail() -> int:
+            raise RuntimeError(PLANTED_AZURE_KEY)
+
+        with LogCapture(logging.Formatter(FORMAT)) as cap:
+            try:
+                Meter(ledger).call(Provider.AZURE, Unit.AUDIO_SECONDS, 30, fail, actual=lambda n: n)
+            except RuntimeError as exc:
+                cap.logger.error("paid call failed", exc_info=exc)
+        with engine.connect() as conn:
+            rows = [tuple(row) for row in conn.execute(text("SELECT * FROM usage_ledger"))]
+    finally:
+        engine.dispose()
+    assert len(rows) == 1, "the failed call must leave one settled row"
+    return "metered call: usage_ledger rows and logged failure", repr(rows) + _marked(
+        cap.text, "Traceback", REDACTED
     )
 
 

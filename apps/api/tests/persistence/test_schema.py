@@ -4,15 +4,17 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from alembic import command
 from alembic.autogenerate import compare_metadata
+from alembic.config import Config
 from alembic.migration import MigrationContext
-from sqlalchemy import Connection, Engine, text
+from sqlalchemy import Connection, Engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 
 from nosolear.domain.observations import Context, Outcome
 from nosolear.domain.status import Status
 from nosolear.domain.taxonomy import Detector
-from nosolear.persistence.db import create_engine_for, upgrade_to_head
+from nosolear.persistence.db import MIGRATIONS_DIR, create_engine_for, upgrade_to_head
 from nosolear.persistence.models import metadata
 
 STEP_KINDS = [
@@ -160,4 +162,166 @@ def test_migration_0003_backfills_nepali(tmp_path: Path) -> None:
     with engine.connect() as c:
         assert c.execute(text("SELECT pack_id FROM profile_entries")).scalar_one() == "nepali"
         assert c.execute(text("SELECT pack_id FROM profile_snapshots")).scalar_one() == "nepali"
+    engine.dispose()
+
+
+def _attempt_row(conn: Connection, attempt_id: str = "a") -> None:
+    conn.execute(
+        text(
+            "INSERT INTO attempts (id, session_id, step, scripted, created_at) "
+            f"VALUES (:id, 's', 'speak', 1, '{TS}')"
+        ),
+        {"id": attempt_id},
+    )
+
+
+def _recording(conn: Connection, **overrides: str | int) -> None:
+    values: dict[str, str | int] = {
+        "id": "r1",
+        "attempt_id": "a",
+        "path": "recordings/x.wav",
+        "sample_rate": 16000,
+    } | overrides
+    conn.execute(
+        text(
+            "INSERT INTO recordings (id, attempt_id, path, duration_ms, sample_rate, sha256, "
+            f"created_at) VALUES (:id, :attempt_id, :path, 1000, :sample_rate, 'h', '{TS}')"
+        ),
+        values,
+    )
+
+
+def test_recordings_unique_per_attempt_and_path_shape(conn: Connection) -> None:
+    _attempt_row(conn)
+    _recording(conn)
+    with pytest.raises(IntegrityError):
+        _recording(conn, id="r2", path="recordings/y.wav")
+    _attempt_row(conn, "b")
+    with pytest.raises(IntegrityError):
+        _recording(conn, id="r3", attempt_id="b", path="../x.wav")
+    with pytest.raises(IntegrityError):
+        _recording(conn, id="r4", attempt_id="b", path="recordings/z.wav", sample_rate=48000)
+    with pytest.raises(IntegrityError):
+        _recording(conn, id="r5", attempt_id="b")  # same path as r1
+
+
+def _job(conn: Connection, **overrides: str | float | None) -> None:
+    values: dict[str, str | float | None] = {
+        "id": "j1",
+        "kind": "analyze",
+        "attempt_id": None,
+        "status": "queued",
+        "progress": 0.0,
+    } | overrides
+    conn.execute(
+        text(
+            "INSERT INTO jobs (id, kind, attempt_id, status, progress, steps_json, tries, "
+            f"created_at, updated_at) VALUES (:id, :kind, :attempt_id, :status, :progress, "
+            f"'[]', 0, '{TS}', '{TS}')"
+        ),
+        values,
+    )
+
+
+def test_jobs_checks(conn: Connection) -> None:
+    _job(conn, id="ok", kind="rescore", attempt_id=None)
+    for bad in ({"kind": "bogus"}, {"status": "bogus"}, {"progress": 1.5}):
+        with pytest.raises(IntegrityError):
+            _job(conn, **bad)
+    with pytest.raises(IntegrityError):
+        conn.execute(
+            text(
+                "INSERT INTO jobs (id, kind, status, progress, steps_json, tries, created_at, "
+                f"updated_at) VALUES ('t', 'analyze', 'queued', 0, '[]', -1, '{TS}', '{TS}')"
+            )
+        )
+
+
+def _ledger(conn: Connection, **overrides: str | int | None) -> None:
+    values: dict[str, str | int | None] = {
+        "provider": "azure",
+        "unit": "audio_seconds",
+        "state": "reserved",
+        "actual": None,
+        "job_id": None,
+    } | overrides
+    conn.execute(
+        text(
+            "INSERT INTO usage_ledger (provider, unit, state, estimate, actual, period, job_id, "
+            f"created_at) VALUES (:provider, :unit, :state, 5, :actual, '2026-11', :job_id, "
+            f"'{TS}')"
+        ),
+        values,
+    )
+
+
+def test_ledger_checks(conn: Connection) -> None:
+    _ledger(conn)  # job_id NULL accepted
+    _ledger(conn, state="recorded", actual=4)
+    _ledger(conn, state="released")
+    bad_rows: list[dict[str, str | int | None]] = [
+        {"provider": "bogus"},
+        {"unit": "bogus"},
+        {"state": "bogus"},
+        {"state": "recorded", "actual": None},
+        {"state": "reserved", "actual": 3},
+    ]
+    for bad in bad_rows:
+        with pytest.raises(IntegrityError):
+            _ledger(conn, **bad)
+    with pytest.raises(IntegrityError):
+        _ledger(conn, job_id="missing")  # foreign key
+
+
+def _analysis(conn: Connection, **overrides: str | None) -> None:
+    values: dict[str, str | None] = {
+        "attempt_id": "a",
+        "tts_hash": None,
+        "calibration_run_id": None,
+        "kind": "pronunciation",
+    } | overrides
+    conn.execute(
+        text(
+            "INSERT INTO analyses (attempt_id, tts_hash, calibration_run_id, kind, provider, "
+            "provider_version, adapter, adapter_version, raw_json, created_at) VALUES "
+            f"(:attempt_id, :tts_hash, :calibration_run_id, :kind, 'azure', 'v', 'ad', 1, '{{}}', "
+            f"'{TS}')"
+        ),
+        values,
+    )
+
+
+def test_analyses_exactly_one_key_shape(conn: Connection) -> None:
+    _attempt_row(conn)
+    _analysis(conn)
+    with pytest.raises(IntegrityError):
+        _analysis(conn, tts_hash="h", calibration_run_id="c", kind="transcript")  # both
+    with pytest.raises(IntegrityError):
+        _analysis(conn, attempt_id=None, kind="transcript")  # neither
+    with pytest.raises(IntegrityError):
+        _analysis(conn, attempt_id=None, tts_hash="h", kind="transcript")  # no run
+    with pytest.raises(IntegrityError):
+        _analysis(conn, tts_hash="h", kind="transcript")  # attempt and hash, no run
+    with pytest.raises(IntegrityError):
+        _analysis(conn)  # duplicate (attempt_id, kind)
+    with pytest.raises(IntegrityError):
+        _analysis(conn, kind="bogus")
+    _analysis(conn, attempt_id=None, tts_hash="h", calibration_run_id="c1")
+    _analysis(conn, attempt_id=None, tts_hash="h", calibration_run_id="c2")
+    with pytest.raises(IntegrityError):
+        _analysis(conn, attempt_id=None, tts_hash="h", calibration_run_id="c1")
+
+
+def test_migration_downgrade_then_upgrade(tmp_path: Path) -> None:
+    engine = create_engine_for(f"sqlite:///{tmp_path / 'm.sqlite'}")
+    upgrade_to_head(engine)
+    config = Config()
+    config.set_main_option("script_location", str(MIGRATIONS_DIR))
+    new_tables = {"recordings", "jobs", "usage_ledger", "analyses"}
+    with engine.begin() as c:
+        config.attributes["connection"] = c
+        command.downgrade(config, "0003")
+    assert not new_tables & set(inspect(engine).get_table_names())
+    upgrade_to_head(engine)
+    assert new_tables <= set(inspect(engine).get_table_names())
     engine.dispose()

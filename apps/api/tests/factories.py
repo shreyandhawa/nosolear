@@ -55,6 +55,20 @@ SAMPLE_OBS = [
 ]
 
 
+def insert_job(engine: Engine, job_id: str) -> None:
+    """Jobs have no queue yet, so the foreign key target is inserted directly."""
+    stamp = "2026-11-12T08:00:00.000000+00:00"
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO jobs (id, kind, attempt_id, status, step, progress, steps_json, "
+                "tries, created_at, updated_at) VALUES (:id, 'analyze', NULL, 'queued', NULL, "
+                "0.0, '[]', 0, :stamp, :stamp)"
+            ),
+            {"id": job_id, "stamp": stamp},
+        )
+
+
 def count(engine: Engine, table: str) -> int:
     with engine.connect() as conn:
         return conn.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar_one()

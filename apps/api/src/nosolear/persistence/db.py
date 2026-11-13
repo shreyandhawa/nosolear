@@ -17,6 +17,7 @@ def _set_pragmas(dbapi_connection: DBAPIConnection, _record: ConnectionPoolEntry
     try:
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
     finally:
         cursor.close()
 
