@@ -1,5 +1,7 @@
 """The baseline repository: sessions, protocol attempts, scores, and profile snapshots."""
 
+import threading
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -17,8 +19,10 @@ from nosolear.domain.taxonomy import Skill
 from nosolear.persistence.baseline_repository import BaselineRepository
 from nosolear.persistence.content_repository import ContentRepository
 from nosolear.persistence.repositories import ProfileRepository
+from nosolear.ports.baseline_store import BaselineSessionRecord
 
 NOW = datetime(2026, 11, 13, 9, 0, tzinfo=UTC)
+PROTOCOL_ITEMS = sum(len(section.items) for section in PROTOCOL.sections)
 
 
 @pytest.fixture
@@ -127,3 +131,47 @@ def test_profile_snapshot_appends_without_touching_entries(
 def test_latest_snapshot_is_none_without_one(db_engine: Engine, store: BaselineRepository) -> None:
     store.create(session_id="s1", protocol=PROTOCOL, now=NOW)
     assert ProfileRepository(db_engine, TAX).latest_snapshot("s1", "baseline") is None
+
+
+def _race(*calls: Callable[[], object]) -> tuple[list[object], list[BaseException]]:
+    """Runs each call in its own thread, all released together by a barrier."""
+    barrier = threading.Barrier(len(calls))
+    results: list[object] = []
+    failures: list[BaseException] = []
+    lock = threading.Lock()
+
+    def run(call: Callable[[], object]) -> None:
+        try:
+            barrier.wait()
+            value = call()
+        except BaseException as exc:
+            with lock:
+                failures.append(exc)
+        else:
+            with lock:
+                results.append(value)
+
+    threads = [threading.Thread(target=run, args=(call,)) for call in calls]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    return results, failures
+
+
+def test_concurrent_creates_leave_one_open_session(store: BaselineRepository, db_engine: Engine) -> None:
+    results, failures = _race(
+        lambda: store.create(session_id="s1", protocol=PROTOCOL, now=NOW),
+        lambda: store.create(session_id="s2", protocol=PROTOCOL, now=NOW),
+    )
+    assert failures == []
+    returned = [r for r in results if isinstance(r, BaselineSessionRecord)]
+    assert len(returned) == 2
+    assert len({r.id for r in returned}) == 1, "both starts must get the same session"
+    with db_engine.connect() as conn:
+        open_sessions = conn.execute(
+            text("SELECT count(*) FROM sessions WHERE kind = 'baseline' AND completed_at IS NULL")
+        ).scalar_one()
+        attempts = conn.execute(text("SELECT count(*) FROM attempts")).scalar_one()
+    assert open_sessions == 1
+    assert attempts == PROTOCOL_ITEMS

@@ -1,5 +1,6 @@
 """The baseline session's use cases: start, complete, the report and the rescore refresh."""
 
+import threading
 from collections.abc import Callable
 from typing import Any
 
@@ -215,3 +216,62 @@ def test_baseline_scores_are_stored_for_the_session(make_harness: Callable[..., 
     report = _complete(h)
     stored: tuple[SkillScore, ...] = _store(h).scores(report.session_id)
     assert {s.skill for s in stored} == {s.skill for s in report.skill_scores}
+
+
+def test_concurrent_completes_close_the_session_once(make_harness: Callable[..., Harness]):
+    h = make_harness(content=_content())
+    view = _start(h)
+    _record_all(h, view)
+    barrier = threading.Barrier(2)
+    outcomes: list[object] = []
+    lock = threading.Lock()
+
+    def complete() -> None:
+        barrier.wait()
+        try:
+            outcome: object = _complete(h)
+        except Exception as exc:
+            outcome = exc
+        with lock:
+            outcomes.append(outcome)
+
+    threads = [threading.Thread(target=complete) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    reports = [o for o in outcomes if isinstance(o, BaselineReport)]
+    refused = [o for o in outcomes if isinstance(o, BaselineNotOpen)]
+    assert len(reports) == 1, outcomes
+    assert len(refused) == 1, outcomes
+    with h.engine.connect() as conn:
+        snapshots = conn.execute(
+            text(
+                "SELECT count(*) FROM profile_snapshots "
+                "WHERE session_id = :session AND reason = 'baseline'"
+            ),
+            {"session": view.session.id},
+        ).scalar_one()
+    assert snapshots == 1, "the losing complete must not snapshot the profile"
+
+
+def test_failed_report_reopens_the_session(
+    make_harness: Callable[..., Harness], monkeypatch: pytest.MonkeyPatch
+):
+    h = make_harness(content=_content())
+    view = _start(h)
+    _record_all(h, view)
+
+    def broken_report(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("the report could not be built")
+
+    monkeypatch.setattr("nosolear.app.baseline._report", broken_report)
+    with pytest.raises(RuntimeError):
+        _complete(h)
+    monkeypatch.undo()
+    reopened = _store(h).open_session()
+    assert reopened is not None and reopened.id == view.session.id
+    assert _store(h).latest_completed() is None
+    report = _complete(h)
+    assert report.session_id == view.session.id
