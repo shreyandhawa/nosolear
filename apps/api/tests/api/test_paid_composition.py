@@ -1,15 +1,29 @@
 from datetime import UTC, datetime
 
 from factories import FixedClock, make_settings
-from provider_fakes import FakeScorer, FakeTranscriber, assessment, wrapper_chain
+from provider_fakes import (
+    FakeScorer,
+    FakeSpeechSynthesizer,
+    FakeTranscriber,
+    assessment,
+    wrapper_chain,
+)
 from sqlalchemy import Engine, text
 from wavs import write_wav
 
-from nosolear.adapters.retry import RetryingPronunciationScorer, RetryingTranscriber
-from nosolear.api.deps import build_ledger, paid_scorer, paid_transcriber
+from nosolear.adapters.retry import (
+    RetryingPronunciationScorer,
+    RetryingSpeechSynthesizer,
+    RetryingTranscriber,
+)
+from nosolear.api.deps import build_ledger, paid_scorer, paid_speech_synthesizer, paid_transcriber
 from nosolear.budget.compose import layers_of
 from nosolear.budget.meter import Meter
-from nosolear.budget.metered_ports import MeteredPronunciationScorer, MeteredTranscriber
+from nosolear.budget.metered_ports import (
+    MeteredPronunciationScorer,
+    MeteredSpeechSynthesizer,
+    MeteredTranscriber,
+)
 from nosolear.domain.errors import RetryableProviderError
 
 T0 = datetime(2026, 11, 13, 9, 0, tzinfo=UTC)
@@ -52,3 +66,16 @@ def test_every_attempt_reserves(db_engine, tmp_path):
     paid_scorer(fake, Meter(ledger), sleep=lambda s: None).score(wav, reference_text="vest")
     assert len(fake.calls) == 3
     assert ledger_rows(db_engine) == [("recorded", 3)] * 3  # two failures, one success
+
+
+def test_paid_speech_synthesizer_order(db_engine, tmp_path):
+    ledger = _ledger(db_engine, tmp_path)
+    port = paid_speech_synthesizer(
+        FakeSpeechSynthesizer(), Meter(ledger), voice="en-US-JennyNeural", locale="en-US"
+    )
+    assert wrapper_chain(port) == [
+        RetryingSpeechSynthesizer,
+        MeteredSpeechSynthesizer,
+        FakeSpeechSynthesizer,
+    ]
+    assert layers_of(port) == ["retry", "metered", "raw"]
