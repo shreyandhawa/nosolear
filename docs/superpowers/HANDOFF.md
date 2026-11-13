@@ -4,7 +4,7 @@ Read this first in a new session, then continue from **Next**.
 
 ## Current phase
 
-Phase 0b (open-source foundation) is done as of 2026-11-13. Next is Phase 0c (audio, jobs, ledger). Gate 2 passed earlier, when the phase plans PR #13 merged as 391b639.
+Phase 0c (audio, jobs, ledger) is done as of 2026-11-13. Next is Phase 0d (provider adapters).
 
 ## Done
 
@@ -53,24 +53,42 @@ Phase 0b (open-source foundation) is done as of 2026-11-13. Next is Phase 0c (au
 - 2026-11-13: Phase 0c Task 8: the thread-pool job runner (`adapters/thread_pool_runner.py`), the `Services` composition root with `build_services`, `build_ledger` and read-only `read_usage` (`api/deps.py`), the jobs API with `ErrorOut` bodies and the typed-error handlers (`api/job_routes.py`, `api/errors.py`), startup recovery in the lifespan, and real usage figures in readiness and `nosolear doctor`.
 - 2026-11-13: Phase 0c Task 9: the recording upload (`POST /api/attempts/{attempt_id}/recording`, raw `audio/wav`, streamed under the 10 MB cap into the data dir) through `app/upload_recording.py`, with `RecordingRepository` (the recording row and its ANALYZE job in one transaction) and `AttemptRepository` (`create_attempt`, `get`), the regenerated API types, and the SECURITY.md upload and data-at-rest lines.
 - 2026-11-13: Phase 0c Task 10: the API client for the CLI (`cli_client.py`: `ApiClient` with streamed `upload_wav`, `get_job`, `resume_job` and `follow_job`, errors limited to `ErrorOut` messages and generic sentences), the `nosolear upload` and `nosolear job` commands (exit codes 0 done, 1 failed, 2 usage or upload error, 3 timeout), `--new-attempt` refusing the real data directory, and `httpx` moved to runtime dependencies.
+- 2026-11-13: Phase 0c Task 11, phase verification:
+  - Ran in a temp clone of `p0c/09-upload-cli` with no `.env`: `make test` (995 API, 31 web), `make lint`, `make gen-api` (no diff) and the heavy Hypothesis profile on `tests/domain` and `tests/persistence` (361) all pass.
+  - Done-when by hand: `nosolear serve` plus `nosolear upload synthetic.wav --new-attempt` (a 2 s, 48 kHz sine) exits 0. The job ends `done` with every step `skipped (not_available)`. The file lands in `recordings/<uuid>.wav` at 16 kHz with mode 600, and `.incoming/` is empty. curl gets 415 for a wrong content type, 413 for `Content-Length` over 10 MB and 400 for garbage, and no error body holds a path. `git status` shows nothing under `data/`.
+  - Cap check: with `NOSOLEAR_CAP_CLAUDE_TOKENS=10`, `Meter.call` over the real ledger raises `CapExceeded` and makes no call.
+  - One combined opus security and final review over `a472f81..` the phase tip: 0 High, 0 Medium, 1 Low, 0 Critical, 2 Important. The fix PR (#35's later commits) covers both Important findings: `read_usage` no longer creates `-wal`/`-shm` files on a stopped database, and a job whose `run` raises is marked failed (so it can be resumed) instead of staying `running`. The same pass fixed six Minor findings: meter negative actuals, upload cleanup errors, non-JobOut CLI bodies, an early 409, the readiness wording, and the CLI skip reason. The rest are under "Carried to later phases".
 
 ## In progress
 
-- Nothing open. Phase 0b is merged (PRs #14–#29).
-- The Phase 0b subagent-driven-development workspace was deleted at the close of the phase. Git history and this file are the record.
+- Nothing open. Phase 0c is merged: PRs #32 (Task 1), #33 (Tasks 2–5), #34 (Tasks 6–8) and #35 (Tasks 9–11 and the review fixes).
+- The Phase 0c subagent-driven-development ledger is at `.superpowers/sdd/2026-11-12-phase-0c-audio-jobs-ledger/progress.md` (git-ignored). It holds every ruling, and the next controller may delete it.
 
 ## Next
 
-1. Plan and execute Phase 0c: `docs/superpowers/plans/2026-11-12-phase-0c-audio-jobs-ledger.md`, branch prefix `p0c/`.
-   - Use `superpowers:subagent-driven-development`. It creates a fresh ledger under `.superpowers/sdd/`.
-   - One branch and one PR per task, with a fresh implementer subagent and a different reviewer subagent each time. Squash-merge on green CI with `--subject`.
-   - Pick up the Phase 0c items under "Carried to later phases" below.
+1. Execute Phase 0d: `docs/superpowers/plans/2026-11-12-phase-0d-provider-adapters.md`, branch prefix `p0d/`, under the budget rule in "Working rules carried forward".
+   - Use `superpowers:subagent-driven-development`, with a fresh ledger under `.superpowers/sdd/`.
+   - Pick up the Phase 0d items under "Carried to later phases" below, including the ones from the Phase 0c review.
+   - Live checks need the owner's keys in `.env`. They wait for the owner and never block the phase.
 2. Any task that adds a dependency reruns `uv run --project apps/api python scripts/third_party_licences.py`.
-3. At the end of each phase:
-   - Run the security review over the phase range as an opus subagent with the `/security-review` method. The stock `/security-review` only diffs the current branch against `origin/HEAD`, which is empty on `main`.
-   - Update this file and hand off to a fresh session.
+3. At the end of each phase, run one combined opus security and final review over the phase range, then one fix dispatch. Then update this file and hand off to a fresh session.
 
-## What Phase 0c and later can rely on
+## What Phase 0d and later can rely on (from Phase 0c)
+
+- `nosolear.domain.errors`: `NosolearError(message=None)` (`code`, `safe_message`, `str(e) == e.safe_message`), `InvalidAudio(reason)`, `CapExceeded`, `ProviderUnavailable`, `RequestNotSent(ProviderUnavailable)`, `CapabilityMissing`. 0d adds `RetryableProviderError` and `MalformedProviderResponse` here.
+- `nosolear.ports.audio`: `AudioStore.begin_upload() / read(path) -> bytes / resolve(path) -> Path / delete(path)`; `Recording`, `StoredRecording`; `RecordingStore.for_attempt(attempt_id) -> Recording | None`; `AttemptReader.exists / get(attempt_id) -> AttemptInfo | None` (steps in 0d/0e find the audio with `for_attempt`, then `AudioStore.resolve`). Audio on disk is always 16 kHz mono 16-bit.
+- `nosolear.domain.budget`: `Provider` (`azure`, `anthropic`: the provider ids every phase uses), `Unit` (`audio_seconds`, `tts_chars`, `tokens`), `Caps`, `ceil_seconds`, `Usage`. `nosolear.ports.ledger.UsageLedger.reserve / record / release / settle_open_reservations / usage`. `api/deps.py`: `build_ledger(settings, engine, *, clock=None)`, `read_usage(settings)`.
+- `nosolear.budget.meter`: `Meter(ledger, job_id=current_job_id).call(provider, unit, estimate, fn, actual)`, `metered_method(meter, provider=, unit=, estimate=, actual=)`. `nosolear.budget.compose`: `PortWrapper` (class attribute `layer`, attribute `inner`; raw adapters declare `layer = "raw"`), `compose_paid_port(raw, metered=, retry=, cache=None)`, `layers_of(port)`. `build_paid_ports` is replaced by 0d's `build_providers(...).paid_ports()`; `test_deps_composition.py` and `RAW_ADAPTER_MODULES` in `test_no_unmetered_sdk_imports.py` are extended by 0d.
+- Jobs: `JobKind` (`analyze`, `rescore`; 0e adds `calibrate` with its plan), `JobQueue.enqueue(kind, attempt_id | None) -> Job`, `resume`; `JOB_PLANS` (analyze: `score, transcribe, probe, coach, extract`; rescore: `extract`; `coach` needs `transcribe`; `extract` uses all analysis steps).
+- Step interface (`nosolear.app.steps`): `Step.name`, `Step.applies(ctx) -> bool`, `Step.run(ctx) -> None`, `StepContext(job_id, kind, attempt_id, progress)`, `StepRegistry.register(kind, step)`, `current_job_id()`. Steps must be idempotent, look up their own analysis first, and write results with `AnalysisStore.put(NewAnalysis(...))`.
+- `nosolear.ports.analyses.AnalysisStore.get / put / for_attempt` over the `analyses` table; `NewAnalysis.adapter_version` is an int. Control rows keyed by `tts_hash` and `calibration_run_id` are supported by the schema; 0e adds their port methods and foreign keys.
+- API: `POST /api/attempts/{attempt_id}/recording`, `GET /api/jobs/{job_id}`, `POST /api/jobs/{job_id}/resume`, `ErrorOut{code, message}` for every typed error (later phases use the same body); `create_app(settings, *, step_registry=None, start_runner=True, ledger=None, clock=None)`; `Services`, `build_services`, `get_services`, `get_clock`; `ThreadPoolJobRunner.run_pending()`.
+- Test helpers: `tests/fakes.py` (`FakeAudioStore`, `FakeUsageLedger`, `FakeJobQueue`, `FakeAnalysisStore`, `FakePaidPort`, `FakeStep`) and `tests/wavs.py` (`make_wav`, `raw_wav`). Migration `0004_recordings_jobs_ledger`.
+- CLI: `nosolear.cli_client.ApiClient` (`get_json`, `post_json`, `upload_wav -> job id`, `get_job`, `resume_job`, `follow_job -> final body`), `CliError`, `CliTimeout`; `cli.main(argv, *, client=None)`; `nosolear upload`, `nosolear job`; `AttemptRepository.create_attempt(...)` (dev convenience; 0e and Phase 1 create their own sessions and attempts).
+
+Cross-phase assumptions (from the 0c plan): None open: 0b's settings tree (including `job_workers`), `make_settings`, `loopback_client`, readiness and `make test-live` are named as 0b produces them.
+
+## What later phases can rely on (from Phase 0b)
 
 - **Settings.** The `Settings` tree, including:
   - `timezone` and `Settings.tzinfo`, `job_workers`, `faster_whisper_model` and `mlx_whisper_model`.
@@ -107,11 +125,20 @@ Phase 0b (open-source foundation) is done as of 2026-11-13. Next is Phase 0c (au
 
 ## Carried to later phases (from the Phase 0b reviews)
 
-- **Phase 0c:**
-  - Move the lifespan's adapter construction (`ObservationRepository`, `ProfileRepository`, `SystemClock`) into `build_services`, and dispose of the engine on any startup error, not only `PackError`.
-  - Replace the `assert pack is not None` narrowing in `cli.py` with explicit branches.
-  - Add a `ProfileStore` fake.
-  - When `AudioStore` writes 0600 recordings, add a data-at-rest bullet to SECURITY.md and turn its "planned (Phase 0c)" upload-checks line into present tense.
+- **Phase 0c:** done. The lifespan's adapter construction moved into `build_services` (the engine is disposed on any startup error), `cli.py` has no `assert pack`, `tests/fakes.py` has `FakeProfileStore`, and SECURITY.md states the upload checks and the data-at-rest stance.
+- **From the Phase 0c review, for Phase 0d:**
+  - Build the shared `Meter(ledger, job_id=current_job_id)` in the composition root when the first paid port lands. `Meter`'s default `job_id` is `lambda: None`, so ledger rows silently lose their job id if this is forgotten.
+  - A crash between `AudioStore` storing a file and `add_and_enqueue` committing leaves an unreferenced `recordings/<uuid>.wav`. Add a startup sweep or accept it.
+  - `test_reserve_takes_write_lock_before_reading` would also pass for a read-then-write ledger. Assert with a `before_cursor_execute` listener that no SELECT ran before the lock.
+  - Add a route test for a client disconnecting mid-upload (`.incoming/` empty afterwards).
+  - Smaller items:
+    - `follow_job`'s timeout counts polls, not wall-clock time.
+    - `InvalidAudio` does not survive pickling.
+    - The WAV chunk walker has no chunk-count cap.
+    - `test_parse_never_raises_anything_but_invalid_audio` should get a structured strategy.
+    - `encode_wav` with NaN or inf floats is an undefined cast.
+    - `test_busy_timeout_is_set` cannot fail, because sqlite3 already defaults to 5000 ms.
+
 - **Phase 0d:**
   - **Key-leak items** (the security review's item C). No Phase 0b code encodes or sends a key, so these start when the adapters do:
     - Let derived credentials (for example Azure `issueToken` JWTs) be registered with the scrubber at runtime.
@@ -159,7 +186,7 @@ Phase 0b (open-source foundation) is done as of 2026-11-13. Next is Phase 0c (au
 | Phase | File | Tasks | Branch prefix |
 |---|---|---|---|
 | 0b Open-source foundation (done) | `docs/superpowers/plans/2026-11-12-phase-0b-open-source-foundation.md` | 12 | `p0b/` |
-| 0c Audio, jobs, ledger | `docs/superpowers/plans/2026-11-12-phase-0c-audio-jobs-ledger.md` | 11 | `p0c/` |
+| 0c Audio, jobs, ledger (done) | `docs/superpowers/plans/2026-11-12-phase-0c-audio-jobs-ledger.md` | 11 | `p0c/` |
 | 0d Provider adapters | `docs/superpowers/plans/2026-11-12-phase-0d-provider-adapters.md` | 13 | `p0d/` |
 | 0e Scoring, calibration, baseline | `docs/superpowers/plans/2026-11-12-phase-0e-scoring-calibration-baseline.md` | 12 | `p0e/` |
 | 1 Daily loop backend | `docs/superpowers/plans/2026-11-12-phase-1-daily-loop-backend.md` | 11 | `p1/` |
@@ -194,9 +221,14 @@ The Alembic chain after `main`'s 0003 (0b):
 | 2026-11-13 | pnpm audit fails at moderate, and every waiver is an explicit GHSA id with a comment. pip-audit runs on ubuntu and macOS behind the `audit` gate. CI also runs weekly. | Security review S2 and S3. Vite's dev-server advisories are usually moderate, and pinned lockfiles change only when someone pushes. |
 | 2026-11-13 | FastAPI's `/docs` and `/redoc` are off. | They load JavaScript from a CDN into the API's origin, and opening them contradicts §16. |
 | 2026-11-13 | `HF_HUB_DISABLE_TELEMETRY` is always `1`, even when the user presets it. | §14 says the app sets it and it is not a user setting. The plan's `setdefault` was a defect. |
+| 2026-11-13 | Budget rule for 0c through Phase 1: finish within two 5-hour Max windows. Implementers are haiku by default and sonnet only after a haiku failure. Tasks are batched into a few PRs per phase. There are no per-task reviews or re-reviews: CI plus the implementer's tests are the gate. Each phase ends with one combined opus security and final review, then one fix dispatch. | Owner, 2026-11-13: "Finish it in 2 usage windows max.. cut down on checks", for all of 0c to Phase 1. |
+| 2026-11-13 | `read_usage` opens the database read-only (`immutable=1` when no WAL file exists), so `doctor` creates no file. | Phase 0c review: `mode=ro` alone created `-wal`/`-shm` files on a stopped database. |
+| 2026-11-13 | When `run_job` itself raises, the runner marks the job failed with `internal_error` on a best-effort basis. | Phase 0c review: otherwise the job stays `running`, cannot be resumed, and only a restart recovers it. |
 
 ## Owner notes
 
+- Phase 0c is usable end to end with fake steps: `nosolear serve`, then `nosolear upload FILE --new-attempt` with `NOSOLEAR_DATA_DIR` set to a separate dir. `--new-attempt` refuses the real `data/`. Real analysis arrives with Phase 0d.
+- The Phase 0c verification run stopped its test server with `pkill -f "nosolear serve"`, which would also stop any other `nosolear serve` that was running then.
 - The default language pack is now `neutral`. A profile stored under Phase 0a is rebuilt with neutral priors on first start; set `NOSOLEAR_PACK=nepali` in `.env` to keep the 0a priors.
 - `make web` and `vite preview` refuse a non-loopback `--host`. Never set Vite's `server.allowedHosts: true` or turn on `server.https` without a security review.
 
@@ -206,10 +238,11 @@ None.
 
 ## Branch and PR state
 
-- `main`: "Record the owner's acceptance of the minimatch audit waiver" (this PR), after #30 "Update the handoff: Phase 0b is done and Phase 0c is next".
+- `main`: "Add the recording upload endpoint and CLI upload and job commands (#35)", after #34, #33 and #32 (Phase 0c).
+- `p0c/01-audio-domain` (#32), `p0c/02-audio-store` (#33), `p0c/06-jobs` (merged through #34), `p0c/08-runner-api` (#34) and `p0c/09-upload-cli` (#35): merged and kept.
 - `docs/phase-plans`: merged (#13) and kept.
 - `p0b/01-community-files` … `p0b/11-planted-key-test`: merged (#14–#25) and kept. #24's squash subject on `main` is the branch name "p0b/10 readme setup guide", because `--fill` on a multi-commit PR uses the branch name. Later merges pass `--subject`.
-- `p0b/12-licence-notes` (#27), `p0b/12-security-fixes` (#28), `p0b/12-final-review-fixes` (#29) and `p0b/12-phase-verification` (#30) and `p0b/12-accept-minimatch-waiver` (this PR): merged and kept.
+- `p0b/12-licence-notes` (#27), `p0b/12-security-fixes` (#28), `p0b/12-final-review-fixes` (#29) and `p0b/12-phase-verification` (#30) and `p0b/12-accept-minimatch-waiver` (#31): merged and kept.
 - `docs/byok-architecture`: merged and kept (deleting branches needs the owner's approval).
 - `p0b/spikes`: unmerged and kept. Everything is under `spikes/`, with no audio and no data.
 
@@ -221,12 +254,16 @@ None are built yet, so every adapter in Phase 0d starts unverified. Live checks 
 
 - Hand off at about 35–40% context, at a task boundary, and at the end of every phase.
 - Commits: imperative sentence. No Co-Authored-By trailer. No "Generated with Claude Code" footer.
-- Commit and push to the feature branch as you go. Never push to `main`. Squash-merge task PRs with `gh pr merge --squash --subject "<sentence> (#N)"` (no `--delete-branch`) once CI is green and a non-author reviewer approves. Gate PRs wait for the owner. `main`'s branch protection requires a PR with `enforce_admins` on; changing protection is the owner's call.
-- Review seats (to protect the owner's Max limits):
-  - Security-heavy tasks get the task reviewer plus pr-review-toolkit's silent-failure-hunter and pr-test-analyzer.
-  - Other tasks get one sonnet task reviewer whose prompt adds error-handling and test-gap lenses.
-  - Scoped re-reviews of small fix diffs can run on haiku.
-  - Check `mcp__ccd_session_mgmt__get_usage` between tasks.
+- Commit and push to the feature branch as you go. Never push to `main`. Squash-merge task PRs with `gh pr merge --squash --subject "<sentence> (#N)"` (no `--delete-branch`) once CI is green (no per-task review under the budget rule). Gate PRs wait for the owner. `main`'s branch protection requires a PR with `enforce_admins` on; changing protection is the owner's call.
+- Budget rule (owner, 2026-11-13; applies to 0d, 0e and Phase 1): fit the remaining phases into two 5-hour Max windows, counted from 2026-11-13.
+  - Implementers are haiku by default and sonnet only after haiku fails a task.
+  - Tasks are batched into a few PRs per phase, by layer or dependency chain.
+  - There are no per-task reviews and no re-reviews. Each PR's gate is the implementer's tests plus green required CI.
+  - Each phase ends with one combined opus security and final review, then one fix dispatch with no re-review. Minor findings are deferred to this file.
+  - Check `mcp__ccd_session_mgmt__get_usage` after each batch. If the budget runs out, stop at a clean boundary, update this file and report.
+  - Hand-off briefs carry this rule forward.
+- Pipelining: the next batch branches from the previous batch's branch while that PR is in CI. After the squash-merge, merge `origin/main` into it (never force-push). Conflicts from the squash resolve to the branch side, because the branch already contains the merged commits.
+- CI's ruff sorts `nosolear` as first-party, and a local ruff cache can hide an I001. Run `uv run ruff check --no-cache` before pushing.
 - The owner's `.env` holds a real Azure key and region. Never read or print it. Tests never load it (the autouse fixture in `apps/api/tests/conftest.py`). Tests marked `live` (run with `make test-live`) are exempt from that isolation and use the `live_settings`/`require_keys` helpers in `tests/live/`. Run walk-throughs in a temp clone with a temp `.env`, never the real one.
 - Models: haiku for search, summaries and running tests; sonnet for well-specified implementation and routine review; opus for architecture, security review and final review. If a cheaper model fails review twice, re-dispatch on a stronger one.
 - Ask the owner for anything that costs money, deleting branches or data, and approval gates.
