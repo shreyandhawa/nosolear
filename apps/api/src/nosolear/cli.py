@@ -156,9 +156,7 @@ def _job(args: argparse.Namespace, api: ApiClient) -> int:
     job = api.get_job(args.job_id)
     for step in _steps(job):
         if step["state"] != "pending":
-            print(
-                progress_line(step["name"], step["state"], job["progress"], step.get("message"))
-            )
+            print(progress_line(step["name"], step["state"], job["progress"], step.get("message")))
     if job["status"] in TERMINAL:
         return _finish(args.job_id, job)
     print(f"job {args.job_id} {job['status']}")

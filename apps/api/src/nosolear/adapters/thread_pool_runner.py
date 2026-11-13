@@ -124,7 +124,9 @@ class ThreadPoolJobRunner:
             steps = list(current.steps)
             target = next((i for i, s in enumerate(steps) if s.state is StepState.RUNNING), None)
             if target is None:
-                target = next((i for i, s in enumerate(steps) if s.state is StepState.PENDING), None)
+                target = next(
+                    (i for i, s in enumerate(steps) if s.state is StepState.PENDING), None
+                )
             if target is not None:
                 steps[target] = StepRecord(
                     steps[target].name,

@@ -1,5 +1,6 @@
 """Stores an uploaded recording for an attempt and queues its ANALYZE job."""
 
+import contextlib
 from dataclasses import dataclass
 
 from nosolear.ports.audio import (
@@ -37,9 +38,8 @@ def upload_recording(
             NewRecording(attempt_id=attempt_id, stored=stored)
         )
     except BaseException:
-        try:
+        # the original error matters more than a file that could not be removed
+        with contextlib.suppress(OSError):
             audio.delete(stored.path)
-        except OSError:
-            pass  # the original error matters more than a file that could not be removed
         raise
     return UploadResult(recording_id=recording.id, job_id=job.id, duration_ms=stored.duration_ms)
