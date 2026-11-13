@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import quote, quote_plus
 
+import httpx
 import pytest
 from factories import FixedClock, loopback_client, make_settings
 from fakes import FakeStep
@@ -37,6 +38,7 @@ from nosolear.app.run_job import run_job
 from nosolear.app.steps import StepRegistry
 from nosolear.budget.meter import Meter
 from nosolear.cli import main
+from nosolear.cli_client import ApiClient
 from nosolear.domain.budget import Caps, Provider, Unit
 from nosolear.domain.errors import CapExceeded
 from nosolear.domain.jobs import JobKind, JobStatus
@@ -603,3 +605,42 @@ def upload_error_bodies_and_logs(tmp: Path) -> tuple[str, str]:
     parts = [f"{label}: {r.status_code} {r.text}" for label, r in responses.items()]
     assert [r.status_code for r in responses.values()] == [415, 413, 400, 404]
     return "upload error bodies and their log lines", "\n".join(parts) + cap.text
+
+
+def _run_cli_with(argv: list[str], handler: Callable[[httpx.Request], httpx.Response]) -> str:
+    """Runs `main` against a fake API; returns its exit code and everything it printed."""
+    api = ApiClient(
+        httpx.Client(base_url="http://127.0.0.1:8000", transport=httpx.MockTransport(handler))
+    )
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        code = main(argv, client=api)
+    return f"exit {code}\n{out.getvalue()}{err.getvalue()}"
+
+
+@leak_surface
+def cli_upload_and_job_output(tmp: Path) -> tuple[str, str]:
+    """`nosolear upload` and `nosolear job` output when the API answers an ErrorOut, and when it
+    answers a 500 whose text holds both planted keys."""
+    wav = tmp / "take.wav"
+    wav.write_bytes(b"RIFF" + PLANTED_AZURE_KEY.encode())
+    error_out = {"code": "unknown_attempt", "message": "No attempt has this id."}
+    leaky_500 = f"traceback with {PLANTED_AZURE_KEY} and {PLANTED_ANTHROPIC_KEY}"
+    with pytest.MonkeyPatch.context() as mp:
+        _planted_env(mp, tmp / "data")
+        parts = [
+            _run_cli_with(
+                ["upload", str(wav), "--attempt-id", "nope"],
+                lambda request: httpx.Response(404, json=error_out),
+            ),
+            _run_cli_with(
+                ["job", "job-1", "--follow"],
+                lambda request: httpx.Response(500, text=leaky_500),
+            ),
+            _run_cli_with(
+                ["upload", str(wav), "--attempt-id", "nope"],
+                lambda request: httpx.Response(500, text=leaky_500),
+            ),
+        ]
+    assert "No attempt has this id." in parts[0], "the ErrorOut message was not printed"
+    return "nosolear upload and job stdout and stderr", "\n".join(parts)
