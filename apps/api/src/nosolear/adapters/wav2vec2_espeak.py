@@ -11,7 +11,6 @@ import json
 import logging
 import subprocess
 import unicodedata
-import wave
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from pathlib import Path
@@ -24,6 +23,7 @@ from nosolear.adapters.hf_models import disable_hf_telemetry, ensure_model
 from nosolear.adapters.lazy_model import LazyModel
 from nosolear.adapters.local_env import installed_version, torch_device
 from nosolear.adapters.model_specs import WAV2VEC2_ESPEAK
+from nosolear.adapters.wav_samples import SAMPLE_RATE, read_16k_mono
 from nosolear.domain.errors import ProviderUnavailable
 from nosolear.domain.phones import UnmappedSymbol
 from nosolear.domain.results.phone_probe import parse_phone_probe
@@ -33,7 +33,6 @@ ADAPTER = "wav2vec2_espeak"
 ADAPTER_VERSION = 1
 ESPEAK_ARGS = ("-q", "-v", "en-us", "--ipa", "--sep=_", "--stdin")
 MAX_REFERENCE_CHARS = 1000
-SAMPLE_RATE = 16000
 SPECIAL_TOKENS = frozenset({"<s>", "</s>", "<pad>"})
 """Dropped from the output. `<unk>` is kept, so an unknown phone fails loudly downstream."""
 
@@ -164,23 +163,11 @@ class _Wav2Vec2Recognizer:
         self._blank_id = blank_id
 
     def tokens(self, wav: Path) -> list[str]:
-        batch = self._extractor(_read_16k_mono(wav), sampling_rate=SAMPLE_RATE, return_tensors="pt")
+        batch = self._extractor(read_16k_mono(wav), sampling_rate=SAMPLE_RATE, return_tensors="pt")
         with self._torch.no_grad():
             logits = self._model(batch.input_values.to(self._device)).logits
         ids = logits.argmax(-1)[0].tolist()
         return ctc_greedy_decode(ids, self._vocab, blank_id=self._blank_id, special=SPECIAL_TOKENS)
-
-
-def _read_16k_mono(wav: Path) -> NDArray[np.float32]:
-    with wave.open(str(wav), "rb") as reader:
-        if (
-            reader.getnchannels() != 1
-            or reader.getsampwidth() != 2
-            or reader.getframerate() != SAMPLE_RATE
-        ):
-            raise ValueError("the probe reads 16 kHz mono 16-bit WAV only")
-        frames = reader.readframes(reader.getnframes())
-    return np.frombuffer(frames, dtype="<i2").astype(np.float32) / 32768.0
 
 
 def _load_recognizer() -> PhoneRecognizer:
