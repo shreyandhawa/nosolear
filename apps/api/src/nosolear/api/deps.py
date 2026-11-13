@@ -1,6 +1,8 @@
 """Composition root: wires adapters to the routes."""
 
 import sqlite3
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Annotated, cast
@@ -12,11 +14,15 @@ from sqlalchemy import Engine
 from nosolear.adapters.content_files import load_pack
 from nosolear.adapters.environment import SystemEnvironment
 from nosolear.adapters.filesystem_audio_store import FilesystemAudioStore
+from nosolear.adapters.retry import RetryingPronunciationScorer, RetryingTranscriber
 from nosolear.adapters.system_clock import SystemClock
 from nosolear.adapters.thread_pool_runner import ThreadPoolJobRunner
 from nosolear.app.check_readiness import check_readiness
 from nosolear.app.run_job import run_job
 from nosolear.app.steps import StepRegistry
+from nosolear.budget.compose import compose_paid_port
+from nosolear.budget.meter import Meter
+from nosolear.budget.metered_ports import MeteredPronunciationScorer, MeteredTranscriber
 from nosolear.domain.budget import Caps, Provider, Unit, period_for
 from nosolear.domain.packs import LanguagePack
 from nosolear.domain.readiness import ReadinessReport, UsageSnapshot
@@ -36,6 +42,7 @@ from nosolear.ports.clock import Clock
 from nosolear.ports.environment import EnvironmentProbe
 from nosolear.ports.jobs import JobQueue
 from nosolear.ports.ledger import UsageLedger
+from nosolear.ports.providers import PronunciationScorer, Transcriber
 from nosolear.settings import Settings
 
 DATABASE_NAME = "nosolear.sqlite"
@@ -97,6 +104,27 @@ def get_readiness_report(
 ) -> ReadinessReport:
     """The route's only dependency; tests override it."""
     return check_readiness(settings, env, usage=read_usage(settings))
+
+
+def paid_scorer(
+    raw: PronunciationScorer, meter: Meter, *, sleep: Callable[[float], None] = time.sleep
+) -> PronunciationScorer:
+    """Every attempt is metered, so each retry reserves again: retry -> metered -> raw."""
+    return compose_paid_port(
+        raw,
+        metered=lambda port: MeteredPronunciationScorer(port, meter),
+        retry=lambda port: RetryingPronunciationScorer(port, sleep=sleep),
+    )
+
+
+def paid_transcriber(
+    raw: Transcriber, meter: Meter, *, sleep: Callable[[float], None] = time.sleep
+) -> Transcriber:
+    return compose_paid_port(
+        raw,
+        metered=lambda port: MeteredTranscriber(port, meter),
+        retry=lambda port: RetryingTranscriber(port, sleep=sleep),
+    )
 
 
 def build_paid_ports(settings: Settings, *, ledger: UsageLedger, clock: Clock) -> dict[str, object]:

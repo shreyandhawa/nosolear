@@ -59,6 +59,7 @@ Phase 0c (audio, jobs, ledger) is done as of 2026-11-13. Next is Phase 0d (provi
   - Cap check: with `NOSOLEAR_CAP_CLAUDE_TOKENS=10`, `Meter.call` over the real ledger raises `CapExceeded` and makes no call.
   - One combined opus security and final review over `a472f81..` the phase tip: 0 High, 0 Medium, 1 Low, 0 Critical, 2 Important. The fix PR (#35's later commits) covers both Important findings: `read_usage` no longer creates `-wal`/`-shm` files on a stopped database, and a job whose `run` raises is marked failed (so it can be resumed) instead of staying `running`. The same pass fixed six Minor findings: meter negative actuals, upload cleanup errors, non-JobOut CLI bodies, an early 409, the readiness wording, and the CLI skip reason. The rest are under "Carried to later phases".
 - 2026-11-13: Phase 0d Task 1: the provider ports (`ports/providers.py`), the speech and coach result types (`domain/speech.py`, `domain/coach.py`), `RetryableProviderError` and `MalformedProviderResponse` in `domain/errors.py`, and the in-memory fakes in `tests/provider_fakes.py`.
+- 2026-11-13: Phase 0d Task 2: the retry wrapper (`adapters/retry.py`: 1, 2, 4, 8 second backoff with injectable sleep, four `Retrying*` port wrappers), the audio-second estimator (`budget/estimators.py`), the metered Azure scorer and transcriber (`budget/metered_ports.py`), and `paid_scorer` and `paid_transcriber` in `api/deps.py`, ordered retry -> metered -> raw.
 
 ## In progress
 
