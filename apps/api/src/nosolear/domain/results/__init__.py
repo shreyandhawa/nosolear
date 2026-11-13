@@ -2,6 +2,7 @@
 
 from nosolear.domain.results.azure_pa import parse_azure_pa
 from nosolear.domain.results.azure_stt import parse_azure_stt
+from nosolear.domain.results.phone_probe import parse_phone_probe
 from nosolear.domain.results.whisper import parse_local_transcript
 from nosolear.domain.speech import RawResult, Transcript
 
@@ -17,4 +18,10 @@ def parse_transcript(raw: RawResult) -> Transcript:
     raise ValueError(f"no transcript parser for adapter {raw.adapter!r}")
 
 
-__all__ = ["parse_azure_pa", "parse_azure_stt", "parse_local_transcript", "parse_transcript"]
+__all__ = [
+    "parse_azure_pa",
+    "parse_azure_stt",
+    "parse_local_transcript",
+    "parse_phone_probe",
+    "parse_transcript",
+]

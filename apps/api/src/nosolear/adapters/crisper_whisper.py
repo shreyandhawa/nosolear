@@ -11,7 +11,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Protocol, cast
 
-from nosolear.adapters.hf_models import ensure_model
+from nosolear.adapters.hf_models import disable_hf_telemetry, ensure_model
 from nosolear.adapters.lazy_model import LazyModel
 from nosolear.adapters.local_env import installed_version, torch_device
 from nosolear.adapters.model_specs import CRISPER_WHISPER
@@ -44,6 +44,7 @@ class _PipelineFactory(Protocol):
 
 
 def _load() -> AsrPipelineLike:
+    disable_hf_telemetry()  # before any Hugging Face import
     from transformers import (  # pyright: ignore[reportMissingImports]
         pipeline,  # pyright: ignore[reportUnknownVariableType]
     )

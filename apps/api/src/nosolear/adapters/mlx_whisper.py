@@ -10,7 +10,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Protocol, cast
 
-from nosolear.adapters.hf_models import ModelSpec, ensure_model
+from nosolear.adapters.hf_models import ModelSpec, disable_hf_telemetry, ensure_model
 from nosolear.adapters.local_env import installed_version
 from nosolear.adapters.model_specs import MLX_WHISPER
 from nosolear.domain.errors import ProviderUnavailable
@@ -34,6 +34,7 @@ class _LibraryTranscribe(Protocol):
 
 def _default_call(spec: ModelSpec) -> Transcribe:
     def call(wav: str, *, language: str, word_timestamps: bool) -> Mapping[str, object]:
+        disable_hf_telemetry()  # before any Hugging Face import
         from mlx_whisper import (  # pyright: ignore[reportMissingImports]
             transcribe,  # pyright: ignore[reportUnknownVariableType]
         )

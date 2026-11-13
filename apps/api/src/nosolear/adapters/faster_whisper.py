@@ -11,7 +11,7 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Protocol, cast
 
-from nosolear.adapters.hf_models import ModelSpec, ensure_model
+from nosolear.adapters.hf_models import ModelSpec, disable_hf_telemetry, ensure_model
 from nosolear.adapters.lazy_model import LazyModel
 from nosolear.adapters.local_env import installed_version, torch_device
 from nosolear.adapters.model_specs import FASTER_WHISPER
@@ -57,6 +57,7 @@ class _Constructor(Protocol):
 
 
 def _load(spec: ModelSpec) -> WhisperModelLike:
+    disable_hf_telemetry()  # before any Hugging Face import
     from faster_whisper import (  # pyright: ignore[reportMissingImports]
         WhisperModel,  # pyright: ignore[reportUnknownVariableType]
     )

@@ -32,6 +32,7 @@ RAW_ADAPTER_MODULES: frozenset[str] = frozenset(
         "adapters/faster_whisper.py",
         "adapters/mlx_whisper.py",
         "adapters/crisper_whisper.py",
+        "adapters/wav2vec2_espeak.py",
     }
 )
 EAGER_OK = frozenset({"anthropic"})
