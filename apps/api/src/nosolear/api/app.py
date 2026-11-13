@@ -34,13 +34,17 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     engine = create_engine_for(settings.database_url)
     upgrade_to_head(engine)
     try:
-        ensure_profile_pack(
+        profiles = ProfileRepository(engine, DEFAULT_TAXONOMY)
+        pack = load_active_pack(settings)
+        previous_pack = profiles.latest_pack_id()
+        if ensure_profile_pack(
             observations=ObservationRepository(engine),
-            profiles=ProfileRepository(engine, DEFAULT_TAXONOMY),
+            profiles=profiles,
             taxonomy=DEFAULT_TAXONOMY,
-            pack=load_active_pack(settings),
+            pack=pack,
             clock=SystemClock(),
-        )
+        ):
+            logger.info("profile rebuilt for pack %s (was %s)", pack.id, previous_pack)
     except PackError as exc:
         logger.warning("language pack not applied: %s", exc)
     app.state.engine = engine

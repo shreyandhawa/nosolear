@@ -40,10 +40,10 @@ def test_telemetry_disabled(tmp_path: Path) -> None:
     assert os.environ["HF_HUB_DISABLE_TELEMETRY"] == "1"
 
 
-def test_preset_telemetry_value_kept(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_preset_telemetry_value_is_overridden(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HF_HUB_DISABLE_TELEMETRY", "0")
     prepare_process(make_settings(data_dir=tmp_path / "d"), create_data_dir=False)
-    assert os.environ["HF_HUB_DISABLE_TELEMETRY"] == "0"
+    assert os.environ["HF_HUB_DISABLE_TELEMETRY"] == "1"
 
 
 def test_installs_scrubbing(tmp_path: Path) -> None:
