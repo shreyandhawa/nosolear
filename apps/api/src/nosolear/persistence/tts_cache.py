@@ -34,8 +34,9 @@ class TtsCacheRepository:
         )
 
     def put(self, clip: SynthesizedClip, *, text: str, created_at: datetime) -> None:
-        """Keeps the first row for a hash. A path that is not `tts/<hash>.wav` is refused by the
-        table's CHECK constraint, which still raises."""
+        """One row per hash. A later put for the same hash replaces the row, so a regenerated file
+        keeps the voice and timings that match it. A path that is not `tts/<hash>.wav` is refused by
+        the table's CHECK constraint, which still raises."""
         stored = {
             "duration_ms": clip.duration_ms,
             "words": [[w.text, w.start_ms, w.end_ms] for w in clip.word_timings],
@@ -52,7 +53,10 @@ class TtsCacheRepository:
         stmt = (
             sqlite_insert(tts_cache)
             .values(**values)
-            .on_conflict_do_nothing(index_elements=["hash"])
+            .on_conflict_do_update(
+                index_elements=["hash"],
+                set_={key: value for key, value in values.items() if key != "hash"},
+            )
         )
         with self._engine.begin() as conn:
             conn.execute(stmt)

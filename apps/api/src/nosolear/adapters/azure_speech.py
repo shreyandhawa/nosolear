@@ -95,6 +95,10 @@ def sdk_version() -> str:
     return metadata.version(SDK_DISTRIBUTION)
 
 
+class VoiceRejected(ProviderUnavailable):
+    """Azure refused the request as malformed: the only rejection that a voice can cause."""
+
+
 def classify(cancellation: Cancellation) -> ProviderUnavailable:
     """The error a cancellation maps to. Retryable ones are 429 and 5xx-style service failures."""
     if cancellation.code == "TooManyRequests" or "429" in cancellation.details:
@@ -107,7 +111,7 @@ def classify(cancellation: Cancellation) -> ProviderUnavailable:
             "NOSOLEAR_AZURE_SPEECH_REGION"
         )
     if cancellation.code == "BadRequest":
-        return ProviderUnavailable("Azure Speech rejected the request")
+        return VoiceRejected("Azure Speech rejected the request")
     return ProviderUnavailable("Azure Speech failed")
 
 

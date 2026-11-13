@@ -1,13 +1,14 @@
 """Azure text-to-speech: the raw `SpeechSynthesizer` (ARCHITECTURE.md section 5.2).
 
-The configured voice is tried first. A non-retryable rejection switches, once and for the rest of
-the process, to `FALLBACK_VOICE`. A rate limit or a service failure is not a voice problem, so it
-is raised as it is. Billing is the SSML length of every request sent, fallback included.
+The configured voice is tried first. Only a `VoiceRejected` (Azure's malformed-request answer)
+falls back to `FALLBACK_VOICE`, and the process switches for good only once the fallback has been
+accepted, so a failure that is not the voice's fault never changes the voice. Rate limits, service
+failures, key errors and anything unclassified are raised as they are. Billing is the SSML length
+of every request sent, fallback included.
 """
 
-from nosolear.adapters.azure_speech import AzureSpeech, wav_duration_ms
+from nosolear.adapters.azure_speech import AzureSpeech, VoiceRejected, wav_duration_ms
 from nosolear.adapters.azure_speech import WordBoundary as _Boundary
-from nosolear.domain.errors import ProviderUnavailable, RequestNotSent, RetryableProviderError
 from nosolear.domain.speech import SynthesizedAudio, WordTiming
 from nosolear.domain.ssml import FALLBACK_VOICE, build_ssml
 
@@ -43,16 +44,14 @@ class AzureTts:
         billed += len(ssml)
         try:
             outcome = self._speech.synthesize(ssml)
-        except RequestNotSent, RetryableProviderError:
-            raise
-        except ProviderUnavailable:
+        except VoiceRejected:
             if voice == FALLBACK_VOICE:
                 raise
-            self._on_fallback = True
             voice = FALLBACK_VOICE
             ssml = build_ssml(text, voice=voice, locale=self._locale, rate_percent=rate_percent)
             billed += len(ssml)
             outcome = self._speech.synthesize(ssml)
+            self._on_fallback = True
         wav_duration_ms(outcome.audio)  # refuses audio that is not 16 kHz mono 16-bit
         return SynthesizedAudio(
             wav=outcome.audio,
