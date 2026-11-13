@@ -136,7 +136,16 @@ def _snapshot_reasons(h: Harness, session_id: str) -> list[str]:
     return [str(row.reason) for row in rows]
 
 
+def _sources(plan: dict[str, Any]) -> dict[str, str]:
+    return {focus["skill"]: focus["source"] for focus in plan["foci"]}
+
+
 def test_full_daily_loop_through_api(make_harness: Callable[..., Harness]) -> None:
+    # Control: the same calendar day with no session at all. Its foci are the prior's fallback,
+    # so any difference from the real loop's plan is caused by today's misses.
+    control = make_harness(clock=MovableClock(T0 + timedelta(days=1)))
+    control_plan = control.client.post("/api/plan/today").json()
+
     clock = MovableClock(T0)
     h = make_harness(clock=clock, coach=_coach())
     _speaker(h)
@@ -163,7 +172,14 @@ def test_full_daily_loop_through_api(make_harness: Callable[..., Harness]) -> No
     clock.advance(timedelta(days=1))
     tomorrow = h.client.post("/api/plan/today")
     assert tomorrow.status_code == 201, tomorrow.text
-    assert _focus_keys(tomorrow.json())["sounds"] == SOUND
+    foci = _focus_keys(tomorrow.json())
+    # Every skill's focus now comes from the profile the session built; the control's all come
+    # from the prior. Only sounds is a different key from the control, so it is the one that
+    # shows the misses changing the choice: the control's prior picks another sound.
+    assert _sources(control_plan) == {skill: "fallback" for skill in SKILLS}
+    assert _sources(tomorrow.json()) == {skill: "profile" for skill in SKILLS}
+    assert _focus_keys(control_plan)["sounds"] != SOUND
+    assert foci["sounds"] == SOUND
 
 
 def test_loop_with_capped_coach_still_gives_template_feedback_and_a_plan(

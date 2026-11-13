@@ -55,6 +55,15 @@ def test_daily_run_through_cli(
     plan_lines = plan_out.splitlines()
     assert plan_lines[0].startswith("sounds: sound.sub.v.w (")
 
+    # A no-miss control on the same calendar day: its sounds focus is the prior's pick, which
+    # must not be the key the misses promoted. Otherwise the check above proves nothing.
+    control = make_harness(start_runner=True, clock=MovableClock(T0 + timedelta(days=1)))
+    capsys.readouterr()
+    assert main(["plan"], client=_api(control)) == 0
+    control_sounds = capsys.readouterr().out.splitlines()[0]
+    assert control_sounds.startswith("sounds: ")
+    assert not control_sounds.startswith("sounds: sound.sub.v.w ("), control_sounds
+
 
 def test_daily_run_with_a_failed_scorer_still_finishes_the_day(
     make_harness: Callable[..., Harness],
