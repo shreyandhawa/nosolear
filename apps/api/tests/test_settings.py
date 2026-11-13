@@ -445,8 +445,8 @@ def test_pack_accepted() -> None:
             ["en-US-Jenny", "JennyNeural", "en-US-Jenny Neural", "en-US-Jenny/../Neural"],
         ),
         ("coach_model", ["claude-opus-5-5", "m.v_1"], ["a b", "a/b", "", "x;y"]),
-        ("faster_whisper_model", ["small.en", "large-v3"], ["a b", "../x", "", "a/b"]),
-        ("mlx_whisper_model", ["whisper-large-v3-turbo"], ["a b", "org/model", "", "x;y"]),
+        ("faster_whisper_model", ["small.en"], ["a b", "../x", "", "a/b", "large-v3"]),
+        ("mlx_whisper_model", ["whisper-large-v3-turbo"], ["a b", "org/model", "", "x;y", "tiny"]),
     ],
 )
 def test_voice_model_locale_patterns(field: str, good: list[str], bad: list[str]) -> None:
@@ -456,6 +456,16 @@ def test_voice_model_locale_patterns(field: str, good: list[str], bad: list[str]
         with pytest.raises(ValidationError) as e:
             make_settings(**{field: value})
         assert f"NOSOLEAR_{field.upper()}" in _names(e.value)
+
+
+def test_a_whisper_model_must_be_one_that_is_pinned() -> None:
+    # A name that matches the pattern but has no pinned spec would crash the server at startup.
+    for field, value in (("faster_whisper_model", "medium.en"), ("mlx_whisper_model", "tiny")):
+        with pytest.raises(ValidationError) as e:
+            make_settings(**{field: value})
+        assert f"NOSOLEAR_{field.upper()}" in _names(e.value)
+        assert value not in _names(e.value)
+    assert make_settings(faster_whisper_model="small.en").faster_whisper_model == "small.en"
 
 
 def test_transcriber_rejects_unknown() -> None:

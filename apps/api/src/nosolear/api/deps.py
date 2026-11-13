@@ -58,6 +58,7 @@ from nosolear.budget.metered_ports import (
     MeteredTranscriber,
 )
 from nosolear.domain.budget import Caps, Provider, Unit, period_for
+from nosolear.domain.capabilities import real_time_factors
 from nosolear.domain.jobs import JobKind
 from nosolear.domain.packs import LanguagePack
 from nosolear.domain.readiness import ReadinessReport, UsageSnapshot
@@ -69,7 +70,7 @@ from nosolear.domain.transcriber_choice import (
     TranscriberName,
     choose_transcriber,
 )
-from nosolear.persistence.capabilities import read_capability_records
+from nosolear.persistence.capabilities import CapabilityRepository, read_capability_records
 from nosolear.persistence.job_queue import SqliteJobQueue
 from nosolear.persistence.ledger import SqliteUsageLedger
 from nosolear.persistence.repositories import (
@@ -411,7 +412,16 @@ def build_services(
     ledger = ledger if ledger is not None else build_ledger(settings, engine, clock=clock)
     registry = registry if registry is not None else StepRegistry()
     jobs = SqliteJobQueue(engine, clock=clock)
-    providers = build_providers(settings, engine=engine, ledger=ledger, clock=clock, raw=raw_ports)
+    # The same stored speed figures `doctor` reads, so `auto` picks what the readiness report says.
+    speeds = real_time_factors(CapabilityRepository(engine).latest_all())
+    providers = build_providers(
+        settings,
+        engine=engine,
+        ledger=ledger,
+        clock=clock,
+        real_time_factors=speeds,
+        raw=raw_ports,
+    )
     analyses = AnalysisRepository(engine, clock)
     recordings = RecordingRepository(engine, clock)
     attempts = AttemptRepository(engine)

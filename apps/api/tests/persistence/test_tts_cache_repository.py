@@ -42,6 +42,22 @@ def test_a_second_put_for_the_same_hash_keeps_one_row(db_engine):
     assert row_count(db_engine) == 1
 
 
+def test_a_regenerated_clip_replaces_the_row_it_no_longer_matches(db_engine):
+    repo = TtsCacheRepository(db_engine)
+    repo.put(clip(), text="hello world", created_at=T0)
+    regenerated = SynthesizedClip(
+        hash=HASH,
+        path=f"tts/{HASH}.wav",
+        voice="en-US-AvaNeural",
+        rate_percent=-25,
+        word_timings=(WordTiming("hello", 0, 500),),
+        duration_ms=900,
+    )
+    repo.put(regenerated, text="hello world", created_at=T0)
+    assert repo.get(HASH) == regenerated
+    assert row_count(db_engine) == 1
+
+
 def test_a_path_that_is_not_the_clip_file_for_its_hash_is_refused(db_engine):
     with pytest.raises(IntegrityError):
         TtsCacheRepository(db_engine).put(

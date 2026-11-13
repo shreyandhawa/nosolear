@@ -66,6 +66,30 @@ def test_request_shape_ignores_shell_anthropic_env(monkeypatch):
     assert not {"thinking", "temperature", "top_p", "top_k", "tool_choice", "tools"} & body.keys()
 
 
+def test_shell_custom_headers_never_reach_the_request(monkeypatch):
+    # The SDK merges ANTHROPIC_CUSTOM_HEADERS over its own headers, Authorization included.
+    monkeypatch.setenv(
+        "ANTHROPIC_CUSTOM_HEADERS",
+        "Authorization: Bearer wrong-token\nX-Gateway-Token: gateway-secret",
+    )
+    monkeypatch.setenv("ANTHROPIC_OPEN_TELEMETRY_TRACES_CONTENT_MODE", "content")
+    seen: list[httpx2.Request] = []
+
+    def handler(req: httpx2.Request) -> httpx2.Response:
+        seen.append(req)
+        return httpx2.Response(200, json=message_json(GOOD, thinking_first=True))
+
+    client = coach(handler)
+    analyze(client)
+    req = seen[0]
+    assert req.headers["authorization"] == f"Bearer {PLANTED_ANTHROPIC_KEY}"
+    assert "x-gateway-token" not in req.headers
+    assert "gateway-secret" not in str(req.headers)
+    assert "wrong-token" not in str(req.headers)
+    assert client._client is not None
+    assert client._client._open_telemetry["traces"]["enabled"] is False
+
+
 def test_base_url_is_the_anthropic_endpoint():
     assert API_BASE_URL == "https://api.anthropic.com"
 

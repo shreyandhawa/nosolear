@@ -77,6 +77,34 @@ def test_no_fallback_on_429():
     assert len(backend.calls) == 1
 
 
+def test_an_authentication_failure_does_not_switch_the_voice():
+    backend = FakeSpeechBackend(synthesis=[rejected("AuthenticationFailure"), ok()])
+    tts = tts_over(backend)
+    with pytest.raises(ProviderUnavailable):
+        tts.synthesize("hello", rate_percent=0)
+    tts.synthesize("hello again", rate_percent=0)
+    assert len(backend.calls) == 2
+    assert f"<voice name='{JENNY}'>" in backend.calls[1]
+
+
+def test_an_unclassified_failure_does_not_switch_the_voice():
+    backend = FakeSpeechBackend(synthesis=[rejected("NewCancelCode"), ok()])
+    tts = tts_over(backend)
+    with pytest.raises(ProviderUnavailable):
+        tts.synthesize("hello", rate_percent=0)
+    tts.synthesize("hello again", rate_percent=0)
+    assert f"<voice name='{JENNY}'>" in backend.calls[1]
+
+
+def test_a_failed_fallback_does_not_switch_the_voice_for_good():
+    backend = FakeSpeechBackend(synthesis=[rejected("BadRequest"), rejected("BadRequest"), ok()])
+    tts = tts_over(backend)
+    with pytest.raises(ProviderUnavailable):
+        tts.synthesize("hello", rate_percent=0)
+    tts.synthesize("hello again", rate_percent=0)
+    assert f"<voice name='{JENNY}'>" in backend.calls[2]
+
+
 def test_both_voices_rejected_is_provider_unavailable():
     backend = FakeSpeechBackend(synthesis=[rejected("BadRequest"), rejected("BadRequest")])
     with pytest.raises(ProviderUnavailable) as info:

@@ -14,6 +14,7 @@ from nosolear.persistence.db import create_engine_for, upgrade_to_head
 from nosolear.persistence.tts_cache import TtsCacheRepository
 from nosolear.ports.ledger import UsageLedger
 from nosolear.settings import Settings
+from nosolear.startup import prepare_process
 
 __all__ = ["live_settings", "require_keys"]
 
@@ -22,6 +23,13 @@ __all__ = ["live_settings", "require_keys"]
 def live_settings(tmp_path: Path) -> Settings:
     """The real environment and `.env`, but never the real data directory."""
     return Settings(data_dir=tmp_path / "data")
+
+
+@pytest.fixture(autouse=True)
+def _live_process_setup(live_settings: Settings) -> None:
+    """Live runs hold real keys, so they get the CLI's process setup: the secret scrubber and the
+    client-logger pins (the same `prepare_process` the CLI and server call)."""
+    prepare_process(live_settings, create_data_dir=False)
 
 
 @pytest.fixture
