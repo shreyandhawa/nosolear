@@ -5,7 +5,7 @@ checked here, and anything that does not pass becomes a template, never a silent
 """
 
 import unicodedata
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -100,8 +100,14 @@ def choose_fixes(
     session_observations: Sequence[StoredObservation],
     profile: Profile,
     taxonomy: Taxonomy,
+    pinned: Mapping[Skill, str] | None = None,
 ) -> tuple[SkillOutcome, ...]:
-    """One outcome per skill in SKILL_ORDER: a fix, clean, or not scored (never invented)."""
+    """One outcome per skill in SKILL_ORDER: a fix, clean, or not scored (never invented).
+
+    `pinned` maps a skill to the key its fix was already chosen with. That key wins over the
+    profile's ranking whenever the session still has a miss for it, so a fix once shown is not
+    re-picked from a newer profile.
+    """
     priority_of = {entry.definition.key: entry.priority for entry in profile.entries}
     outcomes: list[SkillOutcome] = []
     for skill in SKILL_ORDER:
@@ -124,7 +130,8 @@ def choose_fixes(
                 return priority_of[key]
             return 1.0 * taxonomy.get(key).impact
 
-        key = min(by_key, key=lambda k: (-priority(k), k))
+        chosen = (pinned or {}).get(skill)
+        key = chosen if chosen in by_key else min(by_key, key=lambda k: (-priority(k), k))
         evidence = min(
             by_key[key],
             key=lambda s: (-s.observation.weight, s.observation.observed_at, s.id),
