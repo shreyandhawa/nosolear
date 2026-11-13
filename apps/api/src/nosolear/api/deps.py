@@ -15,6 +15,7 @@ from nosolear.adapters.content_files import load_pack
 from nosolear.adapters.environment import SystemEnvironment
 from nosolear.adapters.filesystem_audio_store import FilesystemAudioStore
 from nosolear.adapters.retry import (
+    RetryingCoach,
     RetryingPronunciationScorer,
     RetryingSpeechSynthesizer,
     RetryingTranscriber,
@@ -27,6 +28,7 @@ from nosolear.app.steps import StepRegistry
 from nosolear.budget.compose import compose_paid_port
 from nosolear.budget.meter import Meter
 from nosolear.budget.metered_ports import (
+    MeteredCoach,
     MeteredPronunciationScorer,
     MeteredSpeechSynthesizer,
     MeteredTranscriber,
@@ -34,7 +36,7 @@ from nosolear.budget.metered_ports import (
 from nosolear.domain.budget import Caps, Provider, Unit, period_for
 from nosolear.domain.packs import LanguagePack
 from nosolear.domain.readiness import ReadinessReport, UsageSnapshot
-from nosolear.domain.taxonomy import DEFAULT_TAXONOMY
+from nosolear.domain.taxonomy import DEFAULT_TAXONOMY, Taxonomy
 from nosolear.persistence.job_queue import SqliteJobQueue
 from nosolear.persistence.ledger import SqliteUsageLedger
 from nosolear.persistence.repositories import (
@@ -50,7 +52,7 @@ from nosolear.ports.clock import Clock
 from nosolear.ports.environment import EnvironmentProbe
 from nosolear.ports.jobs import JobQueue
 from nosolear.ports.ledger import UsageLedger
-from nosolear.ports.providers import PronunciationScorer, SpeechSynthesizer, Transcriber
+from nosolear.ports.providers import Coach, PronunciationScorer, SpeechSynthesizer, Transcriber
 from nosolear.settings import Settings
 
 DATABASE_NAME = "nosolear.sqlite"
@@ -148,6 +150,17 @@ def paid_speech_synthesizer(
         raw,
         metered=lambda port: MeteredSpeechSynthesizer(port, meter, voice=voice, locale=locale),
         retry=lambda port: RetryingSpeechSynthesizer(port, sleep=sleep),
+    )
+
+
+def paid_coach(
+    raw: Coach, meter: Meter, *, taxonomy: Taxonomy, sleep: Callable[[float], None] = time.sleep
+) -> Coach:
+    """Retry -> metered -> raw: every attempt reserves its own upper bound."""
+    return compose_paid_port(
+        raw,
+        metered=lambda port: MeteredCoach(port, meter, taxonomy=taxonomy),
+        retry=lambda port: RetryingCoach(port, sleep=sleep),
     )
 
 

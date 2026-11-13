@@ -8,23 +8,34 @@ from provider_fakes import (
     assessment,
     wrapper_chain,
 )
+from pydantic import SecretStr
 from sqlalchemy import Engine, text
 from wavs import write_wav
 
+from nosolear.adapters.claude_coach import ClaudeCoach
 from nosolear.adapters.retry import (
+    RetryingCoach,
     RetryingPronunciationScorer,
     RetryingSpeechSynthesizer,
     RetryingTranscriber,
 )
-from nosolear.api.deps import build_ledger, paid_scorer, paid_speech_synthesizer, paid_transcriber
+from nosolear.api.deps import (
+    build_ledger,
+    paid_coach,
+    paid_scorer,
+    paid_speech_synthesizer,
+    paid_transcriber,
+)
 from nosolear.budget.compose import layers_of
 from nosolear.budget.meter import Meter
 from nosolear.budget.metered_ports import (
+    MeteredCoach,
     MeteredPronunciationScorer,
     MeteredSpeechSynthesizer,
     MeteredTranscriber,
 )
 from nosolear.domain.errors import RetryableProviderError
+from nosolear.domain.taxonomy import DEFAULT_TAXONOMY
 
 T0 = datetime(2026, 11, 13, 9, 0, tzinfo=UTC)
 
@@ -79,3 +90,15 @@ def test_paid_speech_synthesizer_order(db_engine, tmp_path):
         FakeSpeechSynthesizer,
     ]
     assert layers_of(port) == ["retry", "metered", "raw"]
+
+
+def test_the_coach_is_retry_then_metered_then_raw(db_engine, tmp_path):
+    ledger = _ledger(db_engine, tmp_path)
+    raw = ClaudeCoach(
+        api_key=SecretStr("sk-ant-unused-in-this-test-0123456789abcdef"),
+        model="claude-opus-5-5",
+        taxonomy=DEFAULT_TAXONOMY,
+    )
+    coach = paid_coach(raw, Meter(ledger), taxonomy=DEFAULT_TAXONOMY)
+    assert wrapper_chain(coach) == [RetryingCoach, MeteredCoach, ClaudeCoach]
+    assert layers_of(coach) == ["retry", "metered", "raw"]

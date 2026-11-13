@@ -26,6 +26,7 @@ SDK_MODULES = frozenset(
 RAW_ADAPTER_MODULES: frozenset[str] = frozenset(
     {
         "adapters/azure_speech.py",
+        "adapters/claude_coach.py",
         # The local-model layer (ARCHITECTURE.md section 15): huggingface_hub, torch device checks
         "adapters/hf_models.py",
         "adapters/local_env.py",

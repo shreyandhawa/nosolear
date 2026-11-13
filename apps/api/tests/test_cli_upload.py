@@ -247,7 +247,10 @@ def test_cli_upload_end_to_end_with_fake_steps(
         attempt_id = AttemptRepository(engine).create_attempt(
             session_kind="daily", step="speak", reference_text=None, scripted=False, now=NOW
         )
-        code = main(["upload", str(wav), "--attempt-id", attempt_id], client=ApiClient(http))
+        code = main(
+            ["upload", str(wav), "--attempt-id", attempt_id],
+            client=ApiClient(cast(httpx.Client, http)),
+        )
     lines = capsys.readouterr().out.splitlines()
     assert code == 0
     assert lines[-1].startswith("job ") and lines[-1].endswith(" done")
@@ -272,7 +275,10 @@ def test_upload_new_attempt_creates_the_attempt_in_the_data_dir(
     wav = tmp_path / "take.wav"
     wav.write_bytes(make_wav(0.5))
     with loopback_client(app) as http:
-        code = main(["upload", str(wav), "--new-attempt", "--no-follow"], client=ApiClient(http))
+        code = main(
+            ["upload", str(wav), "--new-attempt", "--no-follow"],
+            client=ApiClient(cast(httpx.Client, http)),
+        )
         engine = cast(Engine, app.state.engine)
         first_line = capsys.readouterr().out.splitlines()[0]
         attempt_id = first_line.removeprefix("attempt ")
