@@ -1,6 +1,7 @@
 import ipaddress
 import logging
 import os
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Annotated, Literal, get_args
 from urllib.parse import urlsplit
@@ -9,6 +10,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import Field, SecretStr, ValidationError, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from nosolear.adapters.model_specs import FASTER_WHISPER_MODELS, MLX_WHISPER_MODELS
 from nosolear.domain.transcriber_choice import TranscriberName
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -91,6 +93,14 @@ def _canonical_origin(origin: str) -> str:
     return f"{parts.scheme}://{shown}" + (f":{port}" if port is not None else "")
 
 
+def _pinned(value: str, table: Mapping[str, object]) -> str:
+    """Only a model with a pinned spec may be configured: its weights are fetched from that pin."""
+    if value not in table:
+        choices = ", ".join(sorted(table))
+        raise ValueError(f"not a pinned model; choose one of {choices}")
+    return value
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="NOSOLEAR_",
@@ -170,6 +180,16 @@ class Settings(BaseSettings):
         if any(ch.isspace() for ch in key):
             raise ValueError("must not contain whitespace (check for a stray space or newline)")
         return value
+
+    @field_validator("faster_whisper_model")
+    @classmethod
+    def _pinned_faster_whisper(cls, value: str) -> str:
+        return _pinned(value, FASTER_WHISPER_MODELS)
+
+    @field_validator("mlx_whisper_model")
+    @classmethod
+    def _pinned_mlx_whisper(cls, value: str) -> str:
+        return _pinned(value, MLX_WHISPER_MODELS)
 
     @field_validator("timezone")
     @classmethod
