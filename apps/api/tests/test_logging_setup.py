@@ -111,10 +111,11 @@ def test_uninstall_restores_factory() -> None:
 def test_scrubs_stack_info() -> None:
     install_secret_scrubbing([KEY])
     log, out = _logger("t.stack")
-    key_in_frame = KEY  # noqa: F841
-    log.info("here", stack_info=True)
-    assert KEY not in out.getvalue()
-    assert "test_scrubs_stack_info" in out.getvalue()
+    log.info("here", stack_info=True)  # sk-test-0123456789abcdef is in this source line
+    text = out.getvalue()
+    assert "test_scrubs_stack_info" in text
+    assert "[redacted]" in text
+    assert KEY not in text
 
 
 class _Hostile:
