@@ -25,7 +25,7 @@ from nosolear.domain.results import parse_azure_pa, parse_phone_probe
 from nosolear.domain.speech import RawResult, raw_result_of
 from nosolear.domain.taxonomy import Detector
 from nosolear.ports.analyses import AnalysisStore
-from nosolear.ports.calibration_store import CalibrationStore
+from nosolear.ports.calibration_store import CalibrationRunRecord, CalibrationStore
 from nosolear.ports.clock import Clock
 from nosolear.ports.jobs import JobQueue
 from nosolear.ports.providers import PhoneProbe, PronunciationScorer, Synthesizer
@@ -64,7 +64,7 @@ class ControlsStep:
         return True
 
     def run(self, ctx: StepContext) -> None:
-        run = self._store.latest()
+        run = _job_run(self._store, ctx)
         if run is None or run.status != "running":
             return
         words = self._words(run.id)
@@ -120,7 +120,7 @@ class EvaluateStep:
         return True
 
     def run(self, ctx: StepContext) -> None:
-        run = self._store.latest()
+        run = _job_run(self._store, ctx)
         if run is None:
             raise ValueError("No calibration run has this id.")
         if run.status == "done":
@@ -150,6 +150,14 @@ class EvaluateStep:
             capabilities=self._capabilities(),
             now=self._clock.now(),
         )
+
+
+def _job_run(store: CalibrationStore, ctx: StepContext) -> CalibrationRunRecord | None:
+    """The run this job was queued for, found through the attempt the job names. A job that
+    names no attempt has no run, so its steps do nothing."""
+    if ctx.attempt_id is None:
+        return None
+    return store.run_of_attempt(ctx.attempt_id)
 
 
 def _flag(

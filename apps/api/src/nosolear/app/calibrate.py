@@ -175,7 +175,8 @@ def finish_calibration(*, store: CalibrationStore, queue: JobQueue) -> str:
         raise NothingRecorded()
     if any(item.job_status in ("queued", "running") for item in recorded):
         raise TokensPending()
-    return queue.enqueue(JobKind.CALIBRATE, None).id
+    # The job names one of this run's attempts, so its steps act on this run and no other.
+    return queue.enqueue(JobKind.CALIBRATE, recorded[0].attempt_id).id
 
 
 def calibration_view(

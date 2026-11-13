@@ -73,6 +73,16 @@ class CalibrationRepository:
             row = conn.execute(stmt.limit(1)).first()
         return None if row is None else _run(row)
 
+    def run_of_attempt(self, attempt_id: str) -> CalibrationRunRecord | None:
+        stmt = (
+            select(calibration_runs)
+            .join(attempts, attempts.c.session_id == calibration_runs.c.session_id)
+            .where(attempts.c.id == attempt_id)
+        )
+        with self._engine.connect() as conn:
+            row = conn.execute(stmt.limit(1)).first()
+        return None if row is None else _run(row)
+
     def start(
         self, *, run_id: str, session_id: str, plan: CalibrationPlan, now: datetime
     ) -> CalibrationRunRecord:

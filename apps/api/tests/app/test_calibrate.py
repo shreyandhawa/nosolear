@@ -8,7 +8,7 @@ import pytest
 from calibration_fixtures import small_content
 from factories import NEUTRAL, count
 from harness import Harness
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, func, select
 
 from nosolear.app import calibrate_job
 from nosolear.app.calibrate import (
@@ -26,7 +26,7 @@ from nosolear.domain.scoring import ConfigKind
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY as TAX
 from nosolear.domain.taxonomy import Detector
 from nosolear.persistence.calibration_repository import CalibrationRepository
-from nosolear.persistence.models import calibration_runs, jobs
+from nosolear.persistence.models import analyses, calibration_runs, jobs
 from nosolear.persistence.scoring_repository import ScoringConfigRepository
 from nosolear.ports.calibration_store import CalibrationRunRecord
 from nosolear.ports.clock import Clock
@@ -232,6 +232,26 @@ def test_a_done_run_can_be_started_again(make_harness: Callable[..., Harness]):
     assert again.run.status == "running"
     assert again.run.session_id is not None
     assert len(again.items) == 30
+
+
+def test_calibrate_job_acts_only_on_the_run_it_was_queued_for(make_harness: Callable[..., Harness]):
+    h = make_harness(content=small_content())
+    run_a = start(h)
+    uploads_standing_in(h, run_a)
+    finish(h)
+    _, store = parts(h)
+    skip_calibration(store=store, clock=h.clock)
+    run_b = start(h)
+    h.drain()
+    with h.engine.connect() as conn:
+        b_analyses = conn.execute(
+            select(func.count())
+            .select_from(analyses)
+            .where(analyses.c.calibration_run_id == run_b.run.id)
+        ).scalar_one()
+    assert b_analyses == 0, "the queued job must not pay for the run started after it"
+    current = store.running()
+    assert current is not None and current.id == run_b.run.id
 
 
 def test_no_run_gives_no_view(make_harness: Callable[..., Harness]):

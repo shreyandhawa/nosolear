@@ -53,6 +53,10 @@ class CalibrationStore(Protocol):
 
     def latest(self) -> CalibrationRunRecord | None: ...
 
+    def run_of_attempt(self, attempt_id: str) -> CalibrationRunRecord | None:
+        """The run whose session holds this attempt, or None."""
+        ...
+
     def start(
         self, *, run_id: str, session_id: str, plan: CalibrationPlan, now: datetime
     ) -> CalibrationRunRecord: ...
