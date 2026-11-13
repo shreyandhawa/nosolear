@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from factories import NEPALI, NOW, SAMPLE_OBS, TAX, FixedClock, loopback_client
+from factories import NEPALI, NOW, PACK, SAMPLE_OBS, TAX, FixedClock, loopback_client, mk
 from fastapi.testclient import TestClient
 
 from nosolear.api.app import create_app
@@ -45,6 +45,7 @@ def test_profile_returns_entries_in_priority_order(
         "status",
         "priority",
         "last_seen_at",
+        "provisional",
     }
 
 
@@ -83,3 +84,42 @@ def test_invalid_pack_does_not_stop_startup(
     ):
         assert client.get("/api/health").status_code == 200
     assert any("nosuchpack" in r.getMessage() for r in caplog.records)
+
+
+def test_profile_entries_carry_provisional(client_with_tmp_db: TestClient):
+    from sqlalchemy import text
+
+    from nosolear.domain.observations import Outcome
+    from nosolear.domain.taxonomy import Detector
+    from nosolear.persistence.repositories import ObservationRepository
+
+    engine = client_with_tmp_db.app.state.engine  # pyright: ignore[reportAttributeAccessIssue]
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO sessions (id, kind, protocol_version, started_at) "
+                "VALUES ('s', 'daily', 1, '2026-11-12T08:00:00.000000+00:00')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO attempts (id, session_id, step, scripted, created_at) "
+                "VALUES ('a', 's', 'speak', 1, '2026-11-12T08:00:00.000000+00:00')"
+            )
+        )
+    ObservationRepository(engine).add_many(
+        [
+            mk("sound.sub.f.p", Outcome.MISS, NOW, attempt_id="a", provisional=True),
+            mk("fluency.filler", Outcome.MISS, NOW, detector=Detector.ASR_METRICS),
+        ]
+    )
+    rebuild_profile(
+        observations=ObservationRepository(engine),
+        profiles=ProfileRepository(engine, TAX),
+        taxonomy=TAX,
+        pack=PACK,
+        clock=FixedClock(NOW),
+    )
+    body = client_with_tmp_db.get("/api/profile").json()
+    entries = {e["error_key"]: e["provisional"] for e in body["entries"]}
+    assert entries == {"sound.sub.f.p": True, "fluency.filler": False}

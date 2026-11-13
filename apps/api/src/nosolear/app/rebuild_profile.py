@@ -17,7 +17,7 @@ def rebuild_profile(
     config: ProfileConfig = DEFAULT_CONFIG,
 ) -> Profile:
     profile = build_profile(
-        observations.all(), as_of=clock.now(), taxonomy=taxonomy, pack=pack, config=config
+        observations.current(), as_of=clock.now(), taxonomy=taxonomy, pack=pack, config=config
     )
     profiles.save(profile, session_id=None, reason="rebuild")
     return profile

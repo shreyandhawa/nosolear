@@ -140,7 +140,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "analyze" | "rescore";
+            kind: "analyze" | "rescore" | "calibrate";
             /** Progress */
             progress: number;
             /**
@@ -180,6 +180,11 @@ export interface components {
             p_hat: number;
             /** Priority */
             priority: number;
+            /**
+             * Provisional
+             * @default false
+             */
+            provisional: boolean;
             /**
              * Skill
              * @enum {string}

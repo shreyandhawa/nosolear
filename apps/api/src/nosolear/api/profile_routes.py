@@ -37,6 +37,7 @@ def _to_out(profile: Profile | None) -> ProfileOut:
                 status=e.status.value,
                 priority=e.priority,
                 last_seen_at=e.last_seen_at,
+                provisional=e.provisional,
             )
             for e in profile.entries
         ],

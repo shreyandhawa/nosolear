@@ -213,3 +213,59 @@ def test_analysis_for_unknown_attempt_raises_integrity_error(db_engine: Engine) 
     repo = AnalysisRepository(db_engine, FixedClock(T0))
     with pytest.raises(IntegrityError):
         repo.put(_new(AnalysisKind.COACH, attempt_id="no-such-attempt"))
+
+
+def _seed_attempt(engine: Engine, attempt_id: str = "a") -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO sessions (id, kind, protocol_version, started_at) "
+                "VALUES ('s', 'daily', 1, '2026-11-12T00:00:00.000000+00:00')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO attempts (id, session_id, step, scripted, created_at) "
+                "VALUES (:id, 's', 'speak', 1, '2026-11-12T00:00:00.000000+00:00')"
+            ),
+            {"id": attempt_id},
+        )
+
+
+def test_observation_roundtrip_keeps_config_and_provisional(db_engine: Engine) -> None:
+    _seed_attempt(db_engine)
+    o = mk(
+        "sound.sub.f.p",
+        MISS,
+        T0,
+        attempt_id="a",
+        scoring_config_id="v0",
+        provisional=True,
+    )
+    ObservationRepository(db_engine).add_many([o])
+    [stored] = ObservationRepository(db_engine).all()
+    assert stored.scoring_config_id == "v0"
+    assert stored.provisional is True
+    assert stored == o
+
+
+def test_profile_roundtrip_keeps_provisional(db_engine: Engine) -> None:
+    obs = [
+        mk("sound.sub.f.p", MISS, T0, provisional=True),
+        mk("fluency.filler", MISS, T0, detector=Detector.ASR_METRICS),
+    ]
+    profile = build_profile(obs, as_of=T0, taxonomy=TAX, pack=PACK)
+    repo = ProfileRepository(db_engine, TAX)
+    snapshot_id = repo.save(profile, session_id=None, reason="rebuild")
+    latest = repo.latest()
+    assert latest == profile
+    assert latest is not None
+    assert {e.definition.key: e.provisional for e in latest.entries} == {
+        "sound.sub.f.p": True,
+        "fluency.filler": False,
+    }
+    with db_engine.connect() as conn:
+        entries_json = conn.execute(
+            text("SELECT entries_json FROM profile_snapshots WHERE id = :id"), {"id": snapshot_id}
+        ).scalar_one()
+    assert all("provisional" in entry for entry in json.loads(entries_json))

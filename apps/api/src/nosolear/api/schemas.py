@@ -17,6 +17,7 @@ class ProfileEntryOut(BaseModel):
     status: Literal["unknown", "active", "improving", "watching", "mastered"]
     priority: float
     last_seen_at: datetime
+    provisional: bool = False
 
 
 class ProfileOut(BaseModel):
@@ -57,7 +58,7 @@ class StepOut(BaseModel):
 
 class JobOut(BaseModel):
     id: str
-    kind: Literal["analyze", "rescore"]
+    kind: Literal["analyze", "rescore", "calibrate"]
     attempt_id: str | None
     status: Literal["queued", "running", "done", "failed"]
     step: str | None

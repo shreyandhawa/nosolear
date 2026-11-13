@@ -13,6 +13,7 @@ from enum import StrEnum
 class JobKind(StrEnum):
     ANALYZE = "analyze"
     RESCORE = "rescore"
+    CALIBRATE = "calibrate"
 
 
 class JobStatus(StrEnum):
@@ -51,6 +52,11 @@ JOB_PLANS: dict[JobKind, tuple[StepSpec, ...]] = {
         StepSpec("extract", uses=("score", "transcribe", "probe", "coach")),
     ),
     JobKind.RESCORE: (StepSpec("extract"),),
+    JobKind.CALIBRATE: (
+        StepSpec("controls"),
+        StepSpec("evaluate", needs=("controls",)),
+        StepSpec("queue_rescore", needs=("evaluate",)),
+    ),
 }
 
 
