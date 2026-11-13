@@ -78,6 +78,7 @@ Phase 0d (provider adapters) is done as of 2026-11-13. Next is Phase 0e (scoring
   - three of the Minor findings: TTS falls back only when the voice is rejected and upserts regenerated cache rows; live tests run `prepare_process`; the whisper model settings are checked against the pinned tables.
 
   The remaining Minor findings are under "Carried to later phases". The `local-models` job is green on Ubuntu and macOS since #40.
+- 2026-11-13: Phase 0e Task 1: scoring configs in `domain/scoring.py` (`v0` rules, calibrated-config invariants, `rules_to_json`/`rules_from_json`, `current_observations` for the newest config per attempt), with `Observation` and `ProfileEntry` carrying `scoring_config_id`/`provisional`, and the seed stamped as `v0`.
 
 ## In progress
 

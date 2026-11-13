@@ -4,6 +4,7 @@ import random
 from datetime import datetime, timedelta
 
 from nosolear.domain.observations import Context, Observation, Outcome, make_observation
+from nosolear.domain.scoring import SOUND_FAMILIES, V0_CONFIG, V0_CONFIG_ID
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY, Detector
 
 # (error key, detector, miss rate at the start of the window, miss rate at the end)
@@ -30,6 +31,8 @@ def seed_observations(*, days: int, seed: int, end: datetime) -> list[Observatio
             for _ in range(_PER_DAY):
                 outcome = Outcome.MISS if rng.random() < miss_rate else Outcome.OK
                 observed_at = day_end - timedelta(minutes=rng.randrange(0, 12 * 60))
+                definition = DEFAULT_TAXONOMY.get(key)
+                scored_by_v0 = V0_CONFIG.rule_for(detector, definition) is not None
                 observations.append(
                     make_observation(
                         taxonomy=DEFAULT_TAXONOMY,
@@ -39,6 +42,8 @@ def seed_observations(*, days: int, seed: int, end: datetime) -> list[Observatio
                         context=rng.choice(list(Context)),
                         observed_at=observed_at,
                         confidence=round(rng.uniform(0.6, 1.0), 2),
+                        scoring_config_id=V0_CONFIG_ID,
+                        provisional=scored_by_v0 and definition.family in SOUND_FAMILIES,
                     )
                 )
     return observations

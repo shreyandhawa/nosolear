@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from numbers import Real
 
+from nosolear.domain.scoring import V0_CONFIG_ID
 from nosolear.domain.taxonomy import Detector, Taxonomy
 
 
@@ -38,6 +39,8 @@ class Observation:
     taxonomy_version: int
     attempt_id: str | None
     evidence: Mapping[str, object]
+    scoring_config_id: str = V0_CONFIG_ID
+    provisional: bool = False
 
 
 def make_observation(
@@ -51,6 +54,8 @@ def make_observation(
     confidence: float = 1.0,
     attempt_id: str | None = None,
     evidence: Mapping[str, object] | None = None,
+    scoring_config_id: str = V0_CONFIG_ID,
+    provisional: bool = False,
 ) -> Observation:
     definition = taxonomy.get(error_key)
     # Coerce so plain strings become members and unknown values raise ValueError. This is the
@@ -76,4 +81,6 @@ def make_observation(
         taxonomy_version=taxonomy.version,
         attempt_id=attempt_id,
         evidence=dict(evidence) if evidence is not None else {},
+        scoring_config_id=scoring_config_id,
+        provisional=provisional,
     )
