@@ -12,8 +12,17 @@ from sqlalchemy import Engine
 
 from nosolear.adapters.private_fs import DataDirError
 from nosolear.adapters.system_clock import SystemClock
-from nosolear.api.deps import get_environment, load_active_pack, read_usage
+from nosolear.api.deps import (
+    build_capability_probes,
+    build_ledger,
+    build_providers,
+    get_environment,
+    load_active_pack,
+    read_capabilities,
+    read_usage,
+)
 from nosolear.app.check_readiness import check_readiness
+from nosolear.app.probe_capabilities import probe_capabilities
 from nosolear.app.rebuild_profile import rebuild_profile
 from nosolear.cli_client import (
     TERMINAL,
@@ -23,9 +32,11 @@ from nosolear.cli_client import (
     progress_line,
 )
 from nosolear.dev.seed import seed_observations
+from nosolear.domain.capabilities import real_time_factors
 from nosolear.domain.packs import LanguagePack, PackError
 from nosolear.domain.readiness import format_readiness
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY
+from nosolear.persistence.capabilities import CapabilityRepository
 from nosolear.persistence.db import create_engine_for, upgrade_to_head
 from nosolear.persistence.repositories import (
     AttemptRepository,
@@ -207,6 +218,44 @@ def _api_command(args: argparse.Namespace, settings: Settings, client: ApiClient
             api.close()
 
 
+def _doctor_probe(settings: Settings) -> int:
+    """`doctor --probe`: makes paid calls, so only the user runs it. Prints one line per probe,
+    stores what each measured, then prints the readiness report. Exit 1 if any probe failed."""
+    try:
+        prepare_process(settings, create_data_dir=True)
+    except DataDirError as exc:
+        print(f"data directory problem: {exc}", file=sys.stderr)
+        return 2
+    engine = create_engine_for(settings.database_url)
+    try:
+        upgrade_to_head(engine)
+        clock = SystemClock()
+        store = CapabilityRepository(engine)
+        ledger = build_ledger(settings, engine, clock=clock)
+        providers = build_providers(
+            settings,
+            engine=engine,
+            ledger=ledger,
+            clock=clock,
+            real_time_factors=real_time_factors(store.latest_all()),
+        )
+        probes = build_capability_probes(settings, providers, engine=engine, clock=clock)
+        outcomes = probe_capabilities(probes=probes, store=store)
+        for outcome in outcomes:
+            status = "ok" if outcome.ok else "failed"
+            print(f"{status}  {outcome.adapter}: {outcome.message}")
+        report = check_readiness(
+            settings,
+            get_environment(),
+            usage=read_usage(settings),
+            capability_records=store.latest_all(),
+        )
+        print(format_readiness(report))
+        return 0 if all(outcome.ok for outcome in outcomes) else 1
+    finally:
+        engine.dispose()
+
+
 def main(argv: Sequence[str] | None = None, *, client: ApiClient | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
@@ -240,10 +289,14 @@ def main(argv: Sequence[str] | None = None, *, client: ApiClient | None = None) 
         return 0
     if args.command == "doctor":
         if args.probe:
-            print("probes arrive in Phase 0d", file=sys.stderr)
-            return 2
+            return _doctor_probe(settings)
         prepare_process(settings, create_data_dir=False)
-        report = check_readiness(settings, get_environment(), usage=read_usage(settings))
+        report = check_readiness(
+            settings,
+            get_environment(),
+            usage=read_usage(settings),
+            capability_records=read_capabilities(settings),
+        )
         print(format_readiness(report))
         return 0 if report.ready else 1
     if args.command in ("upload", "job"):

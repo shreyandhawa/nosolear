@@ -1,6 +1,8 @@
+from collections.abc import Sequence
 from pathlib import Path
 
 from nosolear.adapters.content_files import load_pack
+from nosolear.domain.capabilities import real_time_factors
 from nosolear.domain.packs import PackError
 from nosolear.domain.readiness import (
     Caps,
@@ -10,6 +12,7 @@ from nosolear.domain.readiness import (
     UsageSnapshot,
     build_readiness,
 )
+from nosolear.domain.speech import ProviderCapabilities
 from nosolear.ports.environment import EnvironmentProbe
 from nosolear.settings import REPO_ROOT, Settings
 
@@ -35,10 +38,12 @@ def check_readiness(
     env: EnvironmentProbe,
     *,
     usage: UsageSnapshot | None = None,
+    capability_records: Sequence[ProviderCapabilities] = (),
 ) -> ReadinessReport:
     """Reads settings and probes the machine; writes nothing and never reveals a key.
 
     `usage` is this period's ledger figures (see `read_usage`), or None when there are none.
+    `capability_records` are the stored live probe results (see `read_capabilities`).
     """
     system, machine = env.platform()
     errors: list[str] = []
@@ -71,7 +76,8 @@ def check_readiness(
                 claude_tokens=settings.cap_claude_tokens,
             ),
             usage=usage,
-            capabilities=None,
             inspect_errors=tuple(errors),
+            capability_records=tuple(capability_records),
+            real_time_factors=real_time_factors(capability_records),
         )
     )

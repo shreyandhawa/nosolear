@@ -12,6 +12,7 @@ from fastapi import Depends, Request
 from sqlalchemy import Engine
 
 from nosolear.adapters.azure_pa import AzurePronunciationScorer
+from nosolear.adapters.azure_pa_probe import AzureCapabilityProbe
 from nosolear.adapters.azure_speech import AzureSpeech
 from nosolear.adapters.azure_stt import AzureTranscriber
 from nosolear.adapters.azure_tts import AzureTts
@@ -41,6 +42,7 @@ from nosolear.adapters.retry import (
 )
 from nosolear.adapters.system_clock import SystemClock
 from nosolear.adapters.thread_pool_runner import ThreadPoolJobRunner
+from nosolear.adapters.transcriber_speed_check import TranscriberSpeedCheck
 from nosolear.adapters.tts_cache import CachedSynthesizer
 from nosolear.adapters.wav2vec2_espeak import Wav2Vec2EspeakProbe
 from nosolear.app.analysis_steps import provider_steps
@@ -59,12 +61,15 @@ from nosolear.domain.budget import Caps, Provider, Unit, period_for
 from nosolear.domain.jobs import JobKind
 from nosolear.domain.packs import LanguagePack
 from nosolear.domain.readiness import ReadinessReport, UsageSnapshot
+from nosolear.domain.speech import ProviderCapabilities
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY, Taxonomy
 from nosolear.domain.transcriber_choice import (
+    Platform,
     TranscriberChoice,
     TranscriberName,
     choose_transcriber,
 )
+from nosolear.persistence.capabilities import read_capability_records
 from nosolear.persistence.job_queue import SqliteJobQueue
 from nosolear.persistence.ledger import SqliteUsageLedger
 from nosolear.persistence.repositories import (
@@ -82,6 +87,7 @@ from nosolear.ports.environment import EnvironmentProbe
 from nosolear.ports.jobs import JobQueue
 from nosolear.ports.ledger import UsageLedger
 from nosolear.ports.providers import (
+    CapabilityProbe,
     Coach,
     PhoneProbe,
     PronunciationScorer,
@@ -188,7 +194,12 @@ def get_readiness_report(
     env: Annotated[EnvironmentProbe, Depends(get_environment)],
 ) -> ReadinessReport:
     """The route's only dependency; tests override it."""
-    return check_readiness(settings, env, usage=read_usage(settings))
+    return check_readiness(
+        settings,
+        env,
+        usage=read_usage(settings),
+        capability_records=read_capabilities(settings),
+    )
 
 
 def paid_scorer(
@@ -252,6 +263,47 @@ def _local_transcriber(name: TranscriberName, settings: Settings) -> Transcriber
         spec_mlx = model_spec_for(MLX_WHISPER_MODELS, settings.mlx_whisper_model)
         return MlxWhisperTranscriber(spec=spec_mlx)
     return CrisperWhisperTranscriber()
+
+
+def build_capability_probes(
+    settings: Settings, providers: Providers, *, engine: Engine, clock: Clock
+) -> tuple[CapabilityProbe, ...]:
+    """The live probes `doctor --probe` runs. Azure probes go through the wrapped ports, so a
+    probe spends quota like a real attempt. Speed checks run only for transcribers that are
+    installed, and `crisper_whisper` only when it is the configured choice (its weights are
+    fetched on first use)."""
+    probes: list[CapabilityProbe] = [
+        AzureCapabilityProbe(
+            synthesizer=providers.synthesizer,
+            scorer=providers.scorer,
+            data_dir=settings.data_dir,
+            region=settings.azure_speech_region,
+            locale=settings.azure_locale,
+            clock=clock,
+        )
+    ]
+    installed = installed_transcribers()
+    for name in (
+        TranscriberName.MLX_WHISPER,
+        TranscriberName.FASTER_WHISPER,
+        TranscriberName.CRISPER_WHISPER,
+    ):
+        if name not in installed:
+            continue
+        if name is TranscriberName.MLX_WHISPER and current_platform() is not Platform.MACOS_ARM64:
+            continue
+        if name is TranscriberName.CRISPER_WHISPER and settings.transcriber != name:
+            continue
+        probes.append(
+            TranscriberSpeedCheck(
+                name=name,
+                synthesizer=providers.synthesizer,
+                transcriber=_local_transcriber(name, settings),
+                data_dir=settings.data_dir,
+                clock=clock,
+            )
+        )
+    return tuple(probes)
 
 
 def build_providers(
@@ -397,12 +449,21 @@ def build_services(
     )
 
 
-def read_usage(settings: Settings) -> UsageSnapshot | None:
-    """This period's figures from the ledger, opened read-only.
+def read_capabilities(settings: Settings) -> tuple[ProviderCapabilities, ...]:
+    """The newest capability record per adapter, read without creating or migrating anything.
+    Empty when the database file or its table does not exist, or cannot be read."""
+    conn = _open_read_only(settings)
+    if conn is None:
+        return ()
+    try:
+        return tuple(read_capability_records(conn))
+    except sqlite3.Error:
+        return ()
+    finally:
+        conn.close()
 
-    None when the database file or its `usage_ledger` table does not exist, or when SQLite
-    cannot read the file. Never creates, migrates or writes the database (`doctor` stays offline).
-    """
+
+def _open_read_only(settings: Settings) -> sqlite3.Connection | None:
     database = settings.data_dir / DATABASE_NAME
     if not database.is_file():
         return None
@@ -411,8 +472,19 @@ def read_usage(settings: Settings) -> UsageSnapshot | None:
     wal_present = database.with_name(database.name + "-wal").exists()
     mode = "mode=ro" if wal_present else "mode=ro&immutable=1"
     try:
-        conn = sqlite3.connect(f"file:{quote(str(database))}?{mode}", uri=True)
+        return sqlite3.connect(f"file:{quote(str(database))}?{mode}", uri=True)
     except sqlite3.Error:
+        return None
+
+
+def read_usage(settings: Settings) -> UsageSnapshot | None:
+    """This period's figures from the ledger, opened read-only.
+
+    None when the database file or its `usage_ledger` table does not exist, or when SQLite
+    cannot read the file. Never creates, migrates or writes the database (`doctor` stays offline).
+    """
+    conn = _open_read_only(settings)
+    if conn is None:
         return None
     try:
         return _usage_from(conn)

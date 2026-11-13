@@ -1,13 +1,13 @@
 from dataclasses import replace
-from datetime import date
+from datetime import UTC, datetime
 
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+from nosolear.domain.capabilities import NBEST_PHONEMES, PROSODY
 from nosolear.domain.readiness import (
     COMPONENT_LABELS,
-    CapabilityFindings,
     Caps,
     Component,
     PackStatus,
@@ -18,6 +18,8 @@ from nosolear.domain.readiness import (
     build_readiness,
     format_readiness,
 )
+from nosolear.domain.speech import ProviderCapabilities
+from nosolear.domain.transcriber_choice import TranscriberName
 
 S = ReadinessStatus
 C = Component
@@ -41,7 +43,6 @@ def make_inputs(**overrides: object) -> ReadinessInputs:
         env_file_mode=0o600,
         caps=Caps(azure_audio_hours=4.5, tts_chars=450000, claude_tokens=100000),
         usage=None,
-        capabilities=None,
     )
     return replace(base, **overrides)  # pyright: ignore[reportArgumentType]
 
@@ -72,16 +73,27 @@ def test_capabilities_not_probed_when_azure_missing():
 def test_capabilities_not_probed_without_findings():
     r = row(make_inputs(), C.AZURE_CAPABILITIES)
     assert r.status is S.NOT_PROBED
-    assert r.fix == "run `nosolear doctor --probe` (available from Phase 0d)"
+    assert r.fix == "run `nosolear doctor --probe`"
+
+
+def azure_record(*, nbest: bool = True, prosody: bool = True) -> ProviderCapabilities:
+    return ProviderCapabilities(
+        provider="azure",
+        adapter="azure_pa",
+        adapter_version=1,
+        provider_version="1.53.0",
+        region="westus2",
+        locale="en-US",
+        capabilities={NBEST_PHONEMES: nbest, PROSODY: prosody},
+        probed_at=datetime(2026, 11, 12, 9, 0, tzinfo=UTC),
+    )
 
 
 def test_capabilities_ready_and_degraded():
-    ok = CapabilityFindings(nbest=True, prosody=True, probed_on=date(2026, 11, 12))
-    r = row(make_inputs(capabilities=ok), C.AZURE_CAPABILITIES)
+    r = row(make_inputs(capability_records=(azure_record(),)), C.AZURE_CAPABILITIES)
     assert r.status is S.READY
     assert r.reason == "n-best yes, prosody yes (probed 2026-11-12)"
-    bad = replace(ok, prosody=False)
-    r = row(make_inputs(capabilities=bad), C.AZURE_CAPABILITIES)
+    r = row(make_inputs(capability_records=(azure_record(prosody=False),)), C.AZURE_CAPABILITIES)
     assert r.status is S.DEGRADED and "prosody no" in r.reason
 
 
@@ -126,22 +138,29 @@ def test_transcriber_explicit_ready_and_crisper_licence():
 
 
 @pytest.mark.parametrize(
-    ("system", "machine", "modules", "azure", "expected"),
+    ("system", "machine", "modules", "azure", "expected", "status"),
     [
-        ("darwin", "arm64", {"mlx_whisper", "faster_whisper"}, True, "mlx_whisper"),
-        ("darwin", "arm64", {"faster_whisper"}, True, "faster_whisper"),
-        ("darwin", "arm64", set[str](), True, "azure_stt"),
-        ("darwin", "x86_64", {"mlx_whisper", "faster_whisper"}, True, "azure_stt"),
-        ("darwin", "x86_64", {"mlx_whisper"}, True, "azure_stt"),
-        ("linux", "x86_64", {"mlx_whisper", "faster_whisper"}, True, "faster_whisper"),
-        ("linux", "x86_64", {"mlx_whisper"}, True, "azure_stt"),
-        ("win32", "AMD64", {"faster_whisper"}, True, "azure_stt"),
-        ("linux", "x86_64", set[str](), False, None),
+        ("darwin", "arm64", {"mlx_whisper", "faster_whisper"}, True, "mlx_whisper", S.READY),
+        ("darwin", "arm64", {"faster_whisper"}, True, "faster_whisper", S.READY),
+        ("darwin", "arm64", set[str](), True, "azure_stt", S.DEGRADED),
+        ("darwin", "x86_64", {"mlx_whisper", "faster_whisper"}, True, "faster_whisper", S.READY),
+        ("darwin", "x86_64", {"mlx_whisper"}, True, "azure_stt", S.DEGRADED),
+        ("linux", "x86_64", {"mlx_whisper", "faster_whisper"}, True, "faster_whisper", S.READY),
+        ("linux", "x86_64", {"mlx_whisper"}, True, "azure_stt", S.DEGRADED),
+        ("win32", "AMD64", {"faster_whisper"}, True, "faster_whisper", S.READY),
+        ("win32", "AMD64", set[str](), True, "azure_stt", S.DEGRADED),
+        ("linux", "x86_64", set[str](), False, None, S.MISSING),
     ],
 )
 def test_auto_transcriber_order(
-    system: str, machine: str, modules: set[str], azure: bool, expected: str | None
+    system: str,
+    machine: str,
+    modules: set[str],
+    azure: bool,
+    expected: str | None,
+    status: ReadinessStatus,
 ):
+    """The same order the runtime uses (`choose_transcriber`), so doctor and transcription agree."""
     r = row(
         make_inputs(
             transcriber="auto",
@@ -152,11 +171,16 @@ def test_auto_transcriber_order(
         ),
         C.TRANSCRIBER,
     )
+    assert r.status is status
+    if expected is not None and status is S.READY:
+        assert r.reason == f"auto → {expected} (speed not yet checked)"
     if expected is None:
-        assert r.status is S.MISSING
-    else:
-        assert r.status is S.READY
-        assert r.reason == f"auto -> {expected} (speed not yet checked)"
+        assert r.fix is not None
+
+
+def test_phone_probe_rows_with_extra_but_no_espeak():
+    r = row(make_inputs(modules=frozenset({"torch", "transformers"})), C.PHONE_PROBE)
+    assert r.status is S.NOT_INSTALLED and r.fix == "install espeak-ng (Homebrew or apt)"
 
 
 def test_phone_probe():
@@ -167,7 +191,6 @@ def test_phone_probe():
     assert r.status is S.READY
     for kw in (
         {"modules": frozenset({"torch"}), "espeak_installed": True},
-        {"modules": frozenset({"torch", "transformers"}), "espeak_installed": False},
         {},
     ):
         r = row(make_inputs(**kw), C.PHONE_PROBE)
@@ -349,15 +372,41 @@ def test_crisper_not_installed_keeps_the_licence_note(modules: frozenset[str]):
 
 
 def test_capabilities_degraded_cases_and_missing_region():
-    day = date(2026, 11, 12)
     for nbest, prosody in ((False, True), (False, False)):
         r = row(
-            make_inputs(capabilities=CapabilityFindings(nbest, prosody, day)), C.AZURE_CAPABILITIES
+            make_inputs(capability_records=(azure_record(nbest=nbest, prosody=prosody),)),
+            C.AZURE_CAPABILITIES,
         )
         assert r.status is S.DEGRADED
         assert r.fix is None
     r = row(make_inputs(azure_region=None), C.AZURE_CAPABILITIES)
     assert r.status is S.NOT_PROBED
+
+
+def test_a_measured_local_transcriber_shows_its_speed():
+    r = row(
+        make_inputs(
+            transcriber="auto",
+            system="darwin",
+            machine="arm64",
+            modules=frozenset({"mlx_whisper"}),
+            real_time_factors={TranscriberName.MLX_WHISPER: 0.12},
+        ),
+        C.TRANSCRIBER,
+    )
+    assert r.reason == "auto → mlx_whisper (apple extra), 0.12\u00d7 real time"
+
+
+def test_a_slow_explicit_transcriber_is_degraded():
+    r = row(
+        make_inputs(
+            transcriber="faster_whisper",
+            modules=frozenset({"faster_whisper"}),
+            real_time_factors={TranscriberName.FASTER_WHISPER: 0.5},
+        ),
+        C.TRANSCRIBER,
+    )
+    assert r.status is S.DEGRADED and "slower than 1/3 real time" in r.reason
 
 
 @pytest.mark.parametrize("mode", [0o750, 0o707, 0o701])

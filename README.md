@@ -92,7 +92,7 @@ The report has one row per component: Azure Speech, Azure capabilities, Anthropi
 - **not probed**: the live capability probe has not run
 - **degraded**: it works, with a caveat
 
-`nosolear doctor` is offline. It never prints a key, a fragment of one or its length. It exits 0 when nothing is missing, 1 when something is, and 2 when your settings are invalid. Until you add keys, Azure Speech and Anthropic show as missing, and so does the transcriber, which can use Azure or a local model from an extra. If the data dir row says `.env` is readable by other users, run `chmod 600 .env`. `nosolear doctor --probe` (live checks against the providers) arrives in Phase 0d.
+`nosolear doctor` is offline. It never prints a key, a fragment of one or its length. It exits 0 when nothing is missing, 1 when something is, and 2 when your settings are invalid. Until you add keys, Azure Speech and Anthropic show as missing, and so does the transcriber, which can use Azure or a local model from an extra. If the data dir row says `.env` is readable by other users, run `chmod 600 .env`. Run `nosolear doctor --probe` once after you add your keys, and again if you change the Azure region or locale. It makes a few paid calls: a short sentence to Azure, and a passage of about a minute for each installed local transcriber, so it spends your quota. It prints one line per probe, stores what each one measured (n-best phonemes, prosody, and the real-time factor of each local transcriber), then prints the report. It exits 1 if a probe failed. Its results appear as the Azure capabilities and transcriber rows, and `auto` uses the measured speed. Only you run it; nothing else does.
 
 ## Run
 
