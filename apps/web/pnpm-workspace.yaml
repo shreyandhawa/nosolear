@@ -7,4 +7,6 @@ auditConfig:
     # minimatch denial of service via globparts amplification (CWE-405, CVE-2026-118764).
     # Reached only through eslint dev tooling with repo-controlled globs; the fix is minimatch
     # 11.0.1, a major bump that eslint's dependency tree does not accept.
+    # Accepted by the owner on 2026-11-13. Remove this waiver once `pnpm why minimatch` shows no
+    # minimatch below 11.0.1 (check on every eslint upgrade).
     - GHSA-g3hv-75wg-m249

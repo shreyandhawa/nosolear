@@ -135,8 +135,8 @@ Phase 0b (open-source foundation) is done as of 2026-11-13. Next is Phase 0c (au
 
 | Risk | Why it is acceptable | Accepted by |
 |---|---|---|
-| minimatch GHSA-g3hv-75wg-m249 (CVE-2026-118764): denial of service via globparts amplification (CWE-405), waived in `apps/web/pnpm-workspace.yaml` | It is reached only through eslint dev tooling, with globs the repo controls, and is never bundled. The fix (minimatch 11.0.1) is a major version eslint's tree does not accept. | Controller, 2026-11-13; **awaiting the owner's (Shreyan Dhawa) confirmation** |
-| While the API runs, any page served at `http://localhost:5173` counts as an allowed origin, even one from another local dev server | Another local process is in the accepted single-user-machine stance until token mode. `strictPort` makes Nosolear fail loudly instead of moving to another port. Falls under the single-user-machine stance the owner decided on 2026-11-12. The security review raised this residual on 2026-11-13; the owner has not confirmed it separately. |
+| minimatch GHSA-g3hv-75wg-m249 (CVE-2026-118764): denial of service via globparts amplification (CWE-405), waived in `apps/web/pnpm-workspace.yaml` | It is reached only through eslint dev tooling, with globs the repo controls, and is never bundled. The fix (minimatch 11.0.1) is a major version eslint's tree does not accept. | Owner (Shreyan Dhawa), 2026-11-13. Remove the waiver once `pnpm why minimatch` shows no minimatch below 11.0.1; check on every eslint upgrade. |
+| While the API runs, any page served at `http://localhost:5173` counts as an allowed origin, even one from another local dev server | Another local process is in the accepted single-user-machine stance until token mode. `strictPort` makes Nosolear fail loudly instead of moving to another port. | Falls under the single-user-machine stance the owner decided on 2026-11-12. The security review raised this residual on 2026-11-13; the owner has not confirmed it separately. |
 
 ## Licence notes (verified in Task 2, corrected in §17 by PR #27)
 
@@ -192,14 +192,14 @@ The Alembic chain after `main`'s 0003 (0b):
 
 ## Open questions for the owner
 
-- Confirm the accepted risk above: the minimatch GHSA-g3hv-75wg-m249 waiver for eslint dev tooling.
+None.
 
 ## Branch and PR state
 
-- `main`: "Update the handoff: Phase 0b is done and Phase 0c is next" (this PR), after #29 "Fix the Phase 0b final-review findings".
+- `main`: "Record the owner's acceptance of the minimatch audit waiver" (this PR), after #30 "Update the handoff: Phase 0b is done and Phase 0c is next".
 - `docs/phase-plans`: merged (#13) and kept.
 - `p0b/01-community-files` … `p0b/11-planted-key-test`: merged (#14–#25) and kept. #24's squash subject on `main` is the branch name "p0b/10 readme setup guide", because `--fill` on a multi-commit PR uses the branch name. Later merges pass `--subject`.
-- `p0b/12-licence-notes` (#27), `p0b/12-security-fixes` (#28), `p0b/12-final-review-fixes` (#29) and `p0b/12-phase-verification` (this PR): merged and kept.
+- `p0b/12-licence-notes` (#27), `p0b/12-security-fixes` (#28), `p0b/12-final-review-fixes` (#29) and `p0b/12-phase-verification` (#30) and `p0b/12-accept-minimatch-waiver` (this PR): merged and kept.
 - `docs/byok-architecture`: merged and kept (deleting branches needs the owner's approval).
 - `p0b/spikes`: unmerged and kept. Everything is under `spikes/`, with no audio and no data.
 
