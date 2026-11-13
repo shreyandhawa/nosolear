@@ -25,6 +25,16 @@ Recording, scoring and the coach need the later phases. See [docs/ARCHITECTURE.m
 - **macOS on Apple Silicon** and **Linux on x86-64**: first-class, and tested in CI.
 - **Windows**: use WSL2 and follow the Linux steps inside it.
 
+The Azure Speech SDK (`azure-cognitiveservices-speech==1.53.0`) is in the base install and ships Python 3.14 wheels for these platforms:
+
+| Platform | Wheel |
+|---|---|
+| macOS on Apple Silicon | `macosx_11_0_arm64` |
+| macOS on Intel | `macosx_10_14_x86_64` |
+| Linux on x86-64 | `manylinux1_x86_64` |
+| Linux on arm64 | `manylinux2014_aarch64` |
+| Windows | `win_amd64`, `win_arm64` |
+
 ## Prerequisites
 
 Install these first. On macOS use [Homebrew](https://brew.sh); on Linux (and WSL2) use `apt` or your distribution's package manager.

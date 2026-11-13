@@ -13,6 +13,8 @@ Nosolear runs on your machine. It has no accounts and no server of ours. It talk
 | Anthropic (your own key) | Transcripts, the item text (prompt or reference), and the error keys the request is about | Coach calls. Never audio |
 | Hugging Face | Requests for pinned model files; no user data | First use of a local model (`local` or `apple` extra) |
 
+The Azure Speech SDK 1.53.0 has its own telemetry code. Its Python API, which Nosolear uses, exposes no switch for it, so Nosolear cannot turn it off from its side; this was checked on that version and is not something Nosolear adds.
+
 **Nothing else leaves the machine.** There is no telemetry, analytics, crash reporting or update check. The package managers (`uv`, `pnpm`) contact their registries only when you install or update.
 
 ## Where your data lives
