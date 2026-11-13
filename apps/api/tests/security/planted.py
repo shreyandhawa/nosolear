@@ -34,6 +34,7 @@ from factories import FixedClock, loopback_client, make_settings, mk
 from fakes import FakeStep
 from pydantic import ValidationError
 from sqlalchemy import Engine, insert, text
+from starlette.testclient import TestClient
 from wavs import make_wav
 
 from nosolear import first_run_cli
@@ -1126,16 +1127,20 @@ class _RaisingTranscriber:
         raise RuntimeError(f"transcriber echoed {PLANTED_AZURE_KEY} for {wav.name}")
 
 
+def _api(client: TestClient) -> ApiClient:
+    return ApiClient(client)  # pyright: ignore[reportArgumentType]
+
+
 def _feedback_rows(engine: Engine) -> str:
     with engine.connect() as conn:
         return repr(conn.execute(text("SELECT * FROM feedback_items")).all())
 
 
-def _cli(argv: list[str], client: httpx.Client) -> str:
-    """Runs `main` against the loopback client; returns its exit code and everything it printed."""
+def _cli(argv: list[str], client: ApiClient) -> str:
+    """Runs `main` against the API client; returns its exit code and everything it printed."""
     out, err = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-        code = main(argv, client=ApiClient(client))  # pyright: ignore[reportArgumentType]
+        code = main(argv, client=client)
     return f"exit {code}\n" + out.getvalue() + err.getvalue()
 
 
@@ -1153,7 +1158,7 @@ def daily_feedback_cli_output(tmp: Path) -> tuple[str, str]:
         engine = cast(Engine, app.state.engine)
         _planted_env(mp, tmp / "data")
         session_id = _seed_daily_feedback(engine)
-        out = _cli(["daily", "feedback", session_id, "--generate"], client)
+        out = _cli(["daily", "feedback", session_id, "--generate"], _api(client))
         rows = _feedback_rows(engine)
     assert "[template: provider_unavailable]" in out, out
     return "daily feedback CLI output and feedback_items rows", out + rows
@@ -1174,7 +1179,7 @@ def daily_complete_cli_output(tmp: Path) -> tuple[str, str]:
         _planted_env(mp, tmp / "data")
         session_id = _seed_daily_feedback(engine)
         assert client.post(f"/api/sessions/{session_id}/feedback").status_code == 200
-        out = _cli(["daily", "complete", session_id], client)
+        out = _cli(["daily", "complete", session_id], _api(client))
         rows = _feedback_rows(engine)
     assert "completed at" in out, out
     return "daily complete CLI output and feedback_items rows", out + rows
@@ -1201,7 +1206,7 @@ def daily_run_cli_output(tmp: Path) -> tuple[str, str]:
     with loopback_client(app) as client, pytest.MonkeyPatch.context() as mp:
         engine = cast(Engine, app.state.engine)
         _planted_env(mp, tmp / "data")
-        out = _cli(["daily", "run", str(wav)], client)
+        out = _cli(["daily", "run", str(wav)], _api(client))
         rows = _feedback_rows(engine)
     assert "failed: score" in out, out
     assert "sounds: not scored today" in out, out
