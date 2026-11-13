@@ -10,6 +10,7 @@ end), which happens before the test module's `parametrize` reads it. A producer 
 else would register too late and never run.
 """
 
+import argparse
 import base64
 import contextlib
 import importlib
@@ -24,23 +25,29 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import quote, quote_plus
+from uuid import uuid4
 
 import httpx
 import pytest
+from calibration_fixtures import SMALL_SET, small_content
 from factories import FixedClock, loopback_client, make_settings
 from fakes import FakeStep
 from pydantic import ValidationError
-from sqlalchemy import Engine, text
+from sqlalchemy import Engine, insert, text
 
+from nosolear import first_run_cli
 from nosolear.adapters.retry import retry_call
 from nosolear.api.app import create_app
 from nosolear.api.deps import Services
+from nosolear.app.calibrate_job import ControlsStep
 from nosolear.app.run_job import run_job
 from nosolear.app.steps import StepRegistry
 from nosolear.budget.meter import Meter
 from nosolear.cli import main
 from nosolear.cli_client import ApiClient
 from nosolear.domain.budget import Caps, Provider, Unit
+from nosolear.domain.calibration import plan_calibration
+from nosolear.domain.content import seed_items
 from nosolear.domain.errors import (
     CapabilityMissing,
     CapExceeded,
@@ -49,11 +56,17 @@ from nosolear.domain.errors import (
 )
 from nosolear.domain.jobs import JobKind, JobStatus
 from nosolear.domain.redaction import REDACTED
+from nosolear.domain.speech import SynthesizedClip
+from nosolear.domain.taxonomy import DEFAULT_TAXONOMY, Detector
 from nosolear.logging_setup import install_secret_scrubbing
+from nosolear.persistence.calibration_repository import CalibrationRepository
+from nosolear.persistence.content_repository import ContentRepository
 from nosolear.persistence.db import create_engine_for, upgrade_to_head
 from nosolear.persistence.job_queue import SqliteJobQueue
 from nosolear.persistence.ledger import SqliteUsageLedger
+from nosolear.persistence.models import recordings
 from nosolear.persistence.repositories import AttemptRepository
+from nosolear.ports.providers import PronunciationScorer, Synthesizer
 from nosolear.settings import REPO_ROOT, Settings, settings_error_summary
 
 PLANTED_AZURE_KEY = "FAKEAZUREKEY" + "0123456789ABCDEFGHIJ"  # 32 chars
@@ -799,3 +812,163 @@ def onboarding_cli_output(tmp: Path) -> tuple[str, str]:
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             main(["onboarding"], client=ApiClient(client))  # pyright: ignore[reportArgumentType]
     return "onboarding CLI output", out.getvalue() + err.getvalue()
+
+
+_SURFACE_NOW = datetime(2026, 11, 13, 9, 0, tzinfo=UTC)
+
+
+class _RaisingSynthesizer:
+    """A synthesizer that fails the way an adapter does: the raw error carries a planted key, and
+    the typed error the CLI sees keeps only its literal message."""
+
+    def synthesize(self, text: str) -> SynthesizedClip:
+        try:
+            raise RuntimeError(f"TTS rejected the request with {PLANTED_AZURE_KEY}")
+        except RuntimeError as raw:
+            raise ProviderUnavailable() from raw
+
+
+class _RaisingScorer:
+    """A pronunciation scorer whose raw error carries a planted key. The step sees a plain
+    exception, which `run_job` logs by type only and stores as the generic message."""
+
+    def score(self, wav: Path, *, reference_text: str) -> Any:
+        raise RuntimeError(f"scorer echoed {PLANTED_AZURE_KEY} for {reference_text}")
+
+
+def _open_calibration_run(engine: Engine, *, record_first: bool) -> str:
+    """Opens a calibration run on `engine` with the small set's plan, and returns its first
+    attempt. With `record_first`, that take gets a recording row, so `finish` has one to score."""
+    ContentRepository(engine).sync_seed(seed_items(small_content()), now=_SURFACE_NOW)
+    store = CalibrationRepository(engine, FixedClock(_SURFACE_NOW))
+    plan = plan_calibration(
+        SMALL_SET,
+        emphasis=[],
+        available=frozenset({Detector.AZURE_PA}),
+        taxonomy=DEFAULT_TAXONOMY,
+    )
+    run = store.start(
+        run_id=uuid4().hex, session_id=uuid4().hex, plan=plan, now=_SURFACE_NOW
+    )
+    attempt_id = store.items(run.id)[0].attempt_id
+    if record_first:
+        with engine.begin() as conn:
+            conn.execute(
+                insert(recordings).values(
+                    id=uuid4().hex,
+                    attempt_id=attempt_id,
+                    path=f"recordings/{attempt_id}.wav",
+                    duration_ms=1000,
+                    sample_rate=16000,
+                    sha256="0" * 64,
+                    created_at=_SURFACE_NOW,
+                )
+            )
+    return attempt_id
+
+
+@leak_surface
+def rescore_cli_output(tmp: Path) -> tuple[str, str]:
+    """`nosolear rescore` through the real CLI and a threaded runner, when the extract step raises
+    a planted key: the progress lines and the final line."""
+    settings = planted_settings(tmp / "data")
+    registry = StepRegistry()
+    registry.register(JobKind.RESCORE, FakeStep("extract", raises=RuntimeError(PLANTED_AZURE_KEY)))
+    app = create_app(settings, step_registry=registry, start_runner=True)
+    out, err = io.StringIO(), io.StringIO()
+    with loopback_client(app) as client, pytest.MonkeyPatch.context() as mp:
+        _planted_env(mp, tmp / "data")
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = main(["rescore"], client=ApiClient(client))  # pyright: ignore[reportArgumentType]
+    assert code == 1 and "Re-scoring failed" in out.getvalue(), "the job must fail"
+    return "nosolear rescore output", out.getvalue() + err.getvalue()
+
+
+@leak_surface
+def calibrate_cli_output(tmp: Path) -> tuple[str, str]:
+    """`nosolear calibrate finish` through the real CLI and a threaded runner, when the controls
+    step raises a planted key mid-job: the progress lines and the final line."""
+    settings = planted_settings(tmp / "data")
+    registry = StepRegistry()
+    registry.register(JobKind.CALIBRATE, FakeStep("controls", raises=RuntimeError(PLANTED_AZURE_KEY)))
+    app = create_app(settings, step_registry=registry, start_runner=True)
+    out, err = io.StringIO(), io.StringIO()
+    with loopback_client(app) as client, pytest.MonkeyPatch.context() as mp:
+        _planted_env(mp, tmp / "data")
+        _open_calibration_run(cast(Engine, app.state.engine), record_first=True)
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = main(["calibrate", "finish"], client=ApiClient(client))  # pyright: ignore[reportArgumentType]
+    assert code == 1 and "calibration failed" in out.getvalue(), "the job must fail"
+    return "nosolear calibrate finish output", out.getvalue() + err.getvalue()
+
+
+@leak_surface
+def stand_in_cli_output(tmp: Path) -> tuple[str, str]:
+    """`nosolear stand-in calibration` with a synthesizer whose error carries a planted key: the
+    CLI prints the error's safe message only."""
+    settings = planted_settings(tmp / "data")
+    app = create_app(settings, start_runner=False)
+    out, err = io.StringIO(), io.StringIO()
+    with loopback_client(app) as client:
+        _open_calibration_run(cast(Engine, app.state.engine), record_first=False)
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = first_run_cli.run(
+                argparse.Namespace(command=first_run_cli.STAND_IN, kind="calibration"),
+                ApiClient(client),  # pyright: ignore[reportArgumentType]
+                synthesizer=cast(Synthesizer, _RaisingSynthesizer()),
+                data_dir=tmp / "data",
+            )
+    assert code == 2, "stand-in must stop at the synthesizer error"
+    return "nosolear stand-in output", out.getvalue() + err.getvalue()
+
+
+@leak_surface
+def calibrate_job_steps_and_ledger(tmp: Path) -> tuple[str, str]:
+    """A calibrate job whose controls step's scorer raises a planted key mid-run: the job's
+    steps_json, the usage ledger and the stored control rows."""
+    engine = create_engine_for(f"sqlite:///{tmp / 'calibrate.sqlite'}")
+    try:
+        upgrade_to_head(engine)
+        clock = FixedClock(_SURFACE_NOW)
+        attempt_id = _open_calibration_run(engine, record_first=False)
+        queue = SqliteJobQueue(engine, clock=clock)
+        job = queue.enqueue(JobKind.CALIBRATE, attempt_id)
+        store = CalibrationRepository(engine, clock)
+        clip = SynthesizedClip(
+            hash="ab" * 32,
+            path="tts/ab.wav",
+            voice="planted",
+            rate_percent=0,
+            word_timings=(),
+            duration_ms=1000,
+        )
+
+        class _Synth:
+            def synthesize(self, text: str) -> SynthesizedClip:
+                return clip
+
+        registry = StepRegistry()
+        registry.register(
+            JobKind.CALIBRATE,
+            ControlsStep(
+                store=store,
+                synthesizer=cast(Synthesizer, _Synth()),
+                scorer=cast(PronunciationScorer, _RaisingScorer()),
+                phone_probe=None,
+                data_dir=tmp,
+            ),
+        )
+        with LogCapture(logging.Formatter(FORMAT), "nosolear.app.run_job") as cap:
+            finished = run_job(job_id=job.id, jobs=queue, registry=registry)
+        with engine.connect() as conn:
+            steps_json = conn.execute(
+                text("SELECT steps_json FROM jobs WHERE id = :id"), {"id": job.id}
+            ).scalar_one()
+            ledger = conn.execute(text("SELECT * FROM usage_ledger")).all()
+            analyses_rows = conn.execute(text("SELECT * FROM analyses")).all()
+    finally:
+        engine.dispose()
+    assert finished.status is JobStatus.FAILED, "the planted failure must fail the job"
+    return "calibrate job steps_json, ledger, analyses and run_job log", "\n".join(
+        [steps_json, repr(ledger), repr(analyses_rows), _marked(cap.text, "step failed")]
+    )
