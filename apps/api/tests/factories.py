@@ -11,6 +11,16 @@ from sqlalchemy import Engine, text
 
 from nosolear.adapters.content_files import load_pack
 from nosolear.domain.observations import Context, Observation, Outcome, make_observation
+from nosolear.domain.speech import (
+    NBestPhoneme,
+    PhonemeAssessment,
+    PhoneProbeResult,
+    PronunciationAssessment,
+    ProsodyFeedback,
+    RawResult,
+    ScoringMode,
+    WordAssessment,
+)
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY, Detector
 from nosolear.settings import CONTENT_DIR, Settings
 
@@ -132,4 +142,72 @@ def loopback_client(app: FastAPI, *, port: int = 8000, **kwargs: Any) -> TestCli
     """
     return TestClient(
         app, base_url=f"http://127.0.0.1:{port}", client=("127.0.0.1", 50000), **kwargs
+    )
+
+
+RAW_PA = RawResult("azure", "test", "azure_pa", 1, {})
+RAW_PROBE = RawResult("local", "test", "phone_probe", 1, {})
+
+
+def pa_phone(
+    phone: str, accuracy: float, nbest: Iterable[tuple[str, float]] = ()
+) -> PhonemeAssessment:
+    return PhonemeAssessment(
+        phoneme=phone,
+        accuracy=accuracy,
+        nbest=tuple(NBestPhoneme(p, s) for p, s in nbest),
+        start_ms=None,
+        end_ms=None,
+    )
+
+
+def pa_word(
+    text: str,
+    phones: Iterable[PhonemeAssessment],
+    error_type: str = "None",
+    prosody: Iterable[str] = (),
+    start_ms: int | None = 100,
+    end_ms: int | None = 520,
+) -> WordAssessment:
+    error_types = tuple(prosody)
+    feedback = ProsodyFeedback(error_types, None, None, None) if error_types else None
+    return WordAssessment(
+        word=text,
+        accuracy=None,
+        error_type=error_type,
+        start_ms=start_ms,
+        end_ms=end_ms,
+        phonemes=tuple(phones),
+        prosody=feedback,
+    )
+
+
+def pa_result(
+    words: Iterable[WordAssessment], has_nbest: bool = True, has_prosody: bool = True
+) -> PronunciationAssessment:
+    return PronunciationAssessment(
+        mode=ScoringMode.SCRIPTED,
+        words=tuple(words),
+        accuracy=None,
+        fluency=None,
+        completeness=None,
+        prosody=None,
+        has_nbest=has_nbest,
+        has_prosody=has_prosody,
+        raw=RAW_PA,
+    )
+
+
+def probe_result(
+    reference_text: str | None,
+    expected_words: Iterable[Iterable[str]],
+    heard: Iterable[str],
+) -> PhoneProbeResult:
+    """The probe result for a reference text. The text is not stored on the result; callers pass
+    it to the extraction again, so it is accepted here only to read like the call site."""
+    del reference_text
+    return PhoneProbeResult(
+        expected_words=tuple(tuple(word) for word in expected_words),
+        heard=tuple(heard),
+        raw=RAW_PROBE,
     )
