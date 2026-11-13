@@ -15,6 +15,20 @@ dependencies = [
     "azure-cognitiveservices-speech==1.53.0",
 ]
 
+[project.optional-dependencies]
+# Heavy on-machine models, imported lazily (see adapters/local_env.py). Base installs never need them.
+local = [
+    "torch==2.15.0",
+    "transformers==5.22.2",
+    "huggingface-hub==2.4.0",
+    "safetensors==0.8.0",
+    "faster-whisper==1.2.1",
+]
+apple = [
+    "huggingface-hub==2.4.0",
+    "mlx-whisper==0.4.3; sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
+
 [project.scripts]
 nosolear = "nosolear.cli:main"
 
@@ -49,8 +63,11 @@ extraPaths = ["src", "tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--strict-markers -m 'not live'"
-markers = ["live: calls real Azure or Claude, or loads real local models; run with make test-live"]
+addopts = "--strict-markers -m 'not live and not local_models'"
+markers = [
+    "live: calls real Azure or Claude, or loads real local models; run with make test-live",
+    "local_models: needs the local/apple extras and espeak-ng; run with make test-local-models",
+]
 pythonpath = ["tests"]
 filterwarnings = [
     # Revisit: httpx pinned at 0.28.1; drop this once starlette's testclient dependency is resolved.

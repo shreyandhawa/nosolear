@@ -1,4 +1,4 @@
-.PHONY: setup api api-dev web seed test test-live lint gen-api
+.PHONY: setup api api-dev web seed test test-live test-local-models lint gen-api
 
 setup:
 	git config core.hooksPath scripts/git-hooks
@@ -23,6 +23,9 @@ test:
 
 test-live:
 	cd apps/api && uv run pytest -q -m live
+
+test-local-models:
+	cd apps/api && uv run pytest -m local_models -q
 
 lint:
 	cd apps/api && uv run ruff check && uv run ruff format --check && uv run pyright

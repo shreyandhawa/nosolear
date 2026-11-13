@@ -23,7 +23,14 @@ SDK_MODULES = frozenset(
 
 # The raw adapters that may import an SDK (ARCHITECTURE.md section 11). Each one imports its SDK
 # only inside a function body; `anthropic` is pure Python and may be imported at module level.
-RAW_ADAPTER_MODULES: frozenset[str] = frozenset({"adapters/azure_speech.py"})
+RAW_ADAPTER_MODULES: frozenset[str] = frozenset(
+    {
+        "adapters/azure_speech.py",
+        # The local-model layer (ARCHITECTURE.md section 15): huggingface_hub, torch device checks
+        "adapters/hf_models.py",
+        "adapters/local_env.py",
+    }
+)
 EAGER_OK = frozenset({"anthropic"})
 
 

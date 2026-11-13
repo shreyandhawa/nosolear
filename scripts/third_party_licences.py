@@ -24,7 +24,75 @@ COMMAND = "uv run --project apps/api python scripts/third_party_licences.py"
 UNKNOWN = "UNKNOWN: check upstream"
 # Locked for other platforms only, so not installed on every machine. colorama is
 # BSD-3-Clause: https://github.com/tartley/colorama/blob/master/LICENSE.txt (checked 2026-11-12).
-OVERRIDES = {"colorama": "BSD-3-Clause"}
+#
+# The `local` and `apple` extras lock packages that are never installed in the dev environment,
+# so their licences cannot come from installed metadata, and the script does not touch the
+# network. Each row below is the licence in that package's PyPI metadata (read 2026-11-13), or
+# its classifiers where the metadata names no expression. The NVIDIA CUDA wheels publish no
+# licence metadata; they are marked "verify on the wheel" until someone reads the wheel's LICENSE.
+# Add a row here whenever a new package appears in uv.lock: an unlisted one fails the run.
+OVERRIDES = {
+    "colorama": "BSD-3-Clause",
+    "av": "BSD-3-Clause",
+    "ctranslate2": "MIT",
+    "cuda-bindings": "Apache-2.0",
+    "cuda-pathfinder": "Apache-2.0",
+    "cuda-toolkit": "NVIDIA proprietary (verify on the wheel)",
+    "faster-whisper": "MIT",
+    "filelock": "MIT",
+    "flatbuffers": "Apache-2.0",
+    "fsspec": "BSD-3-Clause",
+    "hf-xet": "Apache-2.0",
+    "httpcore2": "BSD-3-Clause",
+    "httpx2": "BSD-3-Clause",
+    "httpx2-jsfetch": "BSD-3-Clause",
+    "huggingface-hub": "Apache-2.0",
+    "jinja2": "BSD-3-Clause",
+    "llvmlite": "BSD-2-Clause AND Apache-2.0 WITH LLVM-exception",
+    "markdown-it-py": "MIT",
+    "mdurl": "MIT",
+    "mlx": "MIT",
+    "mlx-metal": "MIT",
+    "mlx-whisper": "MIT",
+    "more-itertools": "MIT",
+    "mpmath": "BSD-3-Clause",
+    "networkx": "BSD-3-Clause",
+    "numba": "BSD-2-Clause",
+    "nvidia-cublas": "NVIDIA proprietary (verify on the wheel)",
+    "nvidia-cuda-cccl": "NVIDIA proprietary (verify on the wheel)",
+    "nvidia-cuda-cupti": "NVIDIA proprietary (verify on the wheel)",
+    "nvidia-cuda-nvrtc": "NVIDIA proprietary (verify on the wheel)",
+    "nvidia-cuda-runtime": "NVIDIA proprietary (verify on the wheel)",
+    "nvidia-cudnn-cu13": "NVIDIA proprietary (verify on the wheel)",
+    "nvidia-cufft": "NVIDIA proprietary (verify on the wheel)",
+    "nvidia-cufile": "NVIDIA proprietary (verify on the wheel)",
+    "nvidia-cusolver": "NVIDIA proprietary (verify on the wheel)",
+    "nvidia-cusparse": "NVIDIA proprietary (verify on the wheel)",
+    "nvidia-cusparselt-cu13": "NVIDIA proprietary (verify on the wheel)",
+    "nvidia-nccl-cu13": "NVIDIA proprietary (verify on the wheel)",
+    "nvidia-nvjitlink": "NVIDIA proprietary (verify on the wheel)",
+    "nvidia-nvshmem-cu13": "NVIDIA proprietary (verify on the wheel)",
+    "nvidia-nvtx": "NVIDIA proprietary (verify on the wheel)",
+    "onnxruntime": "MIT",
+    "packaging": "Apache-2.0 OR BSD-2-Clause",
+    "protobuf": "BSD-3-Clause",
+    "pygments": "BSD-2-Clause",
+    "pyyaml": "MIT",
+    "regex": "Apache-2.0 AND CNRI-Python",
+    "rich": "MIT",
+    "safetensors": "Apache-2.0",
+    "setuptools": "MIT",
+    "shellingham": "ISC",
+    "sympy": "BSD-3-Clause",
+    "tiktoken": "MIT",
+    "tokenizers": "Apache-2.0",
+    "torch": "Apache-2.0 AND Apache-2.0 WITH LLVM-exception AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND ISC AND MIT AND Zlib",
+    "tqdm": "MPL-2.0 AND MIT",
+    "transformers": "Apache-2.0",
+    "triton": "MIT",
+    "truststore": "MIT",
+    "typer": "MIT",
+}
 HEADER = "| Name | Version | Licence |\n|---|---|---|"
 
 Row = tuple[str, str, str]

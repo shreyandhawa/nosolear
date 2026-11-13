@@ -1,0 +1,63 @@
+name: local-models
+
+# Heavy and sometimes flaky, so it is not a required check. It runs only when a change touches the
+# local model code, the phone or result parsers, or the dependency lock.
+on:
+  pull_request:
+    paths:
+      - "apps/api/src/nosolear/adapters/**"
+      - "apps/api/src/nosolear/domain/phones.py"
+      - "apps/api/src/nosolear/domain/phone_alignment.py"
+      - "apps/api/src/nosolear/domain/results/**"
+      - "apps/api/tests/local_models/**"
+      - "apps/api/pyproject.toml"
+      - "apps/api/uv.lock"
+      - ".github/workflows/local-models.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/api/src/nosolear/adapters/**"
+      - "apps/api/src/nosolear/domain/phones.py"
+      - "apps/api/src/nosolear/domain/phone_alignment.py"
+      - "apps/api/src/nosolear/domain/results/**"
+      - "apps/api/tests/local_models/**"
+      - "apps/api/pyproject.toml"
+      - "apps/api/uv.lock"
+      - ".github/workflows/local-models.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  local-models:
+    name: local-models (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+      - name: Install espeak-ng (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y espeak-ng
+      - name: Install espeak-ng (macOS)
+        if: runner.os == 'macOS'
+        run: brew install espeak-ng
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/huggingface/hub
+          key: hf-${{ runner.os }}-${{ hashFiles('apps/api/src/nosolear/adapters/model_specs.py') }}
+      - name: Sync the local extra (Linux)
+        if: runner.os == 'Linux'
+        run: uv sync --locked --extra local
+      - name: Sync the local and apple extras (macOS)
+        if: runner.os == 'macOS'
+        run: uv sync --locked --extra local --extra apple
+      - run: uv run pytest -m local_models -q
