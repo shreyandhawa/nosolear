@@ -130,3 +130,21 @@ def test_database_failure_deletes_stored_file() -> None:
             audio=setup.audio,
         )
     assert setup.audio.files == {}
+
+
+class _UndeletableAudio(FakeAudioStore):
+    def delete(self, path: str) -> None:
+        raise PermissionError("cannot remove")
+
+
+def test_failed_cleanup_does_not_hide_the_original_error() -> None:
+    audio = _UndeletableAudio()
+    setup = _Setup()
+    with pytest.raises(OperationalError):
+        upload_recording(
+            attempt_id="attempt-1",
+            upload=_upload(audio, make_wav(1.0)),
+            attempts=setup.attempts,
+            recordings=_FailingRecordings(),
+            audio=audio,
+        )
