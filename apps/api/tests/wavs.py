@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import struct
+import wave
+from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -40,3 +43,26 @@ def make_wav(seconds: float, rate: int = 16000, freq: float | None = 440.0) -> b
         t = np.arange(n) / rate
         samples = np.round(0.5 * 32767 * np.sin(2 * np.pi * freq * t)).astype("<i2")
     return raw_wav(rate=rate, pcm=samples.tobytes())
+
+
+@dataclass(frozen=True, slots=True)
+class WavInfo:
+    seconds: float
+    rate: int
+    channels: int
+
+
+def write_wav(
+    path: Path, seconds: float, *, rate: int = 16000, tone_hz: float | None = None
+) -> Path:
+    """Writes a synthetic WAV (silence unless `tone_hz` is given) and returns its path."""
+    path.write_bytes(make_wav(seconds, rate=rate, freq=tone_hz))
+    return path
+
+
+def wav_info(path: Path) -> WavInfo:
+    with wave.open(str(path), "rb") as reader:
+        rate = reader.getframerate()
+        return WavInfo(
+            seconds=reader.getnframes() / rate, rate=rate, channels=reader.getnchannels()
+        )

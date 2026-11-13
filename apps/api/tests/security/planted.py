@@ -32,6 +32,7 @@ from fakes import FakeStep
 from pydantic import ValidationError
 from sqlalchemy import Engine, text
 
+from nosolear.adapters.retry import retry_call
 from nosolear.api.app import create_app
 from nosolear.api.deps import Services
 from nosolear.app.run_job import run_job
@@ -40,7 +41,7 @@ from nosolear.budget.meter import Meter
 from nosolear.cli import main
 from nosolear.cli_client import ApiClient
 from nosolear.domain.budget import Caps, Provider, Unit
-from nosolear.domain.errors import CapExceeded
+from nosolear.domain.errors import CapExceeded, ProviderUnavailable, RetryableProviderError
 from nosolear.domain.jobs import JobKind, JobStatus
 from nosolear.domain.redaction import REDACTED
 from nosolear.logging_setup import install_secret_scrubbing
@@ -156,6 +157,22 @@ def assert_no_planted_key(*surfaces: object, where: str) -> None:
     form = find_leak(*surfaces)
     if form is not None:
         raise AssertionError(f"a planted key ({form} form) leaked through {where}")
+
+
+PROVIDER_BODY_MARKER = "provider-body-marker-7f3a"
+"""Stands in for a provider's error body. A raw adapter must never let one reach a message."""
+
+
+def assert_no_leak(
+    *, error: BaseException | None = None, logs: str = "", texts: Iterable[str] = ()
+) -> None:
+    """Fails if a planted key, or the provider-body marker, shows in any of the given text."""
+    surfaces: list[object] = [logs, list(texts)]
+    if error is not None:
+        surfaces += [str(error), repr(error), "".join(traceback.format_exception(error))]
+    assert_no_planted_key(*surfaces, where="an error, log or response text")
+    if any(PROVIDER_BODY_MARKER in text for surface in surfaces for text in _texts(surface)):
+        raise AssertionError("a provider response body leaked through an error, log or text")
 
 
 # ---- surfaces ------------------------------------------------------------------------------
@@ -644,3 +661,18 @@ def cli_upload_and_job_output(tmp: Path) -> tuple[str, str]:
         ]
     assert "No attempt has this id." in parts[0], "the ErrorOut message was not printed"
     return "nosolear upload and job stdout and stderr", "\n".join(parts)
+
+
+@leak_surface
+def retry_exhausted_error(tmp: Path) -> tuple[str, str]:
+    """What a caller sees once the retry wrapper gives up: the literal safe message only."""
+
+    def busy() -> None:
+        raise RetryableProviderError("Azure Speech is rate-limiting requests")
+
+    try:
+        retry_call(busy, sleep=lambda seconds: None)
+    except ProviderUnavailable as exc:
+        rendered = str(exc) + repr(exc) + "".join(traceback.format_exception(exc))
+        return "retry exhaustion error and traceback", rendered
+    raise AssertionError("retry_call did not give up after its attempts")

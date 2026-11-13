@@ -78,3 +78,14 @@ class RequestNotSent(ProviderUnavailable):
     """Raised by a raw adapter that failed before any request left the machine."""
 
     default_message: ClassVar[str] = "The request was not sent to the provider."
+
+
+class RetryableProviderError(ProviderUnavailable):
+    """A provider failure worth retrying: 429, 5xx, 529, connection errors and timeouts.
+
+    The retry wrapper turns it into a plain `ProviderUnavailable` once its attempts run out.
+    """
+
+
+class MalformedProviderResponse(ProviderUnavailable):
+    """A provider answered, but the answer does not match the schema we asked for."""
