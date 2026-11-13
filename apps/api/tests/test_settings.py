@@ -48,6 +48,24 @@ def test_absolute_value_is_kept(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     assert _settings().data_dir == tmp_path
 
 
+def test_tilde_expands_to_the_home_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("NOSOLEAR_DATA_DIR", "~/x")
+    assert _settings().data_dir == tmp_path / "x"
+    monkeypatch.setenv("NOSOLEAR_DATA_DIR", "~")
+    assert _settings().data_dir == tmp_path
+
+
+def test_tilde_path_passed_directly_expands(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("NOSOLEAR_DATA_DIR", raising=False)
+    assert make_settings(data_dir=Path("~/x")).data_dir == tmp_path / "x"
+
+
 def test_empty_value_in_env_file_counts_as_unset(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -100,12 +100,12 @@ def test_log_surfaces_fail_when_scrubbing_is_disabled(name, tmp_path, monkeypatc
     import security.planted as planted
 
     monkeypatch.setattr(planted, "install_secret_scrubbing", lambda secrets: None)
+    # Without scrubbing the captures lack the redaction marker, so stop the capture's own
+    # non-vacuity check from tripping first: the leak assertion itself must be what fails.
+    monkeypatch.setattr(planted, "_marked", lambda text, *needles: text)
     surface = next(fn for fn in LEAK_SURFACES if fn.__name__ == name)
-    try:
-        where, text = surface(tmp_path)
-    except AssertionError:
-        return  # the capture's own non-vacuity check (no redaction marker) already tripped
-    with pytest.raises(AssertionError):
+    where, text = surface(tmp_path)
+    with pytest.raises(AssertionError, match=r"a planted key .* leaked through"):
         assert_no_planted_key(text, where=where)
 
 

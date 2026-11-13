@@ -68,3 +68,26 @@ def test_security_section_states_the_dev_server_rules() -> None:
 
 def test_readme_no_longer_describes_a_nepali_only_app() -> None:
     assert "native nepali speaker" not in README.lower()
+
+
+def test_readme_installs_the_pinned_pnpm_without_corepack() -> None:
+    assert "corepack enable" not in README
+    pinned = re.search(
+        r'"packageManager":\s*"pnpm@([^"]+)"',
+        (REPO_ROOT / "apps/web/package.json").read_text(),
+    )
+    assert pinned
+    versions = re.findall(r"npm install -g pnpm@(\d+\.\d+\.\d+)", README)
+    assert versions == [pinned.group(1)]
+
+
+def test_readme_gives_the_fnm_shell_hook_before_use() -> None:
+    hook = 'eval "$(fnm env --use-on-cd)"'
+    assert hook in README
+    assert README.index(hook) < README.index("fnm use --install-if-missing")
+
+
+def test_setup_target_turns_the_hooks_on_first() -> None:
+    lines = (REPO_ROOT / "Makefile").read_text().splitlines()
+    body = lines[lines.index("setup:") + 1 :]
+    assert body[0].strip() == "git config core.hooksPath scripts/git-hooks"

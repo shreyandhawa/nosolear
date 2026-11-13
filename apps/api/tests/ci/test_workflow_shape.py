@@ -43,5 +43,24 @@ def test_audit_matrix_runs_pip_audit_everywhere_and_pnpm_on_ubuntu_only() -> Non
     pnpm_audit = matrix.split("pnpm audit", 1)[1]
     assert pnpm_audit.startswith(" --audit-level=moderate")
     before = matrix.split("pnpm audit", 1)[0]
-    assert "if: runner.os == 'Linux'" in before.split("pip-audit", 1)[1]
+    assert "if: ${{ !cancelled() && runner.os == 'Linux' }}" in before.split("pip-audit", 1)[1]
     assert "pnpm audit --audit-level=high" not in CI
+
+
+def _steps(job: str) -> list[str]:
+    return [s for s in re.split(r"^      - ", job, flags=re.MULTILINE)[1:]]
+
+
+def test_pip_audit_step_has_no_condition_so_it_runs_on_both_legs() -> None:
+    (step,) = [s for s in _steps(_job("audit-matrix")) if "pip-audit" in s]
+    assert not re.search(r"^\s+if:", step, re.MULTILINE)
+
+
+def test_pnpm_steps_run_even_if_pip_audit_failed_but_only_on_linux() -> None:
+    condition = "if: ${{ !cancelled() && runner.os == 'Linux' }}"
+    steps = _steps(_job("audit-matrix"))
+    pnpm_steps = [s for s in steps if "pnpm" in s or "setup-node" in s]
+    assert any("pnpm audit" in s for s in pnpm_steps)
+    assert any("pnpm install" in s for s in pnpm_steps)
+    for step in pnpm_steps:
+        assert condition in step, step

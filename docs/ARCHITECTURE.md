@@ -793,7 +793,7 @@ Azure capabilities  ready          n-best yes, prosody yes (probed 2026-11-12)
 Anthropic           ready          key set, model claude-opus-5-5
 Transcriber         ready          auto → mlx_whisper (apple extra), 0.12× real time
 Phone probe         not installed  run `uv sync --extra local`, then install espeak-ng
-Usage               ready          Azure 0.4 of 4.5 h, TTS 12k of 450k chars, Claude 3k of 100k tokens today
+Usage               ready          Azure 0.4 of 4.5 h and TTS 12k of 450k chars this month, Claude 3k of 100k tokens today
 ```
 
 ---

@@ -122,7 +122,9 @@ class Settings(BaseSettings):
     @field_validator("data_dir")
     @classmethod
     def _resolve_against_repo_root(cls, value: Path) -> Path:
-        """A relative path means relative to the repo, so every process agrees on one database."""
+        """`~` means the home directory; any other relative path means relative to the repo,
+        so every process agrees on one database."""
+        value = value.expanduser()
         return value if value.is_absolute() else REPO_ROOT / value
 
     @field_validator("host")

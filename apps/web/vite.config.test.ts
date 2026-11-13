@@ -17,6 +17,12 @@ describe("vite config", () => {
     expect(server.allowedHosts).not.toBe(true);
   });
 
+  it("keeps the loopback-only plugin installed", () => {
+    const plugins = (config.plugins ?? []) as unknown[];
+    const names = plugins.flat(Infinity).map((plugin) => (plugin as { name?: string } | null)?.name);
+    expect(names).toContain("nosolear:loopback-only");
+  });
+
   it("pins vite preview to localhost too, since it inherits the proxy", () => {
     expect(config.preview!.host).toBe("localhost");
     expect(config.preview!.strictPort).toBe(true);
