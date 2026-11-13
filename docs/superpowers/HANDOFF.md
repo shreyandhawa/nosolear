@@ -330,6 +330,7 @@ Every Phase 0d adapter has contract tests only, unless noted. Live checks need t
 | `azure_stt` | Detailed output, word timings, raw profanity | Contract tests |
 | Free-talk scoring decision (§4, §18) | The unscripted versus transcribe-then-score comparison | None; stays open |
 | `claude_coach` | Structured output on the user's model; real usage numbers; that the API accepts `anthropic==2.8.0`'s `Authorization: Bearer` for an API key; that clearing the SDK's private `_custom_headers` still holds on SDK upgrades | Contract tests over `MockTransport` |
+| `claude_coach` explain (Phase 1 feedback) | That the explanation schema (`message`, `model_text`) is accepted on the user's model and the replies stay within 600 and 300 characters; the real cost of the three calls in a daily session. `tests/live/test_feedback_explain_live.py` covers it and has never run | Contract tests and the feedback fakes (`FakeCoach`) |
 | `AzureCapabilityProbe`, `doctor --probe` | The probe against the user's resource | Fakes only |
 | `faster_whisper`, `mlx_whisper` (macOS), `wav2vec2_espeak` | Accuracy on TTS audio | CI `local-models` on espeak-ng audio, green on Ubuntu and macOS (PR #40) |
 | `crisper_whisper` | Everything: gated download, word timings, speed | Contract tests only; never in CI. Opt-in (`NOSOLEAR_TRANSCRIBER=crisper_whisper`, licence accepted on Hugging Face) |
