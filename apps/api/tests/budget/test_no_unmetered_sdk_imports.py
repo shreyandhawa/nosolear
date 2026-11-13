@@ -29,6 +29,9 @@ RAW_ADAPTER_MODULES: frozenset[str] = frozenset(
         # The local-model layer (ARCHITECTURE.md section 15): huggingface_hub, torch device checks
         "adapters/hf_models.py",
         "adapters/local_env.py",
+        "adapters/faster_whisper.py",
+        "adapters/mlx_whisper.py",
+        "adapters/crisper_whisper.py",
     }
 )
 EAGER_OK = frozenset({"anthropic"})

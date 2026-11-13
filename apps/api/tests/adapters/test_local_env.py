@@ -65,3 +65,7 @@ def test_espeak_ng_path_is_found_on_the_path(monkeypatch, found):
     monkeypatch.setattr(local_env.shutil, "which", lambda name: found)
     expected = None if found is None else Path(found)
     assert espeak_ng_path() == expected
+
+
+def test_installed_version_of_a_missing_distribution_is_a_plain_phrase():
+    assert local_env.installed_version("nosolear-no-such-distribution") == "not installed"

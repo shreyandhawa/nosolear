@@ -4,6 +4,7 @@ Nothing here imports a heavy library. Installs are checked with `importlib.util.
 torch is imported only when a device is asked for, so the base install never loads it.
 """
 
+import importlib.metadata
 import importlib.util
 import platform
 import shutil
@@ -35,6 +36,14 @@ def _system() -> tuple[str, str]:
 
 def _installed(module: str) -> bool:
     return importlib.util.find_spec(module) is not None
+
+
+def installed_version(distribution: str) -> str:
+    """The installed version of a distribution, read from its metadata (nothing is imported)."""
+    try:
+        return importlib.metadata.version(distribution)
+    except importlib.metadata.PackageNotFoundError:
+        return "not installed"
 
 
 def current_platform() -> Platform:
