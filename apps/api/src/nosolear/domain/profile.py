@@ -37,6 +37,7 @@ class ProfileEntry:
     status: Status
     last_seen_at: datetime
     priority: float
+    provisional: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +104,7 @@ def _build_entry(
         status=status,
         last_seen_at=observations[-1].observed_at,
         priority=est.p_hat * defn.impact,
+        provisional=any(o.provisional for o in observations),
     )
 
 

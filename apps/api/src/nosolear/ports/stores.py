@@ -9,7 +9,7 @@ from nosolear.domain.speech import ProviderCapabilities, SynthesizedClip
 
 
 class ObservationReader(Protocol):
-    def all(self) -> list[Observation]: ...
+    def current(self) -> list[Observation]: ...
 
 
 class ProfileWriter(Protocol):

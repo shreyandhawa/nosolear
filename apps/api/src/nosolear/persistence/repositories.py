@@ -14,10 +14,11 @@ from sqlalchemy.exc import IntegrityError
 from nosolear.domain.analyses import AnalysisKind, NewAnalysis, StoredAnalysis
 from nosolear.domain.estimates import BetaState, KeyEstimate
 from nosolear.domain.jobs import Job, JobKind, JobStatus, initial_steps
-from nosolear.domain.observations import Context, Observation, Outcome
+from nosolear.domain.observations import Observation
 from nosolear.domain.profile import Profile, ProfileEntry
+from nosolear.domain.scoring import current_observations
 from nosolear.domain.status import Status
-from nosolear.domain.taxonomy import Detector, Taxonomy
+from nosolear.domain.taxonomy import Taxonomy
 from nosolear.persistence.job_queue import new_job_row
 from nosolear.persistence.models import (
     analyses,
@@ -29,6 +30,12 @@ from nosolear.persistence.models import (
     profile_snapshots,
     recordings,
     sessions,
+)
+from nosolear.persistence.scoring_repository import (
+    ExtractionRepository,
+    observation_from_row,
+    observation_rows,
+    scoring_config_order,
 )
 from nosolear.ports.audio import (
     AttemptInfo,
@@ -50,42 +57,22 @@ class ObservationRepository:
     def add_many(self, items: Sequence[Observation]) -> None:
         if not items:
             return
-        created_at = _now()
-        rows = [
-            {
-                "attempt_id": o.attempt_id,
-                "error_key": o.error_key,
-                "outcome": o.outcome.value,
-                "weight": o.weight,
-                "detector": o.detector.value,
-                "context": o.context.value,
-                "observed_at": o.observed_at,
-                "evidence_json": json.dumps(dict(o.evidence)),
-                "taxonomy_version": o.taxonomy_version,
-                "created_at": created_at,
-            }
-            for o in items
-        ]
+        rows = observation_rows(items, _now())
         with self._engine.begin() as conn:
             conn.execute(insert(observations), rows)
 
     def all(self) -> list[Observation]:
         stmt = select(observations).order_by(observations.c.observed_at, observations.c.id)
         with self._engine.connect() as conn:
-            return [
-                Observation(
-                    error_key=r.error_key,
-                    outcome=Outcome(r.outcome),
-                    weight=r.weight,
-                    detector=Detector(r.detector),
-                    context=Context(r.context),
-                    observed_at=r.observed_at,
-                    taxonomy_version=r.taxonomy_version,
-                    attempt_id=r.attempt_id,
-                    evidence=json.loads(r.evidence_json),
-                )
-                for r in conn.execute(stmt)
-            ]
+            return [observation_from_row(r) for r in conn.execute(stmt)]
+
+    def current(self) -> list[Observation]:
+        """The observations the profile reads: per attempt, only the newest config's."""
+        return current_observations(
+            self.all(),
+            scored=ExtractionRepository(self._engine).scored(),
+            config_order=scoring_config_order(self._engine),
+        )
 
 
 def _entry_row(profile: Profile, e: ProfileEntry) -> dict[str, Any]:
@@ -101,6 +88,7 @@ def _entry_row(profile: Profile, e: ProfileEntry) -> dict[str, Any]:
         "status": e.status.value,
         "last_seen_at": e.last_seen_at,
         "priority": e.priority,
+        "provisional": e.provisional,
         "as_of": profile.as_of,
         "algo_version": profile.algo_version,
         "taxonomy_version": profile.taxonomy_version,
@@ -109,7 +97,18 @@ def _entry_row(profile: Profile, e: ProfileEntry) -> dict[str, Any]:
 
 
 def _snapshot_entry(row: dict[str, Any]) -> dict[str, Any]:
-    stored = ("error_key", "a", "b", "p_hat", "ci_low", "ci_high", "n_eff", "status", "priority")
+    stored = (
+        "error_key",
+        "a",
+        "b",
+        "p_hat",
+        "ci_low",
+        "ci_high",
+        "n_eff",
+        "status",
+        "priority",
+        "provisional",
+    )
     return {
         **{k: row[k] for k in stored},
         "updated_at": format_utc(row["updated_at"]),
@@ -167,6 +166,7 @@ class ProfileRepository:
                 status=Status(r.status),
                 last_seen_at=r.last_seen_at,
                 priority=r.priority,
+                provisional=r.provisional,
             )
             for r in rows
         )

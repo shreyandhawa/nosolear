@@ -23,6 +23,7 @@ const PROFILE_FIXTURE: components["schemas"]["ProfileOut"] = {
       n_eff: 31.6,
       priority: 0.75,
       last_seen_at: "2026-11-10T12:00:00Z",
+      provisional: false,
     },
     {
       error_key: "sound.sub.th.t",
@@ -37,6 +38,7 @@ const PROFILE_FIXTURE: components["schemas"]["ProfileOut"] = {
       n_eff: 3.2,
       priority: 0.2,
       last_seen_at: "2026-11-09T12:00:00Z",
+      provisional: false,
     },
   ],
 };

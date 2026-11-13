@@ -12,6 +12,7 @@ from sqlalchemy import Connection, Engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 
 from nosolear.domain.observations import Context, Outcome
+from nosolear.domain.scoring import V0_CONFIG, canonical_json, rules_to_json
 from nosolear.domain.status import Status
 from nosolear.domain.taxonomy import Detector
 from nosolear.persistence.db import MIGRATIONS_DIR, create_engine_for, upgrade_to_head
@@ -76,6 +77,21 @@ def _observation(conn: Connection, **overrides: str) -> None:
     )
 
 
+def _scored_observation(conn: Connection, **overrides: str) -> None:
+    """An observation at the head schema, which needs its scoring config and provisional flag."""
+    values = {"outcome": "miss", "detector": "coach", "context": "scripted"} | overrides
+    conn.execute(
+        text(
+            "INSERT INTO observations (error_key, outcome, weight, detector, context, "
+            "observed_at, evidence_json, taxonomy_version, created_at, scoring_config_id, "
+            "provisional) "
+            "VALUES ('k', :outcome, 1.0, :detector, :context, "
+            f"'{TS}', '{{}}', 1, '{TS}', 'v0', 0)"
+        ),
+        values,
+    )
+
+
 def _entry(conn: Connection, status: str) -> None:
     conn.execute(
         text(
@@ -110,11 +126,11 @@ def test_observation_enums_accept_members_and_reject_others(
     conn: Connection, column: str, enum: type[Outcome | Detector | Context]
 ) -> None:
     for member in enum:
-        _observation(conn, **{column: member.value})
+        _scored_observation(conn, **{column: member.value})
     with pytest.raises(IntegrityError):
-        _observation(conn, **{column: "bogus"})
+        _scored_observation(conn, **{column: "bogus"})
     with pytest.raises(IntegrityError):
-        _observation(conn, **{column: next(iter(enum)).value.upper()})
+        _scored_observation(conn, **{column: next(iter(enum)).value.upper()})
 
 
 def test_profile_status_accepts_members_and_rejects_others(conn: Connection) -> None:
@@ -306,6 +322,20 @@ def test_analyses_exactly_one_key_shape(conn: Connection) -> None:
         _analysis(conn)  # duplicate (attempt_id, kind)
     with pytest.raises(IntegrityError):
         _analysis(conn, kind="bogus")
+    conn.execute(
+        text(
+            "INSERT INTO tts_cache (hash, text, voice, rate, path, word_timings_json, created_at) "
+            f"VALUES ('h', 't', 'v', 100, 'tts/h.wav', '[]', '{TS}')"
+        )
+    )
+    for run_id in ("c1", "c2"):
+        conn.execute(
+            text(
+                "INSERT INTO calibration_runs (id, session_id, status, scoring_config_id, "
+                f"started_at, completed_at) VALUES (:id, NULL, 'done', NULL, '{TS}', NULL)"
+            ),
+            {"id": run_id},
+        )
     _analysis(conn, attempt_id=None, tts_hash="h", calibration_run_id="c1")
     _analysis(conn, attempt_id=None, tts_hash="h", calibration_run_id="c2")
     with pytest.raises(IntegrityError):
@@ -324,4 +354,165 @@ def test_migration_downgrade_then_upgrade(tmp_path: Path) -> None:
     assert not new_tables & set(inspect(engine).get_table_names())
     upgrade_to_head(engine)
     assert new_tables <= set(inspect(engine).get_table_names())
+    engine.dispose()
+
+
+def _seed(conn: Connection) -> None:
+    """The rows the scoring-table tests need: attempt a, calibration run r1, TTS clip h1."""
+    _attempt_row(conn)
+    conn.execute(
+        text(
+            "INSERT INTO calibration_runs (id, session_id, status, scoring_config_id, started_at, "
+            f"completed_at) VALUES ('r1', NULL, 'running', NULL, '{TS}', NULL)"
+        )
+    )
+    conn.execute(
+        text(
+            "INSERT INTO tts_cache (hash, text, voice, rate, path, word_timings_json, created_at) "
+            f"VALUES ('h1', 't', 'v', 100, 'tts/h1.wav', '[]', '{TS}')"
+        )
+    )
+
+
+def test_v0_row_matches_code(db_engine: Engine) -> None:
+    with db_engine.connect() as c:
+        row = c.execute(
+            text("SELECT kind, calibration_run_id, rules_json FROM scoring_configs WHERE id='v0'")
+        ).one()
+    assert tuple(row) == ("v0", None, canonical_json(rules_to_json(V0_CONFIG)))
+
+
+# Each statement inserts one row whose tested column is `:v`.
+ENUM_INSERTS = {
+    "sessions": f"INSERT INTO sessions (id, kind, protocol_version, started_at) "
+    f"VALUES ('s2', :v, 1, '{TS}')",
+    "attempts": f"INSERT INTO attempts (id, session_id, step, scripted, created_at) "
+    f"VALUES ('a2', 's', :v, 1, '{TS}')",
+    "calibration_runs": f"INSERT INTO calibration_runs (id, session_id, status, "
+    f"scoring_config_id, started_at, completed_at) VALUES ('r2', NULL, :v, NULL, '{TS}', NULL)",
+    "calibration_trials": "INSERT INTO calibration_trials (run_id, error_key, detector, kind, "
+    "attempt_id, tts_hash, flagged, evidence_json) "
+    "VALUES ('r1', 'k', 'azure_pa', :v, 'a', NULL, NULL, '{}')",
+    "content_items": "INSERT INTO content_items (id, kind, text, target_keys, source, retired_at) "
+    "VALUES ('c2', :v, 't', '[]', 'seed', NULL)",
+    "skill_scores": "INSERT INTO skill_scores (session_id, skill, score, components_json) "
+    "VALUES ('s', :v, 50, '{}')",
+    "extractions": f"INSERT INTO extractions (attempt_id, scoring_config_id, detector, "
+    f"observation_count, created_at) VALUES ('a', 'v0', :v, 0, '{TS}')",
+    "jobs": f"INSERT INTO jobs (id, kind, attempt_id, status, step, progress, steps_json, tries, "
+    f"created_at, updated_at) "
+    f"VALUES ('j2', :v, NULL, 'queued', NULL, 0.0, '[]', 0, '{TS}', '{TS}')",
+}
+
+
+@pytest.mark.parametrize(
+    "table, good, bad",
+    [
+        ("sessions", "calibration", "calib"),
+        ("attempts", "calibration", "cal"),
+        ("calibration_runs", "skipped", "aborted"),
+        ("calibration_trials", "control", "ctrl"),
+        ("content_items", "calibration_word", "word"),
+        ("skill_scores", "articulate", "speaking"),
+        ("extractions", "azure_pa", "whisper"),
+        ("jobs", "calibrate", "tune"),
+    ],
+)
+def test_new_enum_checks(conn: Connection, table: str, good: str, bad: str) -> None:
+    _seed(conn)
+    sql = ENUM_INSERTS[table]
+    # The bad value goes first: a CHECK failure, not a key collision, is what it must raise.
+    with pytest.raises(IntegrityError):
+        conn.execute(text(sql), {"v": bad})
+    conn.execute(text(sql), {"v": good})
+
+
+def test_trial_needs_exactly_one_subject(conn: Connection) -> None:
+    _seed(conn)
+    sql = (
+        "INSERT INTO calibration_trials (run_id, error_key, detector, kind, attempt_id, "
+        "tts_hash, flagged, evidence_json) "
+        "VALUES ('r1', 'k', 'azure_pa', 'control', :a, :h, NULL, '{}')"
+    )
+    with pytest.raises(IntegrityError):
+        conn.execute(text(sql), {"a": "a", "h": "h1"})
+    with pytest.raises(IntegrityError):
+        conn.execute(text(sql), {"a": None, "h": None})
+
+
+def test_error_trial_needs_an_attempt(conn: Connection) -> None:
+    _seed(conn)
+    with pytest.raises(IntegrityError):
+        conn.execute(
+            text(
+                "INSERT INTO calibration_trials (run_id, error_key, detector, kind, attempt_id, "
+                "tts_hash, flagged, evidence_json) "
+                "VALUES ('r1', 'k', 'azure_pa', 'error', NULL, 'h1', NULL, '{}')"
+            )
+        )
+
+
+def test_analysis_control_row_foreign_keys(conn: Connection) -> None:
+    _seed(conn)
+    sql = (
+        "INSERT INTO analyses (attempt_id, tts_hash, calibration_run_id, kind, provider, "
+        "provider_version, adapter, adapter_version, raw_json, created_at) "
+        f"VALUES (NULL, :h, :r, 'pronunciation', 'azure', 'v', 'ad', 1, '{{}}', '{TS}')"
+    )
+    with pytest.raises(IntegrityError):
+        conn.execute(text(sql), {"h": "nope", "r": "r1"})
+    with pytest.raises(IntegrityError):
+        conn.execute(text(sql), {"h": "h1", "r": "nope"})
+    conn.execute(text(sql), {"h": "h1", "r": "r1"})
+
+
+@pytest.mark.parametrize("score, ok", [(0, True), (100, True), (100.5, False), (-1, False)])
+def test_skill_score_range(conn: Connection, score: float, ok: bool) -> None:
+    sql = (
+        "INSERT INTO skill_scores (session_id, skill, score, components_json) "
+        f"VALUES ('s', 'sounds', {score}, '{{}}')"
+    )
+    if ok:
+        conn.execute(text(sql))
+    else:
+        with pytest.raises(IntegrityError):
+            conn.execute(text(sql))
+
+
+def test_migration_0007_backfills_existing_observations(tmp_path: Path) -> None:
+    engine = create_engine_for(f"sqlite:///{tmp_path / 'm.sqlite'}")
+    upgrade_to_head(engine, revision="0006")
+    with engine.begin() as c:
+        c.execute(
+            text(
+                "INSERT INTO sessions (id, kind, protocol_version, started_at) "
+                f"VALUES ('s', 'daily', 1, '{TS}')"
+            )
+        )
+        _attempt_row(c, "a")
+        for key, detector in [("sound.sub.v.w", "azure_pa"), ("fluency.filler", "asr_metrics")]:
+            c.execute(
+                text(
+                    "INSERT INTO observations (attempt_id, error_key, outcome, weight, detector, "
+                    "context, observed_at, evidence_json, taxonomy_version, created_at) "
+                    f"VALUES ('a', :k, 'miss', 1.0, :d, 'scripted', '{TS}', '{{}}', 1, '{TS}')"
+                ),
+                {"k": key, "d": detector},
+            )
+    upgrade_to_head(engine)
+    with engine.connect() as c:
+        rows = c.execute(
+            text(
+                "SELECT error_key, scoring_config_id, provisional FROM observations "
+                "ORDER BY error_key"
+            )
+        ).all()
+        assert [tuple(r) for r in rows] == [
+            ("fluency.filler", "v0", 0),
+            ("sound.sub.v.w", "v0", 1),
+        ]
+        extractions = c.execute(
+            text("SELECT attempt_id, scoring_config_id FROM extractions ORDER BY detector")
+        ).all()
+        assert [tuple(r) for r in extractions] == [("a", "v0"), ("a", "v0")]
     engine.dispose()

@@ -371,7 +371,7 @@ After each analysis, the **domain code** (not the LLM) picks one item per skill:
 - **Scoring configs** decide which detector scores which key, and with which thresholds:
   - **`v0`** is the conservative default every install starts with. Azure must show a clear n-best margin before a sound counts as substituted; the weak-sound threshold is stricter; the phone probe is drill-only. Sound and prosody observations made under `v0` are marked `provisional`. Fluency and coach-judged keys don't depend on calibration and are never provisional.
   - **Calibrated configs** are written by each calibration run (§9.2). They enable a detector for a key only where it passed the calibration rule. Keys the run didn't cover keep their `v0` rules and stay provisional.
-  - `v0` is defined in code and stored as the first `scoring_configs` row, so every observation points at a row. Phase 0e sets its margins and thresholds.
+  - `v0` is defined in code and stored as the first `scoring_configs` row, so every observation points at a row. Its values, decided 2026-11-12: an n-best margin of 30, a weak-sound accuracy below 40, a slow start of 3000 ms and a long pause of 2000 ms. Calibrated configs use an n-best margin of 15 and a weak-sound accuracy below 60, with the same timing thresholds.
 - **Re-scoring** is a job that re-runs extraction over every stored raw result under the newest scoring config, then rebuilds the profile. It makes no provider calls and spends no quota. New observations are appended with the new `scoring_config_id`; for each attempt, the profile reads only the observations from the newest config that has scored it.
 - **Provisional flags carry through:** a profile entry is provisional if any observation it currently uses is provisional, and the baseline report shows the flag.
 - **A `rebuild-profile` command** replays every observation through the current taxonomy, algorithm and pack.
@@ -883,12 +883,12 @@ Decided:
 4. ~~Licence~~ **Decided 2026-11-12: MIT.**
 5. ~~Network~~ **Decided 2026-11-12: localhost only.** Token mode is designed now and built in Phase 6, before phone access.
 6. ~~Platforms~~ **Decided 2026-11-12: macOS (Apple Silicon) and Linux (x86-64, optional CUDA)** are first-class and tested in CI; Windows via WSL2.
+7. ~~`v0` margins and thresholds~~ **Decided 2026-11-12: the values in §6.8.** Prosody keys stay provisional until a later phase calibrates them (§9.2).
 
 Accepted with those decisions: the re-plan covers the old Phase 0 build plus the Phase 1 daily-loop backend; the target stays General American with the locale as a setting; calibration keeps the old S2 method; UI work waits for Phase 2; the spike branch is kept for salvage.
 
 Still open, each with the phase that decides it:
 - Free-talk scoring: unscripted mode or transcribe-then-score (Phase 0d, §4).
-- `v0` margins and thresholds (Phase 0e, §6.8).
 - A prosody calibration method; until a later phase adds one, prosody keys stay provisional (§9.2).
 
 ---

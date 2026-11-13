@@ -7,7 +7,7 @@ from Settings.
 from alembic import context
 from sqlalchemy import Connection
 
-from nosolear.persistence.db import create_engine_for
+from nosolear.persistence.db import create_engine_for, foreign_keys_off
 from nosolear.persistence.models import metadata
 from nosolear.settings import Settings
 
@@ -27,6 +27,6 @@ if supplied is not None:
     _run(supplied)
 else:
     engine = create_engine_for(Settings().database_url)
-    with engine.begin() as connection:
+    with engine.connect() as connection, foreign_keys_off(connection), connection.begin():
         _run(connection)
     engine.dispose()

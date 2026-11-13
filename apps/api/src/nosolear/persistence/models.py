@@ -15,14 +15,18 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    false,
     text,
 )
 from sqlalchemy import Column as C
 from sqlalchemy.types import TypeDecorator
 
+from nosolear.domain.attempts import AttemptStep, SessionKind
+from nosolear.domain.jobs import JobKind
 from nosolear.domain.observations import Context, Outcome
+from nosolear.domain.scoring import ConfigKind
 from nosolear.domain.status import Status
-from nosolear.domain.taxonomy import Detector
+from nosolear.domain.taxonomy import Detector, Skill
 
 
 def format_utc(value: datetime) -> str:
@@ -53,15 +57,16 @@ class UTCDateTime(TypeDecorator[datetime]):
 metadata = MetaData()
 
 # ARCHITECTURE.md section 7 (`attempts.step`).
-ATTEMPT_STEPS = (
-    "speak",
-    "read_aloud",
-    "word_list",
-    "quick_answer",
-    "articulate",
-    "retell",
-    "drill",
-    "shadow",
+ATTEMPT_STEPS = tuple(AttemptStep)
+# ARCHITECTURE.md section 7 (`content_items.kind`). A plain tuple until the content types exist.
+CONTENT_KINDS = (
+    "prompt",
+    "passage_sentence",
+    "minimal_pair",
+    "drill_sentence",
+    "starter",
+    "quick_question",
+    "calibration_word",
 )
 
 
@@ -77,9 +82,7 @@ sessions = Table(
     C("protocol_version", Integer, nullable=False),
     C("started_at", UTCDateTime, nullable=False),
     C("completed_at", UTCDateTime, nullable=True),
-    CheckConstraint(
-        "kind IN ('baseline', 'daily', 'retest', 'conversation')", name="ck_sessions_kind"
-    ),
+    CheckConstraint(_in_list("kind", SessionKind), name="ck_sessions_kind"),
 )
 
 attempts = Table(
@@ -91,6 +94,7 @@ attempts = Table(
     C("reference_text", Text, nullable=True),
     C("scripted", Boolean, nullable=False),
     C("created_at", UTCDateTime, nullable=False),
+    C("content_item_id", String, ForeignKey("content_items.id"), nullable=True),
     CheckConstraint(_in_list("step", ATTEMPT_STEPS), name="ck_attempts_step"),
 )
 
@@ -108,6 +112,8 @@ observations = Table(
     C("evidence_json", Text, nullable=False),
     C("taxonomy_version", Integer, nullable=False),
     C("created_at", UTCDateTime, nullable=False),
+    C("scoring_config_id", String, ForeignKey("scoring_configs.id"), nullable=False),
+    C("provisional", Boolean, nullable=False),
     CheckConstraint("weight > 0 AND weight <= 1", name="ck_observations_weight"),
     CheckConstraint(_in_list("outcome", Outcome), name="ck_observations_outcome"),
     CheckConstraint(_in_list("detector", Detector), name="ck_observations_detector"),
@@ -132,6 +138,7 @@ profile_entries = Table(
     C("algo_version", Integer, nullable=False),
     C("taxonomy_version", Integer, nullable=False),
     C("pack_id", String, nullable=False),
+    C("provisional", Boolean, nullable=False, server_default=false()),
     CheckConstraint(_in_list("status", Status), name="ck_profile_entries_status"),
 )
 
@@ -180,7 +187,7 @@ jobs = Table(
     C("tries", Integer, nullable=False),
     C("created_at", UTCDateTime, nullable=False),
     C("updated_at", UTCDateTime, nullable=False),
-    CheckConstraint("kind IN ('analyze', 'rescore')", name="ck_jobs_kind"),
+    CheckConstraint(_in_list("kind", JobKind), name="ck_jobs_kind"),
     CheckConstraint("status IN ('queued', 'running', 'done', 'failed')", name="ck_jobs_status"),
     CheckConstraint("progress BETWEEN 0 AND 1", name="ck_jobs_progress"),
     CheckConstraint("tries >= 0", name="ck_jobs_tries"),
@@ -223,7 +230,6 @@ tts_cache = Table(
     CheckConstraint("path = 'tts/' || hash || '.wav'", name="ck_tts_cache_path"),
 )
 
-# `tts_hash` and `calibration_run_id` get their foreign keys in 0d/0e, once those tables exist.
 _ANALYSES_ATTEMPT_KEY = "attempt_id IS NOT NULL"
 _ANALYSES_TTS_KEY = "attempt_id IS NULL"
 
@@ -232,8 +238,8 @@ analyses = Table(
     metadata,
     C("id", Integer, primary_key=True, autoincrement=True),
     C("attempt_id", String, ForeignKey("attempts.id"), nullable=True),
-    C("tts_hash", String, nullable=True),
-    C("calibration_run_id", String, nullable=True),
+    C("tts_hash", String, ForeignKey("tts_cache.hash"), nullable=True),
+    C("calibration_run_id", String, ForeignKey("calibration_runs.id"), nullable=True),
     C("kind", String, nullable=False),
     C("provider", String, nullable=False),
     C("provider_version", String, nullable=False),
@@ -280,4 +286,116 @@ provider_capabilities = Table(
     C("locale", String, nullable=True),
     C("capabilities_json", Text, nullable=False),
     C("probed_at", UTCDateTime, nullable=False),
+)
+
+
+# ARCHITECTURE.md section 7 (Phase 0e). A scoring config is `v0` (the first row) or a calibrated
+# config written by a calibration run; `v0` has no run.
+scoring_configs = Table(
+    "scoring_configs",
+    metadata,
+    C("id", String, primary_key=True),
+    C("kind", String, nullable=False),
+    C("calibration_run_id", String, ForeignKey("calibration_runs.id"), nullable=True),
+    C("rules_json", Text, nullable=False),
+    C("capabilities_json", Text, nullable=False),
+    C("created_at", UTCDateTime, nullable=False),
+    CheckConstraint(_in_list("kind", ConfigKind), name="ck_scoring_configs_kind"),
+    CheckConstraint("(kind = 'v0') = (calibration_run_id IS NULL)", name="ck_scoring_configs_run"),
+)
+
+calibration_runs = Table(
+    "calibration_runs",
+    metadata,
+    C("id", String, primary_key=True),
+    C("session_id", String, ForeignKey("sessions.id"), nullable=True),
+    C("status", String, nullable=False),
+    C(
+        "scoring_config_id",
+        String,
+        ForeignKey(
+            "scoring_configs.id", use_alter=True, name="fk_calibration_runs_scoring_config_id"
+        ),
+        nullable=True,
+    ),
+    C("started_at", UTCDateTime, nullable=False),
+    C("completed_at", UTCDateTime, nullable=True),
+    CheckConstraint("status IN ('running', 'done', 'skipped')", name="ck_calibration_runs_status"),
+)
+
+calibration_trials = Table(
+    "calibration_trials",
+    metadata,
+    C("id", Integer, primary_key=True, autoincrement=True),
+    C("run_id", String, ForeignKey("calibration_runs.id"), nullable=False),
+    C("error_key", String, nullable=False),
+    C("detector", String, nullable=False),
+    C("kind", String, nullable=False),
+    C("attempt_id", String, ForeignKey("attempts.id"), nullable=True),
+    C("tts_hash", String, ForeignKey("tts_cache.hash"), nullable=True),
+    C("flagged", Boolean, nullable=True),
+    C("evidence_json", Text, nullable=False),
+    CheckConstraint("kind IN ('error', 'control')", name="ck_calibration_trials_kind"),
+    CheckConstraint(_in_list("detector", Detector), name="ck_calibration_trials_detector"),
+    CheckConstraint(
+        "(attempt_id IS NULL) <> (tts_hash IS NULL)", name="ck_calibration_trials_subject"
+    ),
+    CheckConstraint(
+        "kind = 'control' OR attempt_id IS NOT NULL", name="ck_calibration_trials_error_attempt"
+    ),
+    # SQLite treats NULLs as distinct, so each subject kind gets its own partial unique index.
+    Index(
+        "uq_calibration_trials_attempt",
+        "run_id",
+        "error_key",
+        "detector",
+        "attempt_id",
+        unique=True,
+        sqlite_where=text("attempt_id IS NOT NULL"),
+    ),
+    Index(
+        "uq_calibration_trials_tts",
+        "run_id",
+        "error_key",
+        "detector",
+        "tts_hash",
+        unique=True,
+        sqlite_where=text("tts_hash IS NOT NULL"),
+    ),
+)
+
+content_items = Table(
+    "content_items",
+    metadata,
+    C("id", String, primary_key=True),
+    C("kind", String, nullable=False),
+    C("text", Text, nullable=False),
+    C("target_keys", Text, nullable=False),
+    C("source", String, nullable=False),
+    C("retired_at", UTCDateTime, nullable=True),
+    CheckConstraint(_in_list("kind", CONTENT_KINDS), name="ck_content_items_kind"),
+    CheckConstraint("source IN ('seed', 'coach')", name="ck_content_items_source"),
+)
+
+skill_scores = Table(
+    "skill_scores",
+    metadata,
+    C("session_id", String, ForeignKey("sessions.id"), primary_key=True),
+    C("skill", String, primary_key=True),
+    C("score", Float, nullable=False),
+    C("components_json", Text, nullable=False),
+    CheckConstraint(_in_list("skill", Skill), name="ck_skill_scores_skill"),
+    CheckConstraint("score BETWEEN 0 AND 100", name="ck_skill_scores_score"),
+)
+
+extractions = Table(
+    "extractions",
+    metadata,
+    C("attempt_id", String, ForeignKey("attempts.id"), primary_key=True),
+    C("scoring_config_id", String, ForeignKey("scoring_configs.id"), primary_key=True),
+    C("detector", String, primary_key=True),
+    C("observation_count", Integer, nullable=False),
+    C("created_at", UTCDateTime, nullable=False),
+    CheckConstraint(_in_list("detector", Detector), name="ck_extractions_detector"),
+    CheckConstraint("observation_count >= 0", name="ck_extractions_count"),
 )

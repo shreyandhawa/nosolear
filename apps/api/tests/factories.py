@@ -32,6 +32,9 @@ def mk(
     detector: Detector = Detector.AZURE_PA,
     confidence: float = 1.0,
     evidence: Mapping[str, object] | None = None,
+    attempt_id: str | None = None,
+    scoring_config_id: str = "v0",
+    provisional: bool = False,
 ) -> Observation:
     return make_observation(
         taxonomy=TAX,
@@ -41,7 +44,10 @@ def mk(
         context=context,
         observed_at=at,
         confidence=confidence,
+        attempt_id=attempt_id,
         evidence=evidence,
+        scoring_config_id=scoring_config_id,
+        provisional=provisional,
     )
 
 

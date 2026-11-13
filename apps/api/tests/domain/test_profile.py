@@ -4,6 +4,7 @@ from factories import DAY, NEUTRAL, PACK, T0, TAX, mk
 from nosolear.domain.observations import Context, Outcome
 from nosolear.domain.profile import ALGO_VERSION, build_profile
 from nosolear.domain.status import Status
+from nosolear.domain.taxonomy import Detector
 
 MISS, OK = Outcome.MISS, Outcome.OK
 
@@ -95,3 +96,13 @@ def test_neutral_pack_uses_default_prior_for_every_key():
 def test_profile_records_pack_id():
     assert build_profile([], as_of=T0, taxonomy=TAX, pack=NEUTRAL).pack_id == "neutral"
     assert build_profile([], as_of=T0, taxonomy=TAX, pack=PACK).pack_id == "nepali"
+
+
+def test_entry_is_provisional_if_any_used_observation_is():
+    obs = [mk("sound.sub.v.w", MISS, T0, provisional=True), mk("sound.sub.v.w", OK, T0)]
+    assert build_profile(obs, as_of=T0, taxonomy=TAX, pack=PACK).entries[0].provisional
+
+
+def test_entry_is_firm_when_no_observation_is_provisional():
+    obs = [mk("fluency.filler", MISS, T0, detector=Detector.ASR_METRICS)]
+    assert not build_profile(obs, as_of=T0, taxonomy=TAX, pack=PACK).entries[0].provisional
