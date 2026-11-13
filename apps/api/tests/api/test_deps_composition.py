@@ -6,9 +6,9 @@ from datetime import UTC, datetime
 import pytest
 from factories import FixedClock, make_settings
 from fakes import FakePaidPort, FakeUsageLedger
-from nosolear.budget.compose import layers_of
 
 from nosolear.api.deps import build_paid_ports
+from nosolear.budget.compose import layers_of
 from nosolear.domain.budget import DEFAULT_CAPS
 
 T0 = datetime(2026, 11, 12, 8, 0, tzinfo=UTC)
