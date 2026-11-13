@@ -436,6 +436,8 @@ erDiagram
 | `observations` | `id, attempt_id, error_key, outcome, weight, detector, context, observed_at, evidence_json, taxonomy_version, created_at` | `scoring_config_id`, `provisional` (0e). Append-only |
 | `profile_entries` | `error_key, a, b, updated_at, p_hat, ci_low, ci_high, n_eff, status, last_seen_at, priority, as_of, algo_version, taxonomy_version` | `pack_id` (0b), `provisional` (0e), `next_recheck_at` and `recheck_stage` (Phase 1). Derived cache, can be rebuilt |
 | `profile_snapshots` | `id, session_id, reason (rebuild / baseline / daily / retest), taken_at, as_of, algo_version, taxonomy_version, entries_json` | `pack_id` (0b). For trends and baseline comparison |
+| `feedback_items` | `id, session_id, skill, error_key, observation_id, message, model_text, source (coach / template), fallback_reason, created_at` | None (Phase 1). The three daily fixes, one per session and skill. `fallback_reason` says why a template replaced the coach: `cap_exceeded`, `provider_unavailable`, `capability_missing` or `invalid_output` |
+| `daily_plans` | `id, for_date, focus_json, prompt_item_id, drills_json, seed` | None (Phase 1). One plan per local date (`for_date` is unique) |
 
 **Planned:**
 
@@ -453,8 +455,6 @@ erDiagram
 | `content_items` | `id, kind (prompt / passage_sentence / minimal_pair / drill_sentence / starter / quick_question / calibration_word), text, target_keys, source (seed / coach), retired_at` | 0e | Seed content is committed under `content/`; coach-written content is cached here and reused |
 | `extractions` | `attempt_id, scoring_config_id, detector, observation_count, created_at` | 0e | Primary key is (attempt, scoring config, detector). One row per detector that extraction has run for an attempt under a config, even when it wrote no observations, so a re-score that writes none still replaces the older observations |
 | `skill_scores` | `session_id, skill, score, components_json` | 0e | Composite 0–100 plus its parts; written by the baseline in 0e. Daily scores come in Phase 5 (progress) |
-| `feedback_items` | `id, session_id, skill, error_key, observation_id, message, model_text, source (coach / template), fallback_reason, created_at` | 1 | The three daily fixes. `fallback_reason` says why a template replaced the coach: `cap_exceeded`, `provider_unavailable`, `capability_missing` or `invalid_output` |
-| `daily_plans` | `id, for_date, focus_json, prompt_item_id, drills_json, seed` | 1 | |
 
 **Skill scores** are composites and exist only for trend lines; the profile drives decisions.
 
@@ -525,6 +525,10 @@ sequenceDiagram
 | 4. Drill, on the spot: 5 rapid questions, 5 s to start, sentence starters shown after 3 s of silence | ~3 min | 0 with a local transcriber | 1 (batch at the end) |
 | 4. Drill, articulate: hear the clearer version, say it back shorter, then one fresh point-reason-example prompt | ~3 min | 0 with a local transcriber | 1 |
 | 5. Log and plan tomorrow | automatic | 0 | 0–1 |
+
+**Daily loop routes (Phase 1).** `POST /api/plan/today` builds today's plan once per local date, and `GET /api/plan/today` reads it with no side effects. `POST /api/plan/today/session` starts today's session and its attempt. The recording goes through `POST /api/attempts/{attempt_id}/recording` and the job routes. `POST /api/sessions/{session_id}/feedback` makes the cards, and `GET /api/sessions/{session_id}/feedback` reads them with no side effects. `POST /api/sessions/{session_id}/complete` closes the session once; a repeat changes nothing.
+
+**Daily loop CLI (Phase 1).** `nosolear plan [--json]`; `nosolear daily start`, `nosolear daily feedback SESSION [--generate]`, `nosolear daily complete SESSION`, and `nosolear daily run WAV [--no-generate]`, which chains start, upload, job, feedback and complete.
 
 **What the user sees when something fails:**
 
@@ -723,11 +727,11 @@ Extraction with scoring configs, `v0` and provisional flags (§6.8); calibration
 
 **Done when:** a first run driven through the API and CLI with TTS audio goes from readiness through calibration (or a skip) to a baseline report, and re-scoring after calibration changes earlier observations without any provider call.
 
-### Phase 1: daily loop backend
+### Phase 1: daily loop backend (done 2026-11-13)
 
 The selection policy (§6.6), the daily plan, and one-fix-per-skill feedback (§6.7).
 
-**Done when:** after a baseline, an uploaded daily recording yields one feedback item per skill, and tomorrow's plan visibly reflects today's misses, tested with fakes and seeded data.
+**Done when (met):** after a baseline, an uploaded daily recording yields one feedback item per skill, and tomorrow's plan visibly reflects today's misses, tested with fakes and seeded data.
 
 ### Later phases
 
