@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from nosolear.domain.analyses import AnalysisKind, NewAnalysis, StoredAnalysis
 from nosolear.domain.audio import (
     DEFAULT_LIMITS,
     TARGET_RATE,
@@ -311,3 +312,38 @@ class FakeJobQueue:
         if job is None:
             raise UnknownJob("No job has this id.")
         return job
+
+
+class FakeAnalysisStore:
+    """The analysis store in memory: idempotent on (attempt_id, kind), like the SQLite table."""
+
+    def __init__(self, clock: Clock) -> None:
+        self._clock = clock
+        self._rows: dict[tuple[str, AnalysisKind], StoredAnalysis] = {}
+        self._next_id = 1
+
+    def get(self, attempt_id: str, kind: AnalysisKind) -> StoredAnalysis | None:
+        return self._rows.get((attempt_id, kind))
+
+    def put(self, analysis: NewAnalysis) -> StoredAnalysis:
+        key = (analysis.attempt_id, analysis.kind)
+        existing = self._rows.get(key)
+        if existing is not None:
+            return existing
+        stored = StoredAnalysis(
+            id=self._next_id,
+            attempt_id=analysis.attempt_id,
+            kind=analysis.kind,
+            provider=analysis.provider,
+            provider_version=analysis.provider_version,
+            adapter=analysis.adapter,
+            adapter_version=analysis.adapter_version,
+            raw=dict(analysis.raw),
+            created_at=self._clock.now(),
+        )
+        self._next_id += 1
+        self._rows[key] = stored
+        return stored
+
+    def for_attempt(self, attempt_id: str) -> list[StoredAnalysis]:
+        return [row for (owner, _), row in self._rows.items() if owner == attempt_id]
