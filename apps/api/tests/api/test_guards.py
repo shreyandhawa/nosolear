@@ -17,7 +17,12 @@ REFUSED = {"detail": "request refused"}
 ORIGIN = "http://localhost:5173"
 # TestClient ignores base_url for websockets, so the loopback Host must be in the URL
 WS_URL = "ws://127.0.0.1:8000/ws-test"
-READ_ONLY_GET_ROUTES = {"/api/health", "/api/profile", "/api/readiness"}  # later phases add theirs
+READ_ONLY_GET_ROUTES = {
+    "/api/health",
+    "/api/profile",
+    "/api/readiness",
+    "/api/jobs/{job_id}",
+}  # later phases add theirs
 
 
 # Swagger UI and ReDoc load scripts from a CDN, so they are disabled; the schema itself is kept.
