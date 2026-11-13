@@ -11,6 +11,7 @@ import httpx
 from pydantic import ValidationError
 from sqlalchemy import Engine
 
+from nosolear import first_run_cli
 from nosolear.adapters.private_fs import DataDirError
 from nosolear.adapters.system_clock import SystemClock
 from nosolear.api.deps import (
@@ -54,6 +55,7 @@ API_TIMEOUT_S = 30.0
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="nosolear")
     commands = parser.add_subparsers(dest="command", required=True)
+    first_run_cli.register(commands)
     db = commands.add_parser("db", help="database maintenance")
     db_commands = db.add_subparsers(dest="db_command", required=True)
     db_commands.add_parser("upgrade", help="apply migrations")
@@ -211,7 +213,8 @@ def _api_command(args: argparse.Namespace, settings: Settings, client: ApiClient
     try:
         if args.command == "upload":
             return _upload(args, api, attempt_id)
-        return _job(args, api)
+        handled = first_run_cli.run(args, api)
+        return _job(args, api) if handled is None else handled
     except CliError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -312,7 +315,7 @@ def main(argv: Sequence[str] | None = None, *, client: ApiClient | None = None) 
         )
         print(format_readiness(report))
         return 0 if report.ready else 1
-    if args.command in ("upload", "job"):
+    if args.command in ("upload", "job", first_run_cli.RESCORE):
         return _api_command(args, settings, client)
     if args.command == "dev-seed" and settings.data_dir == REPO_ROOT / "data":
         print(

@@ -5,14 +5,17 @@ exists; otherwise it calls one port and stores the raw result for its attempt. A
 passes anything from the model or the provider into a path, a command or a query.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 from nosolear.app.steps import StepContext
 from nosolear.domain.analyses import AnalysisKind
+from nosolear.domain.attempts import AttemptStep
 from nosolear.domain.coach import coach_keys, coach_task_for_step
 from nosolear.domain.errors import RequestNotSent
 from nosolear.domain.results import parse_transcript
+from nosolear.domain.scoring import enabled_keys
 from nosolear.domain.speech import (
     FREE_TALK_SCORING as DEFAULT_FREE_TALK_SCORING,
 )
@@ -21,10 +24,11 @@ from nosolear.domain.speech import (
     new_analysis,
     raw_result_of,
 )
-from nosolear.domain.taxonomy import Taxonomy
+from nosolear.domain.taxonomy import Detector, Taxonomy
 from nosolear.ports.analyses import AnalysisStore
 from nosolear.ports.audio import AttemptInfo, AttemptReader, AudioStore, RecordingStore
 from nosolear.ports.providers import Coach, PhoneProbe, PronunciationScorer, Transcriber
+from nosolear.ports.scoring_stores import ScoringConfigReader
 
 FREE_TALK_SCORING: ScoringMode = DEFAULT_FREE_TALK_SCORING
 """How unscripted speech is scored (ARCHITECTURE.md section 4). Read at run time, so a test can
@@ -94,7 +98,8 @@ class TranscribeStep:
         self._stores = stores
 
     def applies(self, ctx: StepContext) -> bool:
-        return True
+        info = self._stores.attempt(ctx)
+        return info is None or info.step != AttemptStep.CALIBRATION.value
 
     def run(self, ctx: StepContext) -> None:
         attempt_id = _attempt_id(ctx)
@@ -107,15 +112,35 @@ class TranscribeStep:
 class ProbeStep:
     name = "probe"
 
-    def __init__(self, *, probe: PhoneProbe | None, stores: _Stores) -> None:
+    def __init__(
+        self,
+        *,
+        probe: PhoneProbe | None,
+        stores: _Stores,
+        configs: ScoringConfigReader,
+        taxonomy: Taxonomy,
+        tracked: Callable[[], frozenset[str]],
+    ) -> None:
         self._probe = probe
         self._stores = stores
+        self._configs = configs
+        self._taxonomy = taxonomy
+        self._tracked = tracked
 
     def applies(self, ctx: StepContext) -> bool:
+        """Under `v0` the phone probe scores nothing, so it runs only for calibration and drill
+        attempts, or when the newest config enables a phone-probe key."""
         if self._probe is None:
             return False
         info = self._stores.attempt(ctx)
-        return info is not None and info.scripted and info.reference_text is not None
+        if info is None or not info.scripted or info.reference_text is None:
+            return False
+        if info.step in (AttemptStep.CALIBRATION.value, AttemptStep.DRILL.value):
+            return True
+        enabled = enabled_keys(
+            self._configs.newest(), Detector.PHONE_PROBE, self._tracked(), self._taxonomy
+        )
+        return bool(enabled)
 
     def run(self, ctx: StepContext) -> None:
         attempt_id = _attempt_id(ctx)
@@ -174,11 +199,19 @@ def provider_steps(
     recordings: RecordingStore,
     attempts: AttemptReader,
     audio: AudioStore,
+    configs: ScoringConfigReader,
+    tracked: Callable[[], frozenset[str]],
 ) -> tuple[ScoreStep | TranscribeStep | ProbeStep | CoachStep, ...]:
     stores = _Stores(analyses=analyses, recordings=recordings, attempts=attempts, audio=audio)
     return (
         ScoreStep(scorer=scorer, stores=stores),
         TranscribeStep(transcriber=transcriber, stores=stores),
-        ProbeStep(probe=phone_probe, stores=stores),
+        ProbeStep(
+            probe=phone_probe,
+            stores=stores,
+            configs=configs,
+            taxonomy=taxonomy,
+            tracked=tracked,
+        ),
         CoachStep(coach=coach, taxonomy=taxonomy, stores=stores),
     )

@@ -15,9 +15,16 @@ def rebuild_profile(
     pack: LanguagePack,
     clock: Clock,
     config: ProfileConfig = DEFAULT_CONFIG,
+    session_id: str | None = None,
+    reason: str | None = "rebuild",
 ) -> Profile:
+    """Rebuild from the current observations. A `reason` snapshots the result; None only replaces
+    the entries."""
     profile = build_profile(
         observations.current(), as_of=clock.now(), taxonomy=taxonomy, pack=pack, config=config
     )
-    profiles.save(profile, session_id=None, reason="rebuild")
+    if reason is None:
+        profiles.replace(profile)
+    else:
+        profiles.save(profile, session_id=session_id, reason=reason)
     return profile

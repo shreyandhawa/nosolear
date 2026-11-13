@@ -27,12 +27,28 @@ from nosolear.domain.analyses import AnalysisKind
 from nosolear.domain.coach import CoachAnalysis, CoachTask, coach_keys
 from nosolear.domain.errors import RequestNotSent
 from nosolear.domain.jobs import JobKind
+from nosolear.domain.scoring import V0_CONFIG, ScoringConfig
 from nosolear.domain.speech import FREE_TALK_SCORING, PhoneProbeResult, ScoringMode, Transcript
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY as TAX
 from nosolear.ports.audio import AttemptInfo, NewRecording, StoredRecording
 
 NOW = datetime(2026, 11, 13, 9, 0, tzinfo=UTC)
 FREE_KEYS = coach_keys(TAX, CoachTask.FREE_TALK)
+
+
+class _V0Only:
+    """A config reader that only knows `v0`, so the phone probe runs for drill attempts only."""
+
+    def newest(self) -> ScoringConfig:
+        return V0_CONFIG
+
+    def get(self, config_id: str) -> ScoringConfig:
+        if config_id != V0_CONFIG.id:
+            raise KeyError(config_id)
+        return V0_CONFIG
+
+
+_V0_ONLY = _V0Only()
 
 
 class World:
@@ -67,6 +83,8 @@ class World:
                 recordings=self.recordings,
                 attempts=self.attempts,
                 audio=self.audio,
+                configs=_V0_ONLY,
+                tracked=lambda: frozenset(),
             )
         }
 

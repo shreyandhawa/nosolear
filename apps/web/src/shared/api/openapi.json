@@ -46,6 +46,19 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "JobAcceptedOut": {
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "JobAcceptedOut",
+        "type": "object"
+      },
       "JobOut": {
         "properties": {
           "attempt_id": {
@@ -706,6 +719,24 @@
           }
         },
         "summary": "Get Readiness"
+      }
+    },
+    "/api/rescore": {
+      "post": {
+        "operationId": "startRescore",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAcceptedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Start Rescore"
       }
     }
   }
