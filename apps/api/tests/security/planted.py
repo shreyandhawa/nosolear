@@ -41,7 +41,12 @@ from nosolear.budget.meter import Meter
 from nosolear.cli import main
 from nosolear.cli_client import ApiClient
 from nosolear.domain.budget import Caps, Provider, Unit
-from nosolear.domain.errors import CapExceeded, ProviderUnavailable, RetryableProviderError
+from nosolear.domain.errors import (
+    CapabilityMissing,
+    CapExceeded,
+    ProviderUnavailable,
+    RetryableProviderError,
+)
 from nosolear.domain.jobs import JobKind, JobStatus
 from nosolear.domain.redaction import REDACTED
 from nosolear.logging_setup import install_secret_scrubbing
@@ -410,6 +415,58 @@ def doctor_output(tmp: Path) -> tuple[str, str]:
     assert code in (0, 1)
     assert out.count("key set") == 2, "the planted keys were not picked up"
     return "nosolear doctor stdout and stderr", out + err
+
+
+class _FailingProbe:
+    """A capability probe that fails with `error` when it runs, as a paid adapter's probe would."""
+
+    def __init__(self, adapter: str, error: Exception) -> None:
+        self._adapter = adapter
+        self._error = error
+
+    @property
+    def adapter(self) -> str:
+        return self._adapter
+
+    def probe(self) -> object:
+        raise self._error
+
+
+@leak_surface
+def doctor_probe_output(tmp: Path) -> tuple[str, str]:
+    """`doctor --probe` where one probe fails with a planted key and a provider body, and another
+    fails with a safe message. Stdout, stderr and the probe log must hold no key."""
+    probes = (
+        _FailingProbe("azure_pa", RuntimeError(f"raw {PLANTED_AZURE_KEY} {PROVIDER_BODY_MARKER}")),
+        _FailingProbe("faster_whisper", CapabilityMissing("No pinned model named medium.en")),
+    )
+    with pytest.MonkeyPatch.context() as mp:
+        _planted_env(mp, tmp / "data")
+        mp.setattr("nosolear.cli.build_capability_probes", lambda *args, **kwargs: probes)
+        with LogCapture(logging.Formatter(FORMAT), "nosolear.app.probe_capabilities") as cap:
+            code, out, err = _run_cli(["doctor", "--probe"])
+    assert code == 1, "a failed probe must make doctor --probe exit 1"
+    assert "The probe failed unexpectedly" in out, "the unexpected failure was not reported"
+    assert "No pinned model named medium.en" in out, "the safe message was not reported"
+    return "nosolear doctor --probe stdout, stderr and probe log", (
+        out + err + _marked(cap.text, "RuntimeError")
+    )
+
+
+@leak_surface
+def doctor_probe_setup_error(tmp: Path) -> tuple[str, str]:
+    """`doctor --probe` where building the probes itself fails with a planted key."""
+
+    def fail(*args: object, **kwargs: object) -> tuple[object, ...]:
+        raise RuntimeError(f"setup {PLANTED_ANTHROPIC_KEY} {PROVIDER_BODY_MARKER}")
+
+    with pytest.MonkeyPatch.context() as mp:
+        _planted_env(mp, tmp / "data")
+        mp.setattr("nosolear.cli.build_capability_probes", fail)
+        code, out, err = _run_cli(["doctor", "--probe"])
+    assert code == 1
+    assert "could not start" in out + err, "the setup failure was not reported"
+    return "nosolear doctor --probe output when setup fails", out + err
 
 
 @leak_surface

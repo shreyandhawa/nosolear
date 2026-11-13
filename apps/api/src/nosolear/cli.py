@@ -1,6 +1,7 @@
 """Command-line entry point and composition root for the `nosolear` command."""
 
 import argparse
+import logging
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -33,6 +34,7 @@ from nosolear.cli_client import (
 )
 from nosolear.dev.seed import seed_observations
 from nosolear.domain.capabilities import real_time_factors
+from nosolear.domain.errors import NosolearError
 from nosolear.domain.packs import LanguagePack, PackError
 from nosolear.domain.readiness import format_readiness
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY
@@ -232,14 +234,25 @@ def _doctor_probe(settings: Settings) -> int:
         clock = SystemClock()
         store = CapabilityRepository(engine)
         ledger = build_ledger(settings, engine, clock=clock)
-        providers = build_providers(
-            settings,
-            engine=engine,
-            ledger=ledger,
-            clock=clock,
-            real_time_factors=real_time_factors(store.latest_all()),
-        )
-        probes = build_capability_probes(settings, providers, engine=engine, clock=clock)
+        try:
+            providers = build_providers(
+                settings,
+                engine=engine,
+                ledger=ledger,
+                clock=clock,
+                real_time_factors=real_time_factors(store.latest_all()),
+            )
+            probes = build_capability_probes(settings, providers, engine=engine, clock=clock)
+        except NosolearError as exc:
+            print(f"doctor --probe could not start: {exc.safe_message}", file=sys.stderr)
+            return 1
+        except Exception as exc:
+            logging.getLogger(__name__).warning("probe setup failed (%s)", type(exc).__name__)
+            print(
+                "doctor --probe could not start: the probe setup failed unexpectedly",
+                file=sys.stderr,
+            )
+            return 1
         outcomes = probe_capabilities(probes=probes, store=store)
         for outcome in outcomes:
             status = "ok" if outcome.ok else "failed"
