@@ -6,7 +6,14 @@ from dataclasses import replace
 from hypothesis import given
 from hypothesis import strategies as st
 
-from nosolear.domain.calibration import Trial, TrialKind, build_calibrated_config, evaluate, passes
+from nosolear.domain.calibration import (
+    Trial,
+    TrialKind,
+    build_calibrated_config,
+    covers,
+    evaluate,
+    passes,
+)
 from nosolear.domain.scoring import V0_CONFIG, TrialCounts
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY as TAX
 from nosolear.domain.taxonomy import Detector
@@ -47,8 +54,10 @@ def test_adding_a_hit_never_disables(c: TrialCounts):
 
 
 @given(c=counts())
-def test_adding_a_miss_or_a_false_alarm_never_enables(c: TrialCounts):
-    if not passes(c):
+def test_adding_a_miss_or_a_false_alarm_never_enables_a_covered_pair(c: TrialCounts):
+    """Once a pair has the minimum trials, a miss or a false alarm cannot enable it. Below the
+    minimum a miss can complete the count, so the property holds only for covered pairs."""
+    if covers(c) and not passes(c):
         assert not passes(replace(c, errors=c.errors + 1))
         assert not passes(replace(c, controls=c.controls + 1, false_alarms=c.false_alarms + 1))
 

@@ -315,7 +315,7 @@ def main(argv: Sequence[str] | None = None, *, client: ApiClient | None = None) 
         )
         print(format_readiness(report))
         return 0 if report.ready else 1
-    if args.command in ("upload", "job", first_run_cli.RESCORE):
+    if args.command in ("upload", "job", first_run_cli.RESCORE, first_run_cli.CALIBRATE):
         return _api_command(args, settings, client)
     if args.command == "dev-seed" and settings.data_dir == REPO_ROOT / "data":
         print(

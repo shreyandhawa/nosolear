@@ -11,6 +11,7 @@ from urllib.parse import quote
 from fastapi import Depends, Request
 from sqlalchemy import Engine
 
+from nosolear.adapters.azure_pa import ADAPTER_VERSION as AZURE_PA_ADAPTER_VERSION
 from nosolear.adapters.azure_pa import AzurePronunciationScorer
 from nosolear.adapters.azure_pa_probe import AzureCapabilityProbe
 from nosolear.adapters.azure_speech import AzureSpeech
@@ -46,6 +47,7 @@ from nosolear.adapters.transcriber_speed_check import TranscriberSpeedCheck
 from nosolear.adapters.tts_cache import CachedSynthesizer
 from nosolear.adapters.wav2vec2_espeak import Wav2Vec2EspeakProbe
 from nosolear.app.analysis_steps import provider_steps
+from nosolear.app.calibrate_job import ControlsStep, EvaluateStep, QueueRescoreStep
 from nosolear.app.check_readiness import check_readiness
 from nosolear.app.run_job import run_job
 from nosolear.app.scoring_steps import ExtractStep, RescoreStep, ScoringDeps
@@ -59,20 +61,22 @@ from nosolear.budget.metered_ports import (
     MeteredTranscriber,
 )
 from nosolear.domain.budget import Caps, Provider, Unit, period_for
-from nosolear.domain.capabilities import real_time_factors
+from nosolear.domain.calibration import calibratable_detectors
+from nosolear.domain.capabilities import is_stale, real_time_factors
 from nosolear.domain.content import SeedContent
 from nosolear.domain.extraction.opportunities import tracked_keys
 from nosolear.domain.jobs import JobKind
 from nosolear.domain.packs import LanguagePack, PackError
 from nosolear.domain.readiness import ReadinessReport, UsageSnapshot
 from nosolear.domain.speech import ProviderCapabilities
-from nosolear.domain.taxonomy import DEFAULT_TAXONOMY, Taxonomy
+from nosolear.domain.taxonomy import DEFAULT_TAXONOMY, Detector, Taxonomy
 from nosolear.domain.transcriber_choice import (
     Platform,
     TranscriberChoice,
     TranscriberName,
     choose_transcriber,
 )
+from nosolear.persistence.calibration_repository import CalibrationRepository
 from nosolear.persistence.capabilities import CapabilityRepository, read_capability_records
 from nosolear.persistence.job_queue import SqliteJobQueue
 from nosolear.persistence.ledger import SqliteUsageLedger
@@ -91,6 +95,7 @@ from nosolear.persistence.scoring_repository import (
 from nosolear.persistence.tts_cache import TtsCacheRepository
 from nosolear.ports.analyses import AnalysisStore
 from nosolear.ports.audio import AttemptReader, AudioStore, RecordingStore
+from nosolear.ports.calibration_store import CalibrationStore
 from nosolear.ports.clock import Clock
 from nosolear.ports.environment import EnvironmentProbe
 from nosolear.ports.jobs import JobQueue
@@ -471,6 +476,26 @@ def build_services(
         registry.register(JobKind.ANALYZE, ExtractStep(scoring))
     if registry.get(JobKind.RESCORE, RescoreStep.name) is None:
         registry.register(JobKind.RESCORE, RescoreStep(scoring))
+    calibration = CalibrationRepository(engine, clock)
+    calibrate_steps = (
+        ControlsStep(
+            store=calibration,
+            synthesizer=providers.synthesizer,
+            scorer=providers.scorer,
+            phone_probe=providers.phone_probe,
+            data_dir=settings.data_dir,
+        ),
+        EvaluateStep(
+            store=calibration,
+            analyses=analyses,
+            capabilities=lambda: _calibration_capabilities(engine, providers),
+            clock=clock,
+        ),
+        QueueRescoreStep(queue=jobs),
+    )
+    for calibrate_step in calibrate_steps:
+        if registry.get(JobKind.CALIBRATE, calibrate_step.name) is None:
+            registry.register(JobKind.CALIBRATE, calibrate_step)
 
     def run(job_id: str) -> object:
         return run_job(job_id=job_id, jobs=jobs, registry=registry)
@@ -488,6 +513,49 @@ def build_services(
         profiles=profiles,
         recordings=recordings,
         attempts=attempts,
+    )
+
+
+def _calibration_capabilities(engine: Engine, providers: Providers) -> dict[str, object]:
+    """What the calibrated config records about the install it was made on."""
+    record = CapabilityRepository(engine).latest("azure", "azure_pa")
+    azure: dict[str, object] = {}
+    if record is not None:
+        azure = {
+            "nbest_phonemes": record.capabilities.get("nbest_phonemes"),
+            "prosody": record.capabilities.get("prosody"),
+            "provider_version": record.provider_version,
+        }
+    return {"azure_pa": azure, "phone_probe": {"ready": providers.phone_probe is not None}}
+
+
+def get_calibration_store(request: Request) -> CalibrationStore:
+    engine = cast(Engine, request.app.state.engine)
+    return CalibrationRepository(engine, get_services(request).clock)
+
+
+def get_available_detectors(
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> frozenset[Detector]:
+    """The detectors a calibration can use here: Azure only with a fresh n-best capability, the
+    phone probe only when it is installed."""
+    engine = cast(Engine, request.app.state.engine)
+    record = CapabilityRepository(engine).latest("azure", "azure_pa")
+    azure_nbest = (
+        record is not None
+        and not is_stale(
+            record,
+            region=settings.azure_speech_region,
+            locale=settings.azure_locale,
+            adapter_version=AZURE_PA_ADAPTER_VERSION,
+        )
+        and record.capabilities.get("nbest_phonemes") is True
+    )
+    providers = get_providers(request)
+    return calibratable_detectors(
+        azure_nbest=azure_nbest,
+        phone_probe_ready=providers.phone_probe is not None,
     )
 
 
