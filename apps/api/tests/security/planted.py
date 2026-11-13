@@ -29,7 +29,7 @@ import pytest
 from factories import FixedClock, loopback_client, make_settings
 from fakes import FakeStep
 from pydantic import ValidationError
-from sqlalchemy import text
+from sqlalchemy import Engine, text
 
 from nosolear.api.app import create_app
 from nosolear.api.deps import Services
@@ -45,6 +45,7 @@ from nosolear.logging_setup import install_secret_scrubbing
 from nosolear.persistence.db import create_engine_for, upgrade_to_head
 from nosolear.persistence.job_queue import SqliteJobQueue
 from nosolear.persistence.ledger import SqliteUsageLedger
+from nosolear.persistence.repositories import AttemptRepository
 from nosolear.settings import REPO_ROOT, Settings, settings_error_summary
 
 PLANTED_AZURE_KEY = "FAKEAZUREKEY" + "0123456789ABCDEFGHIJ"  # 32 chars
@@ -558,3 +559,47 @@ def _import_surface_modules() -> None:
 
 
 _import_surface_modules()
+
+
+@leak_surface
+def upload_error_bodies_and_logs(tmp: Path) -> tuple[str, str]:
+    """The upload's error bodies, and the log lines around them, with the planted keys set.
+
+    Each request carries a planted key in its body where the route could echo it back."""
+    settings = planted_settings(tmp / "data")
+    install_secret_scrubbing(settings.secret_values())
+    app = create_app(settings, start_runner=False)
+    key = PLANTED_AZURE_KEY.encode()
+    url = "/api/attempts/{}/recording"
+    with loopback_client(app) as client, LogCapture(logging.Formatter(FORMAT), "nosolear") as cap:
+        attempt_id = AttemptRepository(cast(Engine, app.state.engine)).create_attempt(
+            session_kind="daily",
+            step="speak",
+            reference_text=None,
+            scripted=False,
+            now=datetime(2026, 11, 13, 9, 0, tzinfo=UTC),
+        )
+        responses = {
+            "bad content type": client.post(
+                url.format(attempt_id), content=key, headers={"Content-Type": "text/plain"}
+            ),
+            "too large": client.post(
+                url.format(attempt_id),
+                content=b"RIFF" + key,
+                headers={
+                    "Content-Type": "audio/wav",
+                    "Content-Length": str(10 * 1024 * 1024 + 1),
+                },
+            ),
+            "bad wav": client.post(
+                url.format(attempt_id),
+                content=b"not a wav " + key,
+                headers={"Content-Type": "audio/wav"},
+            ),
+            "unknown attempt": client.post(
+                url.format("nope"), content=key, headers={"Content-Type": "audio/wav"}
+            ),
+        }
+    parts = [f"{label}: {r.status_code} {r.text}" for label, r in responses.items()]
+    assert [r.status_code for r in responses.values()] == [415, 413, 400, 404]
+    return "upload error bodies and their log lines", "\n".join(parts) + cap.text
