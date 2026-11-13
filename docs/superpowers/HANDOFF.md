@@ -4,7 +4,7 @@ Read this first in a new session, then continue from **Next**.
 
 ## Current phase
 
-Phase 0e (scoring, calibration, baseline) is done as of 2026-11-13. Phase 1 (daily loop backend) is in progress.
+Phase 1 (daily loop backend) is done as of 2026-11-13. Phases 0b through 1 are complete. Next is Phase 2 (web UI), which has no plan yet.
 
 ## Done
 
@@ -102,19 +102,39 @@ Phase 0e (scoring, calibration, baseline) is done as of 2026-11-13. Phase 1 (dai
 - 2026-11-13: Phase 1 Task 10: completing the daily session and the whole loop. `complete_daily_session` (`app/complete_daily_session.py`) closes a daily session once, snapshots the profile with reason `daily`, and advances the re-checks; `POST /api/sessions/{id}/complete` (`completeDailySession`) and `nosolear daily complete|run`. The end-to-end tests in `tests/e2e/` show that tomorrow's plan reflects today's misses, including with a capped coach and with the scorer missing. The web contract is regenerated.
 - 2026-11-13: Phase 0e phase review. One combined opus pass over `3b8e6ee..8a7d3ab` found 0 Critical, 3 Important and 10 Minor. The fix PR covers all three Important findings: baseline start and complete are serialized (check and create in one `BEGIN IMMEDIATE`, complete as a guarded claim), the baseline report skips an undecodable transcript, and leak-surface producers cover rescore, calibrate, stand-in and the calibrate job. It also fixes three Minor ones: a racing calibration start returns the open run, calibrate steps act on their own run, and a failed complete reopens the session. The rest are under "Carried to later phases".
 
+- 2026-11-13: Phase 1 phase review. One combined opus pass over `ba9a2fb..bf30fdf` plus #46 found 0 Critical, 5 Important and 9 Minor. The fix PR covers all five Important findings:
+  - Completing a daily session is a guarded claim.
+  - Every skill gets exactly one focus even when all its keys are watching or mastered.
+  - A repeat feedback POST keeps its stored fixes.
+  - A session without an analysis is refused, with 409 `session_not_analyzed`.
+  - Leak-surface producers cover `daily feedback`, `daily complete` and `daily run`, and the `feedback_items` rows.
+
+  It also fixes three Minor findings: re-check rungs advance only when due, the end-to-end test compares against a no-miss control, and `daily run` continues past a failed analysis. The other Minor findings are under "Carried to later phases".
+
 ## In progress
 
-- Phase 1 is running under the budget rule: Tasks 1–3 are merged (#46) and Tasks 4–6 are on `p1/04-plan-api-session`. Its ledger is at `.superpowers/sdd/2026-11-12-phase-1-daily-loop-backend/progress.md` (git-ignored).
-- Phase 0e is merged: #42 (Tasks 1–2), #43 (Tasks 3–5), #44 (Tasks 6–8), #45 (Tasks 9–11), and this PR (the review fixes and the close-out). Its ledger and review findings are in `.superpowers/sdd/2026-11-12-phase-0e-scoring-calibration-baseline/`. The 0c, 0d and 0e ledgers may be deleted.
+- Nothing open. Phase 1 is merged: #46 (Tasks 1–3), #48 (Tasks 4–6), #49 (Tasks 7–10), and this PR (review fixes, verification and close-out). The 0c, 0d, 0e and Phase 1 ledgers under `.superpowers/sdd/` are git-ignored, hold every ruling and review finding, and may be deleted.
 
 ## Next
 
-1. Finish Phase 1: `docs/superpowers/plans/2026-11-12-phase-1-daily-loop-backend.md`, branch prefix `p1/`, under the budget rule. Tasks 7–10 remain, then Task 11 (verification), one opus review and one fix dispatch.
-2. Owner:
+1. Owner:
    - Run `make test-live` with keys in `.env`; see "Adapters not yet verified against the live service".
-   - Read the baseline passage (`content/baseline/protocol.json`) aloud once. It passes the validator, but nobody has reviewed it.
+   - Read the baseline passage (`content/baseline/protocol.json`) aloud once.
+   - Decide the free-talk scoring mode (§4, §18), M3 (retried 429s recorded at the estimate) and whether to read the Azure Speech SDK licence terms.
+2. Phase 2 (web UI) needs a plan. Brainstorm and write it with the owner first (`superpowers:brainstorming`, then `superpowers:writing-plans`). It consumes the Phase 1 HTTP API and the generated TS types. Mind the plan seed above 2^53 (Phase 1 review M4).
 3. Any task that adds a dependency reruns `uv run --project apps/api python scripts/third_party_licences.py`.
 4. At the end of each phase, run one combined opus security and final review over the phase range, then one fix dispatch. Then update this file and hand off to a fresh session.
+
+## What Phase 2 and later can rely on (from Phase 1)
+
+- The plan's "Produces for later phases" section, as shipped. Implementer deviations are in the Phase 1 ledger.
+- Plan date: the local date in `NOSOLEAR_TIMEZONE`, frozen once per day.
+- Selection: exactly one focus per skill, falling back through focus-status keys, then unprofiled prior keys, then watching, then mastered. Re-check rungs advance only when due.
+- Feedback:
+  - `analyzed` means an analyze job ended and nothing is running. Feedback and complete otherwise return 409 `session_not_analyzed`.
+  - An upload to a completed session returns 409 `session_completed`.
+  - A repeat feedback POST keeps the stored fixes and re-asks the coach only for template items.
+- `complete_daily_session` is a guarded claim.
 
 ## What Phase 1 and later can rely on (from Phase 0e)
 
@@ -214,6 +234,14 @@ Cross-phase assumptions (from the 0c plan): None open: 0b's settings tree (inclu
   - M12: the Azure lock is per process, so `doctor --probe` during server jobs can put two requests in flight on F0.
   - Phone probe: `a` (heard between `æ` and `ɑ`) is unmapped, and `ɾ`, `ᵻ`, `ɐ` and `ʔ` were seen before the espeak newline fix. `θ` is heard as `s`, and espeak's dark final `l` is heard as `v a`, so the local-models test word `school` became `stop`. The map still fails loudly on unknown symbols (§4).
   - The Azure Speech SDK's licence is listed as "Other/Proprietary" in `THIRD_PARTY_NOTICES`; the owner should read its terms. The SDK has its own telemetry with no switch in its Python API (PRIVACY.md says so). Sixteen Linux-only NVIDIA wheel rows say "verify on the wheel".
+- **From the Phase 1 review (deferred Minors, see `phase-review-findings.md` in the Phase 1 ledger):**
+  - M2: two concurrent feedback POSTs both call the coach, so six paid calls instead of three. A template item with `invalid_output` re-asks the coach on every POST, with no attempt limit.
+  - M3: template text and the sound/prosody `model_text` embed `fix.word` and `fix.quote` without `_clean`.
+  - M4: the plan `seed` is in [0, 2^64) and is sent as a JSON number, so JavaScript loses precision. Send it as a string before Phase 2 reads it.
+  - M5: two concurrent first `POST /api/plan/today` calls can both return 201, and the route reads `clock.now()` twice.
+  - M8: when a POST stored nothing (all clean or not scored), a later GET returns 404 `feedback_not_generated`.
+  - M9: `FakeCoach.explain`'s docstring says queued errors are raised, but the code doesn't raise them.
+  - From the fix: I1's race test holds its window with a 0.1 s sleep.
 - **From the Phase 0e review (deferred Minors, see `phase-review-findings.md` in the 0e ledger):**
   - `finish_calibration` can queue two calibrate jobs. This is harmless.
   - The 0007 downgrade fails on any database that has run calibration.
@@ -319,7 +347,7 @@ None.
 
 ## Adapters not yet verified against the live service
 
-Phase 0e adds two live checks: `tests/live/test_first_run_live.py` (onboarding, calibration and baseline on real Azure and Claude), and calibration on the user's own voice. Calibration has only been run with the test oracle and fakes. The oracle also flags TTS controls, so calibration tests use a clean voice.
+Phase 1 adds one live check: `tests/live/test_feedback_explain_live.py` (the real coach explaining three fixes), never run so far, macOS only once the owner runs it. Phase 0e adds two live checks: `tests/live/test_first_run_live.py` (onboarding, calibration and baseline on real Azure and Claude), and calibration on the user's own voice. Calibration has only been run with the test oracle and fakes. The oracle also flags TTS controls, so calibration tests use a clean voice.
 
 Every Phase 0d adapter has contract tests only, unless noted. Live checks need the owner to put the Azure and Claude keys in `.env` and run `make test-live`; never ask for a key in chat. Update this list as live tests pass.
 
@@ -348,7 +376,7 @@ Every Phase 0d adapter has contract tests only, unless noted. Live checks need t
   - Each phase ends with one combined opus security and final review, then one fix dispatch with no re-review. Minor findings are deferred to this file.
   - Check `mcp__ccd_session_mgmt__get_usage` after each batch. If the budget runs out, stop at a clean boundary, update this file and report.
   - Hand-off briefs carry this rule forward.
-- Pipelining: the next batch branches from the previous batch's branch while that PR is in CI. After the squash-merge, merge `origin/main` into it (never force-push). Conflicts from the squash resolve to the branch side, because the branch already contains the merged commits.
+- Pipelining: the next batch branches from the previous batch's branch while that PR is in CI. After the squash-merge, merge `origin/main` into it (never force-push). Conflicts from the squash resolve to the branch side only when every change on `main` since the merge base is already in the branch. If `main` has anything the branch lacks (another PR merged in between), resolve by hand. Taking the branch side once silently dropped #47's HANDOFF edits and four leak-surface producers, fixed forward in #48.
 - CI's ruff sorts `nosolear` as first-party, and a local ruff cache can hide an I001. Run `uv run ruff check --no-cache` before pushing.
 - The owner's `.env` holds a real Azure key and region. Never read or print it. Tests never load it (the autouse fixture in `apps/api/tests/conftest.py`). Tests marked `live` (run with `make test-live`) are exempt from that isolation and use the `live_settings`/`require_keys` helpers in `tests/live/`. Run walk-throughs in a temp clone with a temp `.env`, never the real one.
 - Models: haiku for search, summaries and running tests; sonnet for well-specified implementation and routine review; opus for architecture, security review and final review. If a cheaper model fails review twice, re-dispatch on a stronger one.
