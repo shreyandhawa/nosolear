@@ -1,17 +1,26 @@
+import json
 import stat
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from factories import make_settings
+from factories import count, make_settings
+from harness import Harness
 
 from nosolear.adapters.system_clock import SystemClock
 from nosolear.cli import main
+from nosolear.cli_client import ApiClient
 from nosolear.domain.budget import Caps, Provider, Unit
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY
 from nosolear.persistence.db import create_engine_for
 from nosolear.persistence.ledger import SqliteUsageLedger
 from nosolear.persistence.repositories import ProfileRepository
 from nosolear.settings import Settings
+
+
+def _api(h: Harness) -> ApiClient:
+    # TestClient is an httpx client at runtime; the stub is typed narrower than it is.
+    return ApiClient(h.client)  # pyright: ignore[reportArgumentType]
 
 
 def _env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -418,3 +427,73 @@ def test_doctor_without_a_database_keeps_the_caps_only_row(
     out = capsys.readouterr().out
     assert "no usage recorded yet" in out
     assert not data.exists()
+
+
+def test_plan_prints_one_line_per_skill(
+    make_harness: Callable[..., Harness], capsys: pytest.CaptureFixture[str]
+) -> None:
+    h = make_harness()
+
+    assert main(["plan"], client=_api(h)) == 0
+
+    lines = capsys.readouterr().out.splitlines()
+    focus_lines = lines[:3]
+    assert [line.split(":")[0] for line in focus_lines] == ["sounds", "on_the_spot", "articulate"]
+    assert all("(" in line and "%" in line for line in focus_lines)
+    assert any(line.startswith("probe: ") for line in lines)
+    assert any(line.startswith("prompt: ") for line in lines)
+    assert "  speak 60s" in lines
+
+
+def test_plan_json_flag_prints_the_body(
+    make_harness: Callable[..., Harness], capsys: pytest.CaptureFixture[str]
+) -> None:
+    h = make_harness()
+
+    assert main(["plan", "--json"], client=_api(h)) == 0
+
+    printed = json.loads(capsys.readouterr().out)
+    assert printed == h.client.get("/api/plan/today").json()
+
+
+def test_plan_is_idempotent_across_two_runs(
+    make_harness: Callable[..., Harness], capsys: pytest.CaptureFixture[str]
+) -> None:
+    h = make_harness()
+    api = _api(h)
+
+    assert main(["plan", "--json"], client=api) == 0
+    first = capsys.readouterr().out
+    assert main(["plan", "--json"], client=api) == 0
+    second = capsys.readouterr().out
+
+    assert second == first
+    assert count(h.engine, "daily_plans") == 1
+
+
+def test_daily_start_prints_attempt_and_prompt(
+    make_harness: Callable[..., Harness], capsys: pytest.CaptureFixture[str]
+) -> None:
+    h = make_harness()
+
+    assert main(["daily", "start"], client=_api(h)) == 0
+
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].startswith("session ")
+    assert lines[1].startswith("attempt ")
+    assert lines[2].startswith("prompt: ")
+    assert lines[2] != "prompt: none"
+
+
+def test_daily_start_twice_prints_same_ids(
+    make_harness: Callable[..., Harness], capsys: pytest.CaptureFixture[str]
+) -> None:
+    h = make_harness()
+    api = _api(h)
+
+    assert main(["daily", "start"], client=api) == 0
+    first = capsys.readouterr().out
+    assert main(["daily", "start"], client=api) == 0
+    second = capsys.readouterr().out
+
+    assert second == first

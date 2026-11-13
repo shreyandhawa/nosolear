@@ -26,6 +26,7 @@ READ_ONLY_GET_ROUTES = {
     "/api/baseline",
     "/api/baseline/report",
     "/api/onboarding",
+    "/api/plan/today",
 }  # later phases add theirs
 
 

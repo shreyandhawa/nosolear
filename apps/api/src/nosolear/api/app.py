@@ -18,6 +18,7 @@ from nosolear.api.errors import install_error_handlers
 from nosolear.api.guards import RequestGuardMiddleware
 from nosolear.api.job_routes import router as job_router
 from nosolear.api.onboarding_routes import router as onboarding_router
+from nosolear.api.plan_routes import router as plan_router
 from nosolear.api.profile_routes import router as profile_router
 from nosolear.api.readiness_routes import router as readiness_router
 from nosolear.api.recording_routes import router as recording_router
@@ -145,6 +146,7 @@ def create_app(
     app.state.content_override = content
     app.state.seed_content = None
     app.include_router(profile_router)
+    app.include_router(plan_router)
     app.include_router(readiness_router)
     app.include_router(job_router)
     app.include_router(recording_router)

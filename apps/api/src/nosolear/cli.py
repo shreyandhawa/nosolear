@@ -1,11 +1,12 @@
 """Command-line entry point and composition root for the `nosolear` command."""
 
 import argparse
+import json
 import logging
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from pydantic import ValidationError
@@ -28,6 +29,7 @@ from nosolear.app.check_readiness import check_readiness
 from nosolear.app.probe_capabilities import probe_capabilities
 from nosolear.app.rebuild_profile import rebuild_profile
 from nosolear.cli_client import (
+    GENERIC_ERROR,
     TERMINAL,
     ApiClient,
     CliError,
@@ -86,6 +88,13 @@ def _parser() -> argparse.ArgumentParser:
     job.add_argument("--resume", action="store_true", help="resume a failed job first")
     job.add_argument("--follow", action="store_true", help="wait until the job is done or failed")
     job.add_argument("--base-url", help="the API address (default: from the settings)")
+    plan = commands.add_parser("plan", help="today's daily plan, built once per local day")
+    plan.add_argument("--json", action="store_true", help="print the response body")
+    plan.add_argument("--base-url", help="the API address (default: from the settings)")
+    daily = commands.add_parser("daily", help="today's daily session")
+    daily_commands = daily.add_subparsers(dest="daily_command", required=True)
+    daily_start = daily_commands.add_parser("start", help="start today's session and its attempt")
+    daily_start.add_argument("--base-url", help="the API address (default: from the settings)")
     return parser
 
 
@@ -165,6 +174,72 @@ def _upload(args: argparse.Namespace, api: ApiClient, attempt_id: str | None) ->
     return _follow(api, job_id)
 
 
+def _record(body: object, *keys: str) -> dict[str, Any]:
+    """A 2xx body is trusted only as far as the keys this command prints."""
+    if not isinstance(body, dict) or any(key not in body for key in keys):
+        raise CliError(GENERIC_ERROR)
+    return cast(dict[str, Any], body)
+
+
+def _printable(text: str) -> str:
+    """Prompt text may come from the coach: control and bidi characters never reach the terminal."""
+    return "".join(ch for ch in text if ch.isprintable())
+
+
+def _focus_line(focus: dict[str, Any]) -> str:
+    percent = round(float(focus["p_hat"]) * 100)
+    note = ", provisional" if focus["provisional"] else ""
+    return f"{focus['skill']}: {focus['error_key']} ({focus['status']}, {percent}%{note})"
+
+
+def _plan_lines(body: object) -> list[str]:
+    plan = _record(body, "foci", "probe", "prompt", "steps")
+    lines = [_focus_line(f) for f in plan["foci"]]
+    probe = plan["probe"]
+    if probe is None:
+        lines.append("probe: none")
+    else:
+        lines.append(f"probe: {probe['skill']}: {probe['error_key']} (due {probe['due_at']})")
+    prompt = plan["prompt"]
+    lines.append("prompt: none" if prompt is None else f"prompt: {_printable(prompt['text'])}")
+    lines.append("steps:")
+    for step in plan["steps"]:
+        parts = [str(step["kind"])]
+        if step["skill"]:
+            parts.append(str(step["skill"]))
+        if step["duration_s"]:
+            parts.append(f"{step['duration_s']}s")
+        lines.append("  " + " ".join(parts))
+    return lines
+
+
+def _daily_start_lines(body: object) -> list[str]:
+    session = _record(body, "session_id", "attempts")
+    attempts: object = session["attempts"]
+    if not isinstance(attempts, list) or not attempts:
+        raise CliError(GENERIC_ERROR)
+    first = _record(cast(list[object], attempts)[0], "id", "prompt_text")
+    prompt = first["prompt_text"]
+    prompt_line = "prompt: none" if prompt is None else f"prompt: {_printable(str(prompt))}"
+    return [f"session {session['session_id']}", f"attempt {first['id']}", prompt_line]
+
+
+def _daily_start(api: ApiClient) -> int:
+    for line in _daily_start_lines(api.post_json("/api/plan/today/session")):
+        print(line)
+    return 0
+
+
+def _plan(args: argparse.Namespace, api: ApiClient) -> int:
+    body = api.post_json("/api/plan/today")
+    if args.json:
+        print(json.dumps(body, indent=2, sort_keys=True))
+    else:
+        for line in _plan_lines(body):
+            print(line)
+    return 0
+
+
 def _job(args: argparse.Namespace, api: ApiClient) -> int:
     if args.resume:
         api.resume_job(args.job_id)
@@ -221,6 +296,10 @@ def _api_command(
     try:
         if args.command == "upload":
             return _upload(args, api, attempt_id)
+        if args.command == "plan":
+            return _plan(args, api)
+        if args.command == "daily":
+            return _daily_start(api)
         if args.command == first_run_cli.STAND_IN and synthesizer is None:
             synthesizer = build_stand_in_synthesizer(settings)
         handled = first_run_cli.run(args, api, synthesizer=synthesizer, data_dir=settings.data_dir)
@@ -333,6 +412,8 @@ def main(
     if args.command in (
         "upload",
         "job",
+        "plan",
+        "daily",
         first_run_cli.RESCORE,
         first_run_cli.CALIBRATE,
         first_run_cli.BASELINE,
