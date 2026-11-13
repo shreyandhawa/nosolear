@@ -799,3 +799,29 @@ def onboarding_cli_output(tmp: Path) -> tuple[str, str]:
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             main(["onboarding"], client=ApiClient(client))  # pyright: ignore[reportArgumentType]
     return "onboarding CLI output", out.getvalue() + err.getvalue()
+
+
+@leak_surface
+def plan_route_body(tmp: Path) -> tuple[str, str]:
+    """`POST /api/plan/today` with planted keys in the settings: the plan body and its repeat."""
+    app = create_app(planted_settings(tmp / "data"), start_runner=False)
+    with loopback_client(app) as client:
+        created = client.post("/api/plan/today")
+        repeated = client.post("/api/plan/today")
+    assert [created.status_code, repeated.status_code] == [201, 200]
+    return "daily plan route bodies", created.text + repeated.text
+
+
+@leak_surface
+def plan_cli_output(tmp: Path) -> tuple[str, str]:
+    """`nosolear plan` through the real CLI against a loopback API with planted keys."""
+    from nosolear.cli_client import ApiClient
+
+    settings = planted_settings(tmp / "data")
+    app = create_app(settings, start_runner=False)
+    with loopback_client(app) as client, pytest.MonkeyPatch.context() as mp:
+        _planted_env(mp, tmp / "data")
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            main(["plan"], client=ApiClient(client))  # pyright: ignore[reportArgumentType]
+    return "plan CLI output", out.getvalue() + err.getvalue()

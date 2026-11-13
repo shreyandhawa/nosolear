@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel
@@ -80,3 +80,56 @@ class UploadAcceptedOut(BaseModel):
 
 class JobAcceptedOut(BaseModel):
     job_id: str
+
+
+SkillName = Literal["sounds", "on_the_spot", "articulate"]
+FocusStatus = Literal["unknown", "active", "improving", "watching", "mastered"]
+
+
+class FocusOut(BaseModel):
+    """A focus without its sampled score: the sampled rate and the score stay server-side."""
+
+    skill: SkillName
+    error_key: str
+    description: str
+    impact: int
+    status: FocusStatus
+    p_hat: float
+    provisional: bool
+    source: Literal["profile", "fallback"]
+
+
+class ProbeOut(BaseModel):
+    skill: SkillName
+    error_key: str
+    due_at: datetime
+
+
+class PromptOut(BaseModel):
+    id: str
+    text: str
+    target_keys: list[str]
+
+
+class DrillOut(BaseModel):
+    skill: SkillName
+    error_key: str
+    drill_family: str
+
+
+class PlanStepOut(BaseModel):
+    kind: Literal["speak", "analyze", "feedback", "drill", "log"]
+    skill: SkillName | None
+    duration_s: int
+
+
+class PlanOut(BaseModel):
+    id: str
+    for_date: date
+    seed: int
+    protocol_version: int
+    foci: list[FocusOut]
+    probe: ProbeOut | None
+    prompt: PromptOut | None
+    drills: list[DrillOut]
+    steps: list[PlanStepOut]

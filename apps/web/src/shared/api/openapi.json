@@ -500,6 +500,34 @@
         "title": "ClipOut",
         "type": "object"
       },
+      "DrillOut": {
+        "properties": {
+          "drill_family": {
+            "title": "Drill Family",
+            "type": "string"
+          },
+          "error_key": {
+            "title": "Error Key",
+            "type": "string"
+          },
+          "skill": {
+            "enum": [
+              "sounds",
+              "on_the_spot",
+              "articulate"
+            ],
+            "title": "Skill",
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill",
+          "error_key",
+          "drill_family"
+        ],
+        "title": "DrillOut",
+        "type": "object"
+      },
       "ErrorOut": {
         "properties": {
           "code": {
@@ -516,6 +544,71 @@
           "message"
         ],
         "title": "ErrorOut",
+        "type": "object"
+      },
+      "FocusOut": {
+        "description": "A focus without its sampled score: the sampled rate and the score stay server-side.",
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "error_key": {
+            "title": "Error Key",
+            "type": "string"
+          },
+          "impact": {
+            "title": "Impact",
+            "type": "integer"
+          },
+          "p_hat": {
+            "title": "P Hat",
+            "type": "number"
+          },
+          "provisional": {
+            "title": "Provisional",
+            "type": "boolean"
+          },
+          "skill": {
+            "enum": [
+              "sounds",
+              "on_the_spot",
+              "articulate"
+            ],
+            "title": "Skill",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "profile",
+              "fallback"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "unknown",
+              "active",
+              "improving",
+              "watching",
+              "mastered"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill",
+          "error_key",
+          "description",
+          "impact",
+          "status",
+          "p_hat",
+          "provisional",
+          "source"
+        ],
+        "title": "FocusOut",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -707,6 +800,152 @@
         "title": "OnboardingOut",
         "type": "object"
       },
+      "PlanOut": {
+        "properties": {
+          "drills": {
+            "items": {
+              "$ref": "#/components/schemas/DrillOut"
+            },
+            "title": "Drills",
+            "type": "array"
+          },
+          "foci": {
+            "items": {
+              "$ref": "#/components/schemas/FocusOut"
+            },
+            "title": "Foci",
+            "type": "array"
+          },
+          "for_date": {
+            "format": "date",
+            "title": "For Date",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "probe": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProbeOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PromptOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "protocol_version": {
+            "title": "Protocol Version",
+            "type": "integer"
+          },
+          "seed": {
+            "title": "Seed",
+            "type": "integer"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/PlanStepOut"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "for_date",
+          "seed",
+          "protocol_version",
+          "foci",
+          "probe",
+          "prompt",
+          "drills",
+          "steps"
+        ],
+        "title": "PlanOut",
+        "type": "object"
+      },
+      "PlanStepOut": {
+        "properties": {
+          "duration_s": {
+            "title": "Duration S",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "speak",
+              "analyze",
+              "feedback",
+              "drill",
+              "log"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "skill": {
+            "anyOf": [
+              {
+                "enum": [
+                  "sounds",
+                  "on_the_spot",
+                  "articulate"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill"
+          }
+        },
+        "required": [
+          "kind",
+          "skill",
+          "duration_s"
+        ],
+        "title": "PlanStepOut",
+        "type": "object"
+      },
+      "ProbeOut": {
+        "properties": {
+          "due_at": {
+            "format": "date-time",
+            "title": "Due At",
+            "type": "string"
+          },
+          "error_key": {
+            "title": "Error Key",
+            "type": "string"
+          },
+          "skill": {
+            "enum": [
+              "sounds",
+              "on_the_spot",
+              "articulate"
+            ],
+            "title": "Skill",
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill",
+          "error_key",
+          "due_at"
+        ],
+        "title": "ProbeOut",
+        "type": "object"
+      },
       "ProfileEntryOut": {
         "properties": {
           "ci_high": {
@@ -830,6 +1069,32 @@
           "entries"
         ],
         "title": "ProfileOut",
+        "type": "object"
+      },
+      "PromptOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "target_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Target Keys",
+            "type": "array"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "target_keys"
+        ],
+        "title": "PromptOut",
         "type": "object"
       },
       "ReadinessOut": {
@@ -1518,6 +1783,43 @@
           }
         },
         "summary": "Get Onboarding"
+      }
+    },
+    "/api/plan/today": {
+      "get": {
+        "operationId": "getTodayPlan",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Today Plan"
+      },
+      "post": {
+        "operationId": "buildTodayPlan",
+        "responses": {
+          "200": {
+            "description": "today's plan was already built"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Build Today Plan"
       }
     },
     "/api/profile": {

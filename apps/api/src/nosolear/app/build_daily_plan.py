@@ -5,7 +5,7 @@ that only crosses UTC midnight stays on the same local date and returns the same
 periods stay UTC; only this use case reads the zone.
 """
 
-from datetime import tzinfo
+from datetime import date, datetime, tzinfo
 
 from nosolear.domain.daily_plan import assemble_plan
 from nosolear.domain.packs import LanguagePack
@@ -24,6 +24,11 @@ from nosolear.ports.plan import (
 RECENT_PROMPTS = 3
 
 
+def plan_date(now: datetime, tz: tzinfo) -> date:
+    """The local date a plan is kept for: the same for every call within one local day."""
+    return now.astimezone(tz).date()
+
+
 def build_daily_plan(
     *,
     plans: DailyPlanStore,
@@ -38,7 +43,7 @@ def build_daily_plan(
 ) -> StoredPlan:
     """The stored plan for today's local date, built and stored first if there is none."""
     now = clock.now()
-    day = now.astimezone(tz).date()
+    day = plan_date(now, tz)
     existing = plans.get(day)
     if existing is not None:
         return existing

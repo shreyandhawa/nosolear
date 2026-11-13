@@ -193,6 +193,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/plan/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Today Plan */
+        get: operations["getTodayPlan"];
+        put?: never;
+        /** Build Today Plan */
+        post: operations["buildTodayPlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/profile": {
         parameters: {
             query?: never;
@@ -405,12 +423,55 @@ export interface components {
             /** Word */
             word: string | null;
         };
+        /** DrillOut */
+        DrillOut: {
+            /** Drill Family */
+            drill_family: string;
+            /** Error Key */
+            error_key: string;
+            /**
+             * Skill
+             * @enum {string}
+             */
+            skill: "sounds" | "on_the_spot" | "articulate";
+        };
         /** ErrorOut */
         ErrorOut: {
             /** Code */
             code: string;
             /** Message */
             message: string;
+        };
+        /**
+         * FocusOut
+         * @description A focus without its sampled score: the sampled rate and the score stay server-side.
+         */
+        FocusOut: {
+            /** Description */
+            description: string;
+            /** Error Key */
+            error_key: string;
+            /** Impact */
+            impact: number;
+            /** P Hat */
+            p_hat: number;
+            /** Provisional */
+            provisional: boolean;
+            /**
+             * Skill
+             * @enum {string}
+             */
+            skill: "sounds" | "on_the_spot" | "articulate";
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "profile" | "fallback";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "unknown" | "active" | "improving" | "watching" | "mastered";
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -477,6 +538,55 @@ export interface components {
             /** Step */
             step: string;
         };
+        /** PlanOut */
+        PlanOut: {
+            /** Drills */
+            drills: components["schemas"]["DrillOut"][];
+            /** Foci */
+            foci: components["schemas"]["FocusOut"][];
+            /**
+             * For Date
+             * Format: date
+             */
+            for_date: string;
+            /** Id */
+            id: string;
+            probe: components["schemas"]["ProbeOut"] | null;
+            prompt: components["schemas"]["PromptOut"] | null;
+            /** Protocol Version */
+            protocol_version: number;
+            /** Seed */
+            seed: number;
+            /** Steps */
+            steps: components["schemas"]["PlanStepOut"][];
+        };
+        /** PlanStepOut */
+        PlanStepOut: {
+            /** Duration S */
+            duration_s: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "speak" | "analyze" | "feedback" | "drill" | "log";
+            /** Skill */
+            skill: ("sounds" | "on_the_spot" | "articulate") | null;
+        };
+        /** ProbeOut */
+        ProbeOut: {
+            /**
+             * Due At
+             * Format: date-time
+             */
+            due_at: string;
+            /** Error Key */
+            error_key: string;
+            /**
+             * Skill
+             * @enum {string}
+             */
+            skill: "sounds" | "on_the_spot" | "articulate";
+        };
         /** ProfileEntryOut */
         ProfileEntryOut: {
             /** Ci High */
@@ -528,6 +638,15 @@ export interface components {
             entries: components["schemas"]["ProfileEntryOut"][];
             /** Taxonomy Version */
             taxonomy_version: number;
+        };
+        /** PromptOut */
+        PromptOut: {
+            /** Id */
+            id: string;
+            /** Target Keys */
+            target_keys: string[];
+            /** Text */
+            text: string;
         };
         /** ReadinessOut */
         ReadinessOut: {
@@ -1007,6 +1126,53 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OnboardingOut"];
+                };
+            };
+        };
+    };
+    getTodayPlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanOut"];
+                };
+            };
+        };
+    };
+    buildTodayPlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description today's plan was already built */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanOut"];
                 };
             };
         };
