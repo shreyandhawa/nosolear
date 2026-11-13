@@ -107,3 +107,12 @@ def uninstall_secret_scrubbing() -> None:
         logging.setLogRecordFactory(_original_factory)
     _original_factory = None
     _forms = ()
+
+
+QUIET_LOGGERS = ("httpx", "httpcore", "httpx2", "httpcore2", "anthropic", "azure")
+"""Client libraries whose INFO and DEBUG records can carry request details; kept at WARNING."""
+
+
+def quiet_third_party_loggers() -> None:
+    for name in QUIET_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)

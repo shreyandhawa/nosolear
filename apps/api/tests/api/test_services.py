@@ -69,7 +69,12 @@ def test_build_services_uses_the_given_clock_and_registry(tmp_path: Path) -> Non
         services = build_services(settings, engine, clock=clock, registry=registry)
         assert services.clock is clock
         assert services.registry is registry
-        assert services.paid_ports == {}
+        assert set(services.providers.paid_ports()) == {
+            "pronunciation_scorer",
+            "synthesizer",
+            "coach",
+            "transcriber_azure",
+        }
     finally:
         services.runner.stop(timeout=10.0)
         engine.dispose()

@@ -3,12 +3,13 @@
 import os
 
 from nosolear.adapters.private_fs import ensure_private_dir, tighten_tree
-from nosolear.logging_setup import install_secret_scrubbing
+from nosolear.logging_setup import install_secret_scrubbing, quiet_third_party_loggers
 from nosolear.settings import Settings
 
 
 def prepare_process(settings: Settings, *, create_data_dir: bool) -> None:
     install_secret_scrubbing(settings.secret_values())
+    quiet_third_party_loggers()
     os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"  # not a user setting (no telemetry, §15-16)
     if create_data_dir:
         os.umask(0o077)  # new files (SQLite, audio) are owner-only from creation

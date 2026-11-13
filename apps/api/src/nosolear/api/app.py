@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import Engine
 
 from nosolear.adapters.system_clock import SystemClock
-from nosolear.api.deps import Services, build_services, load_active_pack
+from nosolear.api.deps import RawPorts, Services, build_services, load_active_pack
 from nosolear.api.errors import install_error_handlers
 from nosolear.api.guards import RequestGuardMiddleware
 from nosolear.api.job_routes import router as job_router
@@ -42,6 +42,7 @@ def _prepare(app: FastAPI, settings: Settings, engine: Engine) -> Services:
         registry=cast(StepRegistry | None, app.state.step_registry),
         clock=cast(Clock, app.state.clock),
         ledger=cast(UsageLedger | None, app.state.ledger),
+        raw_ports=cast(RawPorts | None, app.state.raw_ports),
     )
     try:
         pack = load_active_pack(settings)
@@ -90,6 +91,7 @@ def create_app(
     start_runner: bool = True,
     ledger: UsageLedger | None = None,
     clock: Clock | None = None,
+    raw_ports: RawPorts | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Nosolear",
@@ -104,6 +106,7 @@ def create_app(
     app.state.start_runner = start_runner
     app.state.ledger = ledger
     app.state.clock = clock or SystemClock()
+    app.state.raw_ports = raw_ports
     app.include_router(profile_router)
     app.include_router(readiness_router)
     app.include_router(job_router)
