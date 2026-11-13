@@ -11,7 +11,11 @@ from sqlalchemy import Engine, text
 
 from nosolear.adapters.content_files import load_pack
 from nosolear.domain.coach import CoachAnalysis, CoachFinding, Rubric
+from nosolear.domain.estimates import BetaState, estimate
+from nosolear.domain.packs import LanguagePack
+from nosolear.domain.profile import ALGO_VERSION, DEFAULT_CONFIG, Profile, ProfileEntry
 from nosolear.domain.observations import Context, Observation, Outcome, make_observation
+from nosolear.domain.status import Status
 from nosolear.domain.speech import (
     NBestPhoneme,
     PhonemeAssessment,
@@ -254,4 +258,39 @@ def coach_analysis(findings: Iterable[CoachFinding], rubric: Rubric | None = Non
         dropped=0,
         tokens_used=0,
         raw=RAW_COACH,
+    )
+
+
+def entry(
+    key: str,
+    *,
+    a: float,
+    b: float,
+    status: Status,
+    provisional: bool = False,
+    at: datetime = NOW,
+    pack: LanguagePack = PACK,
+) -> ProfileEntry:
+    """A profile entry holding the given decayed evidence, estimated as `build_profile` does."""
+    definition = TAX.get(key)
+    state = BetaState(a, b, at)
+    est = estimate(state, prior=pack.prior_for(key), level=DEFAULT_CONFIG.interval_level)
+    return ProfileEntry(
+        definition=definition,
+        state=state,
+        estimate=est,
+        status=status,
+        last_seen_at=at,
+        priority=est.p_hat * definition.impact,
+        provisional=provisional,
+    )
+
+
+def profile_of(entries: Iterable[ProfileEntry], as_of: datetime = NOW) -> Profile:
+    return Profile(
+        as_of=as_of,
+        taxonomy_version=TAX.version,
+        algo_version=ALGO_VERSION,
+        pack_id=PACK.id,
+        entries=tuple(entries),
     )
