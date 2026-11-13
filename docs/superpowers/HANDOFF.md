@@ -4,7 +4,7 @@ Read this first in a new session, then continue from **Next**.
 
 ## Current phase
 
-Phase 0c (audio, jobs, ledger) is done as of 2026-11-13. Next is Phase 0d (provider adapters).
+Phase 0d (provider adapters) is done as of 2026-11-13. Next is Phase 0e (scoring, calibration, baseline).
 
 ## Done
 
@@ -73,19 +73,32 @@ Phase 0c (audio, jobs, ledger) is done as of 2026-11-13. Next is Phase 0d (provi
 - 2026-11-13: Phase 0d Task 12: the capability facts and readiness rows (`domain/capabilities.py`: staleness by region and locale, the newest speed figure per local transcriber, the Azure, transcriber and phone probe rows), the `provider_capabilities` table and migration `0006_provider_capabilities`, the Azure n-best and prosody probe (`adapters/azure_pa_probe.py`), the local speed check on a 161-word passage with warm-up untimed (`adapters/transcriber_speed_check.py`), `probe_capabilities`, and `nosolear doctor --probe`. Plain `doctor` reads the stored records read-only and creates nothing.
 - 2026-11-13: Phase 0d review fixes (I1, I2, I3, M2, M10, M13): the coach ignores shell `ANTHROPIC_CUSTOM_HEADERS` and telemetry variables; the server's `auto` transcriber uses the stored speed figures as `doctor` does; `doctor --probe` reports every probe failure as a safe line (with leak surfaces for its output); a voice switches only on a `BadRequest` and only once the fallback is accepted, and a regenerated TTS clip replaces its cache row; live tests run the CLI's process setup; a whisper model setting must be a pinned model.
 
+- 2026-11-13: Phase 0d phase review. One combined opus security and final pass over `acec2f4..21998ab` found 0 Critical, 3 Important and 13 Minor. The fix PR #41 covers:
+  - all three Important findings: the coach ignores shell `ANTHROPIC_CUSTOM_HEADERS` and OTel variables; the server's `auto` transcriber uses the stored speed factors; `doctor --probe` turns every failure into a safe message and has leak-surface producers;
+  - three of the Minor findings: TTS falls back only when the voice is rejected and upserts regenerated cache rows; live tests run `prepare_process`; the whisper model settings are checked against the pinned tables.
+
+  The remaining Minor findings are under "Carried to later phases". The `local-models` job is green on Ubuntu and macOS since #40.
+
 ## In progress
 
-- Nothing open. Phase 0c is merged: PRs #32 (Task 1), #33 (Tasks 2–5), #34 (Tasks 6–8) and #35 (Tasks 9–11 and the review fixes).
-- The Phase 0c subagent-driven-development ledger is at `.superpowers/sdd/2026-11-12-phase-0c-audio-jobs-ledger/progress.md` (git-ignored). It holds every ruling, and the next controller may delete it.
+- Nothing open. Phase 0d is merged: PRs #36 (Tasks 1–2), #37 (Tasks 3–5), #38 (Tasks 6–9), #39 (Tasks 10–12), #40 (local-models fixes on real models) and #41 (phase review fixes and this close-out).
+- The Phase 0d subagent-driven-development ledger is at `.superpowers/sdd/2026-11-12-phase-0d-provider-adapters/progress.md` (git-ignored), with the review findings in `phase-review-findings.md` beside it. The next controller may delete it, and the 0c ledger too.
 
 ## Next
 
-1. Execute Phase 0d: `docs/superpowers/plans/2026-11-12-phase-0d-provider-adapters.md`, branch prefix `p0d/`, under the budget rule in "Working rules carried forward".
-   - Use `superpowers:subagent-driven-development`, with a fresh ledger under `.superpowers/sdd/`.
-   - Pick up the Phase 0d items under "Carried to later phases" below, including the ones from the Phase 0c review.
-   - Live checks need the owner's keys in `.env`. They wait for the owner and never block the phase.
-2. Any task that adds a dependency reruns `uv run --project apps/api python scripts/third_party_licences.py`.
-3. At the end of each phase, run one combined opus security and final review over the phase range, then one fix dispatch. Then update this file and hand off to a fresh session.
+1. Execute Phase 0e: `docs/superpowers/plans/2026-11-12-phase-0e-scoring-calibration-baseline.md`, branch prefix `p0e/`, under the budget rule in "Working rules carried forward". Use `superpowers:subagent-driven-development` with a fresh ledger under `.superpowers/sdd/`. Then Phase 1.
+2. The owner runs `make test-live` with keys in `.env` and reports results; see "Adapters not yet verified against the live service".
+3. Any task that adds a dependency reruns `uv run --project apps/api python scripts/third_party_licences.py`.
+4. At the end of each phase, run one combined opus security and final review over the phase range, then one fix dispatch. Then update this file and hand off to a fresh session.
+
+## What Phase 0e and later can rely on (from Phase 0d)
+
+The 0d plan's "Produces for later phases" section is accurate as shipped, with these differences:
+- `create_app` also keeps 0c's `clock=None`.
+- The whisper model settings accept only the pinned names.
+- `capability_rows` takes `azure_ready`, `installed` and `auto_fix`.
+- `build_services` passes the stored real-time factors, so the server's `auto` choice matches `doctor`.
+- Provider fakes are in `tests/provider_fakes.py`. Payload builders are in `tests/adapters/azure_payloads.py` and `tests/adapters/anthropic_payloads.py`.
 
 ## What Phase 0d and later can rely on (from Phase 0c)
 
@@ -153,22 +166,19 @@ Cross-phase assumptions (from the 0c plan): None open: 0b's settings tree (inclu
     - `encode_wav` with NaN or inf floats is an undefined cast.
     - `test_busy_timeout_is_set` cannot fail, because sqlite3 already defaults to 5000 ms.
 
-- **Phase 0d:**
-  - **Key-leak items** (the security review's item C). No Phase 0b code encodes or sends a key, so these start when the adapters do:
-    - Let derived credentials (for example Azure `issueToken` JWTs) be registered with the scrubber at runtime.
-    - Pin the `httpx`, `httpcore`, Anthropic SDK and Azure Speech SDK loggers at WARNING, and run the leak harness over adapter error paths with their DEBUG logging on.
-    - Install a scrubbing `sys.excepthook` in `prepare_process`.
-    - Check that no adapter passes a key-bearing `extra=`.
-    - Optionally add base64 forms to `secret_forms`.
-    - Guard `install_secret_scrubbing` against recursing through a library's factory that chains back to ours.
-  - **Licence script.** `scripts/third_party_licences.py` cannot build a complete table on one machine once the `local` and `apple` extras exist. Pick one canonical platform, or add per-platform rows. The web table already has darwin-only rows.
-  - Check the licence of the CrisperWhisper revision that 0d pins.
-  - **Readiness.**
-    - Flag unknown `NOSOLEAR_*` names in `.env`.
-    - Report a data dir that is a file or belongs to another user as not ready (today `serve` fails loudly).
-    - Unify the `Transcriber` alias with 0d's `TranscriberChoice`.
-  - **README.** Add the synthesized-audio traffic of `doctor --probe` and `make test-live` to "what leaves your machine" once they call out.
-  - **PRIVACY.md.** Its test checks only the provider names. Once providers send data, make it check each row's content against ARCHITECTURE §16.
+- **From the Phase 0d review (deferred Minors, `phase-review-findings.md` in the 0d ledger):**
+  - M1: Azure SDK calls are not wrapped. An SDK `RuntimeError` becomes `internal_error` and is recorded at the full estimate even when nothing was sent. Map pre-send failures to `RequestNotSent` and the rest to `ProviderUnavailable`.
+  - M3: every retried 429 records the full estimate (as §11 says). A coach rate-limit burst can use most of a day's token cap. This is an owner decision, since it would change the spec.
+  - M4: `speak_ssml_async().get()` and `recognize_once()` have no overall timeout and hold the process-wide Azure lock. On a 120 s clip, retries can hold it for about 22 minutes.
+  - M5: `mlx_whisper` calls `ensure_model` (a Hub metadata request) on every transcription and never unloads.
+  - M6: real-time-factor records are not tied to the model or library version. Azure staleness ignores a key or tier change in the same region.
+  - M7: one malformed coach finding fails the whole analysis instead of being dropped and counted.
+  - M8: `test_coach_reserves_upper_bound` never asserts that the reservation equals `claude_tokens(request)`.
+  - M11: `FREE_TALK_SCORING = CONTINUOUS` cannot take effect while `JOB_PLANS` runs `score` before `transcribe`. Fix the order when the free-talk decision lands.
+  - M12: the Azure lock is per process, so `doctor --probe` during server jobs can put two requests in flight on F0.
+  - Phone probe: `a` (heard between `æ` and `ɑ`) is unmapped, and `ɾ`, `ᵻ`, `ɐ` and `ʔ` were seen before the espeak newline fix. `θ` is heard as `s`, and espeak's dark final `l` is heard as `v a`, so the local-models test word `school` became `stop`. The map still fails loudly on unknown symbols (§4).
+  - The Azure Speech SDK's licence is listed as "Other/Proprietary" in `THIRD_PARTY_NOTICES`; the owner should read its terms. The SDK has its own telemetry with no switch in its Python API (PRIVACY.md says so). Sixteen Linux-only NVIDIA wheel rows say "verify on the wheel".
+- **Still open from the 0b list for 0d (not done in 0d):** register derived credentials (Azure `issueToken` JWTs) with the scrubber if one is ever used; a scrubbing `sys.excepthook` in `prepare_process`; run the leak harness with SDK DEBUG logging on; base64 forms in `secret_forms`; guard `install_secret_scrubbing` against recursion; flag unknown `NOSOLEAR_*` names in `.env`; report a data dir that is a file or belongs to another user as not ready; README "what leaves your machine" for `doctor --probe` and `make test-live`; make PRIVACY.md's test check each row against §16. Done in 0d: logger pins at WARNING, the `Transcriber` alias unified with `TranscriberName`, the licence script's extras rows, and the CrisperWhisper licence check (nyralabs, CC BY-NC 4.0).
 - **Phase 0e:**
   - Reject unknown keys in `parse_pack`. A `[[hypothesis]]` typo currently yields an empty pack.
   - Key pack-change rebuilds on a content hash, not only the pack id.
@@ -253,7 +263,8 @@ None.
 
 ## Branch and PR state
 
-- `main`: "Add the recording upload endpoint and CLI upload and job commands (#35)", after #34, #33 and #32 (Phase 0c).
+- `main`: Phase 0d merged through #41, after #36–#40.
+- `p0d/01-ports-wrappers` (#36), `p0d/03-azure` (#37), `p0d/06-local-models` (#38), `p0d/10-coach-composition` (#39), `p0d/09-local-models-fixes` (#40) and `p0d/14-review-fixes` (#41): merged and kept. Local `worktree-agent-*` branches were left by subagent worktrees; they hold no unmerged work, and deleting them is the owner's call.
 - `p0c/01-audio-domain` (#32), `p0c/02-audio-store` (#33), `p0c/06-jobs` (merged through #34), `p0c/08-runner-api` (#34) and `p0c/09-upload-cli` (#35): merged and kept.
 - `docs/phase-plans`: merged (#13) and kept.
 - `p0b/01-community-files` … `p0b/11-planted-key-test`: merged (#14–#25) and kept. #24's squash subject on `main` is the branch name "p0b/10 readme setup guide", because `--fill` on a multi-commit PR uses the branch name. Later merges pass `--subject`.
@@ -263,7 +274,19 @@ None.
 
 ## Adapters not yet verified against the live service
 
-None are built yet, so every adapter in Phase 0d starts unverified. Live checks need the owner to put the Azure and Claude keys in `.env`; never ask for a key in chat. Update this list as live tests pass.
+Every Phase 0d adapter has contract tests only, unless noted. Live checks need the owner to put the Azure and Claude keys in `.env` and run `make test-live`; never ask for a key in chat. Update this list as live tests pass.
+
+| Adapter | What only a live run shows | Verified keylessly instead |
+|---|---|---|
+| `azure_tts` | Real SDK calls, the configured voice and the Ava fallback, whether Azure answers an unknown voice with BadRequest (the fallback relies on it), word boundaries, the slow rate | Contract tests |
+| `azure_pa` | Real JSON field names; whether this tier returns n-best phonemes and prosody; scripted, continuous and unscripted modes | Contract tests |
+| `azure_stt` | Detailed output, word timings, raw profanity | Contract tests |
+| Free-talk scoring decision (§4, §18) | The unscripted versus transcribe-then-score comparison | None; stays open |
+| `claude_coach` | Structured output on the user's model; real usage numbers; that the API accepts `anthropic==2.8.0`'s `Authorization: Bearer` for an API key; that clearing the SDK's private `_custom_headers` still holds on SDK upgrades | Contract tests over `MockTransport` |
+| `AzureCapabilityProbe`, `doctor --probe` | The probe against the user's resource | Fakes only |
+| `faster_whisper`, `mlx_whisper` (macOS), `wav2vec2_espeak` | Accuracy on TTS audio | CI `local-models` on espeak-ng audio, green on Ubuntu and macOS (PR #40) |
+| `crisper_whisper` | Everything: gated download, word timings, speed | Contract tests only; never in CI. Opt-in (`NOSOLEAR_TRANSCRIBER=crisper_whisper`, licence accepted on Hugging Face) |
+| Every live check | Linux | Only on the owner's macOS machine unless the owner runs `make test-live` on Linux |
 
 ## Working rules carried forward
 
