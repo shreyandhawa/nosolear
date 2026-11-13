@@ -168,7 +168,12 @@ def _flags(items: Sequence[BaselineItemRecord], inputs: ExtractionInputs) -> tup
             if stored.kind is AnalysisKind.COACH:
                 coach_scored = True
             if stored.kind is AnalysisKind.TRANSCRIPT:
-                transcript = parse_transcript(raw_result_of(stored))
+                try:
+                    transcript = parse_transcript(raw_result_of(stored))
+                except ValueError:
+                    # Skipped, as `collect_results` skips it: an unreadable kind never fails
+                    # the report.
+                    continue
                 fillers_undercounted = fillers_undercounted or not transcript.fillers_kept
     return fillers_undercounted, coach_scored
 

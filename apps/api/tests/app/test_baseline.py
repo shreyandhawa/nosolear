@@ -275,3 +275,18 @@ def test_failed_report_reopens_the_session(
     assert _store(h).latest_completed() is None
     report = _complete(h)
     assert report.session_id == view.session.id
+
+
+def test_undecodable_transcript_does_not_break_the_report(make_harness: Callable[..., Harness]):
+    h = make_harness(content=_content())
+    _record_all(h, _start(h))
+    with h.engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE analyses SET raw_json = '{}' "
+                "WHERE rowid = (SELECT rowid FROM analyses WHERE kind = 'transcript' LIMIT 1)"
+            )
+        )
+    report = _complete(h)
+    assert report.session_id
+    assert _report(h) is not None
