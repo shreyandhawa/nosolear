@@ -45,7 +45,7 @@ An open-source English speaking coach that runs on the user's own machine. Anyon
 | Backend | Python + FastAPI, ports and adapters. One package with optional extras `local` and `apple` (approach A, §3) | $0 |
 | Pronunciation scoring | Azure AI Speech pronunciation assessment on the user's own resource; F0 recommended | $0 on F0: about 1.5–2.5 of 5 free audio hours a month |
 | Phone probe (inserted vowels, second opinion on substitutions) | Local wav2vec2 + espeak-ng (`local` extra). Drill-only until the user's calibration enables it for a key | $0 |
-| Transcription | `NOSOLEAR_TRANSCRIBER=auto` picks mlx-whisper (Apple), faster-whisper (CPU/CUDA) or Azure speech-to-text, with a runtime speed check. CrisperWhisper is opt-in only (non-commercial licence) | $0 locally; Azure STT uses free audio hours |
+| Transcription | `NOSOLEAR_TRANSCRIBER=auto` picks mlx-whisper (Apple), faster-whisper (CPU/CUDA) or Azure speech-to-text, with a runtime speed check. CrisperWhisper is opt-in only (non-commercial weights) | $0 locally; Azure STT uses free audio hours |
 | Model voice | Azure Neural TTS, cached on disk | $0 on F0: about 75k of 500k free characters a month |
 | AI coach | Claude API with the user's own key and structured output. The model is a setting, default `claude-opus-5-5` | About $7/month at daily use on Opus 5.5 |
 | Target accent | General American. The Azure locale is a setting, default `en-US` | n/a |
@@ -219,7 +219,7 @@ apps/api/src/nosolear/
 **Selection.** `NOSOLEAR_TRANSCRIBER=auto` (the default) picks by platform and what is installed:
 - macOS on Apple Silicon: `mlx_whisper`, then `faster_whisper`, then `azure_stt`.
 - Linux: `faster_whisper` (CUDA when available, otherwise CPU), then `azure_stt`.
-- `crisper_whisper` is never picked by `auto`, because of its non-commercial licence (§17). A user who accepts that licence sets `NOSOLEAR_TRANSCRIBER=crisper_whisper`.
+- `crisper_whisper` is never picked by `auto`, because its weights are non-commercial (§17). A user who accepts the weights' licence sets `NOSOLEAR_TRANSCRIBER=crisper_whisper`.
 - An explicit choice is always honoured; readiness warns if it fails the speed check.
 
 **Speed check.** It replaces the old local-transcription spike. `nosolear doctor --probe` times each installed local transcriber on a synthetic 60-second clip generated once through the TTS cache. A transcriber slower than about 1/3 real time (more than about 20 seconds for the clip) is skipped by `auto`, which falls back to the next option. The result is stored in `provider_capabilities`. `azure_stt` is the last fallback and is not timed.
@@ -860,7 +860,7 @@ Everything else stays in the data dir: recordings, raw provider results, transcr
 |---|---|---|
 | CrisperWhisper | Opt-in transcriber, never picked by `auto` | The code is MIT. The weights (`nyralabs/CrisperWhisper`, formerly `nyrahealth/`) are CC BY-NC 4.0: research and non-commercial use only. The upstream README also names a "Nyra Health Non-Commercial Research License" for the weights, so Phase 0d checks the licence of the revision it pins. The README and notices say that the MIT licence doesn't cover the weights |
 | espeak-ng | A separate executable the user installs (Homebrew, apt), run as a subprocess; not linked, bundled or loaded as a library | GPL-3.0 or later (release 1.52.0 when checked). The app doesn't use `phonemizer`, which loads libespeak-ng into the Python process |
-| wav2vec2-lv-60-espeak-cv-ft weights | Downloaded from Hugging Face at a pinned revision | Apache-2.0, as the model card declares |
+| wav2vec2-lv-60-espeak-cv-ft weights | Downloaded from Hugging Face at a pinned revision | Apache-2.0, as the model card declares; the card doesn't state the licences of its training data or base checkpoint |
 | Whisper weights for mlx-whisper and faster-whisper | Downloaded at pinned revisions | `openai/whisper-large-v3-turbo` and `Systran/faster-whisper-small.en` are MIT. `mlx-community/whisper-large-v3-turbo` declares no licence on its card; it is a conversion of OpenAI's MIT `large-v3-turbo` |
 | Python and JavaScript dependencies | Installed from the lockfiles | Each package's licence, listed from the lockfiles in the notices task |
 
@@ -906,7 +906,7 @@ Still open, each with the phase that decides it:
 | R7 | Users skip calibration | Scores stay visibly provisional; onboarding keeps offering calibration; re-scoring from stored raw results applies it to past sessions at no cost |
 | R8 | TTS controls are a different voice from the user's, so false-alarm rates may be optimistic | Attempted-correct takes reported next to the TTS rate as a warning; strict thresholds; re-calibration at any time |
 | R9 | Python 3.14 wheels may be missing for torch, ctranslate2 (faster-whisper), MLX or the Azure Speech SDK on a platform | Verify in Phase 0d before building on them, the Azure SDK first because the base install needs it; a missing wheel for an extra marks that extra unavailable on that platform in readiness and the README |
-| R10 | CrisperWhisper's licence is non-commercial | Opt-in only, never picked by `auto`; stated in the README and notices; the other transcribers are full alternatives |
+| R10 | CrisperWhisper's weights are licensed for non-commercial use only (its code is MIT) | Opt-in only, never picked by `auto`; stated in the README and notices; the other transcribers are full alternatives |
 | R11 | Optional installs are heavy (torch, several GB of models) | The base install works without them; extras are opt-in; models download on first use; the README lists sizes |
 | R12 | Phone recording quirks (Safari, sample rates, the mic stopping in background tabs) | AudioWorklet with resampling; IndexedDB retry; a Playwright WebKit test (Phase 2) |
 | R13 | The model voice bleeds into the mic during shadowing | Default to "listen, then repeat". True shadowing only with headphones; echo cancellation on |
