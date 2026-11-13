@@ -7,12 +7,10 @@ n-best phonemes and prosody on, so the result is the same JSON shape in every mo
 """
 
 import json
-import wave
 from pathlib import Path
 
-from nosolear.adapters.azure_speech import AzureSpeech, RecognitionRequest
+from nosolear.adapters.azure_speech import AzureSpeech, RecognitionRequest, wav_seconds
 from nosolear.domain.budget import Provider
-from nosolear.domain.errors import RequestNotSent
 from nosolear.domain.results import parse_azure_pa
 from nosolear.domain.speech import (
     MAX_SCRIPTED_SECONDS,
@@ -48,14 +46,6 @@ def pronunciation_config_json(reference_text: str | None, mode: ScoringMode) -> 
     )
 
 
-def _duration_s(wav: Path) -> float:
-    try:
-        with wave.open(str(wav), "rb") as reader:
-            return reader.getnframes() / reader.getframerate()
-    except wave.Error, EOFError, ZeroDivisionError:
-        raise RequestNotSent("The recording is not a readable WAV file.") from None
-
-
 class AzurePronunciationScorer:
     layer = "raw"
 
@@ -64,7 +54,7 @@ class AzurePronunciationScorer:
         self._locale = locale
 
     def score(self, wav: Path, *, reference_text: str | None) -> PronunciationAssessment:
-        duration = _duration_s(wav)
+        duration = wav_seconds(wav)
         mode = scoring_mode(reference_text, duration)
         request = RecognitionRequest(
             wav=wav,

@@ -9,12 +9,21 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import Field, SecretStr, ValidationError, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from nosolear.domain.transcriber_choice import TranscriberName
+
 REPO_ROOT = Path(__file__).resolve().parents[4]
 CONTENT_DIR = REPO_ROOT / "content"  # packs, calibration items and (0e) the baseline protocol
 LOOPBACK_NAMES = frozenset({"localhost", "127.0.0.1", "::1"})
 MIN_KEY_LENGTH = 16  # shorter keys are refused, so scrubbing never shreds ordinary text
 
-Transcriber = Literal["auto", "mlx_whisper", "faster_whisper", "azure_stt", "crisper_whisper"]
+Transcriber = Literal[
+    "auto",
+    TranscriberName.MLX_WHISPER,
+    TranscriberName.FASTER_WHISPER,
+    TranscriberName.AZURE_STT,
+    TranscriberName.CRISPER_WHISPER,
+]
+"""`auto` or a `TranscriberName`. The members are StrEnum, so they equal the setting strings."""
 TRANSCRIBERS: tuple[str, ...] = get_args(Transcriber)
 
 _log = logging.getLogger(__name__)
@@ -107,9 +116,7 @@ class Settings(BaseSettings):
     )
     anthropic_api_key: SecretStr | None = None
     coach_model: str = Field(default="claude-opus-5-5", pattern=_MODEL_ID)
-    transcriber: Literal[
-        "auto", "mlx_whisper", "faster_whisper", "azure_stt", "crisper_whisper"
-    ] = "auto"
+    transcriber: Transcriber = "auto"
     faster_whisper_model: str = Field(default="small.en", pattern=_MODEL_ID)
     mlx_whisper_model: str = Field(default="whisper-large-v3-turbo", pattern=_MODEL_ID)
     pack: str = Field(default="neutral", pattern=r"^[a-z0-9_]+$")

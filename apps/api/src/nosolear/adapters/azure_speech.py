@@ -301,3 +301,12 @@ def wav_duration_ms(audio: bytes) -> int:
     if shape != (16000, 1, 2):
         raise MalformedProviderResponse("Azure returned audio Nosolear can't use")
     return frames * 1000 // shape[0]
+
+
+def wav_seconds(wav: Path) -> float:
+    """The WAV's duration in seconds. A file that is not a readable WAV is `RequestNotSent`."""
+    try:
+        with wave.open(str(wav), "rb") as reader:
+            return reader.getnframes() / reader.getframerate()
+    except wave.Error, EOFError, ZeroDivisionError:
+        raise RequestNotSent("The recording is not a readable WAV file.") from None

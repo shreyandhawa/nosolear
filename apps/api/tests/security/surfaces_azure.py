@@ -8,7 +8,7 @@ from pydantic import SecretStr
 
 from nosolear.adapters.azure_speech import AzureSpeech, Cancellation
 from nosolear.domain.errors import MalformedProviderResponse, ProviderUnavailable
-from nosolear.domain.results import parse_azure_pa
+from nosolear.domain.results import parse_azure_pa, parse_azure_stt
 from nosolear.domain.speech import RawResult
 from security.planted import (
     PLANTED_ANTHROPIC_KEY,
@@ -55,3 +55,22 @@ def azure_pa_malformed_error(tmp: Path) -> tuple[str, str]:
         rendered = str(exc) + repr(exc) + "".join(traceback.format_exception(exc))
         return "malformed pronunciation result error and traceback", rendered
     raise AssertionError("a malformed payload did not raise")
+
+
+@leak_surface
+def azure_stt_malformed_error(tmp: Path) -> tuple[str, str]:
+    """A transcript payload Nosolear cannot read, with a planted key inside it: the error and its
+    traceback carry only the literal sentence."""
+    raw = RawResult(
+        provider="azure",
+        provider_version="1.53.0",
+        adapter="azure_stt",
+        adapter_version=1,
+        payload={"results": [PLANTED_AZURE_KEY, {"DisplayText": PLANTED_ANTHROPIC_KEY}]},
+    )
+    try:
+        parse_azure_stt(raw)
+    except MalformedProviderResponse as exc:
+        rendered = str(exc) + repr(exc) + "".join(traceback.format_exception(exc))
+        return "malformed transcript error and traceback", rendered
+    raise AssertionError("a malformed transcript payload did not raise")
