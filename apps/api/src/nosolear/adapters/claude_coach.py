@@ -58,13 +58,20 @@ class ClaudeCoach:
         # Built only with a key: without one the SDK would fall back to the shell's variables.
         self._client: anthropic.Anthropic | None = None
         if api_key is not None:
-            self._client = anthropic.Anthropic(
+            client = anthropic.Anthropic(
                 api_key=api_key.get_secret_value(),
                 base_url=API_BASE_URL,
                 max_retries=0,
                 timeout=timeout_s,
                 http_client=http_client,
+                # An explicit option stops the SDK reading ANTHROPIC_OPEN_TELEMETRY* (content capture).
+                open_telemetry=False,
             )
+            # The SDK reads ANTHROPIC_CUSTOM_HEADERS while it builds the client, and its headers
+            # win over the SDK's own Authorization. The SDK offers no way to decline that read, so
+            # clear the layer: this client sends no custom headers of its own.
+            client._custom_headers = {}  # pyright: ignore[reportPrivateUsage]
+            self._client = client
 
     def analyze(
         self,
