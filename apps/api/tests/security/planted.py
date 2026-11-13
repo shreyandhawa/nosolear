@@ -22,7 +22,7 @@ import traceback
 from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import quote, quote_plus
 
 import pytest
@@ -32,6 +32,7 @@ from pydantic import ValidationError
 from sqlalchemy import text
 
 from nosolear.api.app import create_app
+from nosolear.api.deps import Services
 from nosolear.app.run_job import run_job
 from nosolear.app.steps import StepRegistry
 from nosolear.budget.meter import Meter
@@ -521,6 +522,31 @@ def job_steps_json_job_repr_and_log(tmp: Path) -> tuple[str, str]:
     assert finished.status is JobStatus.FAILED, "the planted failure must fail the job"
     return "job steps_json, job repr and run_job log", "\n".join(
         [steps_json, repr(finished), _marked(cap.text, "step failed")]
+    )
+
+
+@leak_surface
+def job_api_responses_and_runner_logs(tmp: Path) -> tuple[str, str]:
+    """A step that raises a planted key, run through the app: the `GET /api/jobs/{id}` body, the
+    `POST .../resume` body and the runner and run_job log text."""
+    settings = planted_settings(tmp / "data")
+    registry = StepRegistry()
+    registry.register(JobKind.ANALYZE, FakeStep("score", raises=RuntimeError(PLANTED_AZURE_KEY)))
+    app = create_app(settings, step_registry=registry, start_runner=False)
+    with (
+        LogCapture(logging.Formatter(FORMAT), "nosolear.app.run_job") as run_log,
+        LogCapture(logging.Formatter(FORMAT), "nosolear.adapters.thread_pool_runner") as runner_log,
+        loopback_client(app) as client,
+    ):
+        services = cast(Services, app.state.services)
+        job = services.jobs.enqueue(JobKind.ANALYZE, None)
+        services.runner.run_pending()
+        got = client.get(f"/api/jobs/{job.id}")
+        resumed = client.post(f"/api/jobs/{job.id}/resume")
+    assert got.status_code == 200 and resumed.status_code == 200
+    assert '"failed"' in got.text, "the planted failure must reach the job body"
+    return "GET /api/jobs/{id}, POST resume, runner and run_job logs", "\n".join(
+        [got.text, resumed.text, _marked(run_log.text, "step failed"), runner_log.text]
     )
 
 
