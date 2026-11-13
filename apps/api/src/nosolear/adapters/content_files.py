@@ -1,13 +1,25 @@
-"""Read language packs and calibration specs from the committed `content/` directory."""
+"""Read language packs, calibration specs and the baseline protocol from `content/`."""
 
+import json
 import re
 import tomllib
 from pathlib import Path
+from typing import cast
 
 from nosolear.domain.calibration_items import (
     CalibrationSpec,
     parse_calibration_specs,
     validate_calibration_specs,
+)
+from nosolear.domain.content import (
+    BaselineProtocol,
+    CalibrationSet,
+    ContentInvalid,
+    SeedContent,
+    calibration_set,
+    parse_baseline_protocol,
+    validate_baseline_protocol,
+    validate_calibration_set,
 )
 from nosolear.domain.packs import (
     PACK_ID_PATTERN,
@@ -20,6 +32,7 @@ from nosolear.domain.taxonomy import DEFAULT_TAXONOMY
 
 MAX_PACK_BYTES = 64 * 1024
 MAX_CALIBRATION_BYTES = 256 * 1024
+MAX_PROTOCOL_BYTES = 256 * 1024
 _ID_RE = re.compile(PACK_ID_PATTERN)
 
 
@@ -75,3 +88,36 @@ def load_calibration_specs(path: Path) -> tuple[CalibrationSpec, ...]:
     if problems:
         raise PackError("; ".join(problems))
     return specs
+
+
+def load_calibration_set(content_dir: Path, pack: LanguagePack) -> CalibrationSet:
+    """The shipped calibration specs, with the pack's extra words appended to their keys."""
+    try:
+        specs = load_calibration_specs(content_dir / "calibration" / "items.toml")
+    except PackError as err:
+        raise ContentInvalid(str(err)) from None
+    return calibration_set(specs, extras=pack.calibration_extras)
+
+
+def load_baseline_protocol(content_dir: Path) -> BaselineProtocol:
+    path = content_dir / "baseline" / "protocol.json"
+    try:
+        if path.stat().st_size > MAX_PROTOCOL_BYTES:
+            raise ContentInvalid("baseline protocol: file is too large")
+        raw: object = json.loads(path.read_bytes())
+    except ContentInvalid:
+        raise
+    except OSError, ValueError, RecursionError:
+        raise ContentInvalid("baseline protocol: cannot be read as JSON") from None
+    if not isinstance(raw, dict):
+        raise ContentInvalid("baseline protocol: must be an object")
+    return parse_baseline_protocol(cast(dict[str, object], raw))
+
+
+def load_seed_content(content_dir: Path, pack: LanguagePack) -> SeedContent:
+    """Both seed files, each validated against the taxonomy. Raises `ContentInvalid`."""
+    calibration = load_calibration_set(content_dir, pack)
+    protocol = load_baseline_protocol(content_dir)
+    validate_calibration_set(calibration, DEFAULT_TAXONOMY)
+    validate_baseline_protocol(protocol, DEFAULT_TAXONOMY)
+    return SeedContent(calibration_set=calibration, protocol=protocol)

@@ -91,14 +91,20 @@ class _Scorer(_Port):
 
     def score(self, wav: Path, *, reference_text: str | None) -> PronunciationAssessment:
         self._enter()
-        spoken = self._voice.spoken_text(wav)
+        spoken = self._voice.spoken_text_or_empty(wav)
         text = reference_text if reference_text is not None else spoken
+        heard_words = spoken.split()
         words: list[dict[str, object]] = []
         offset = 0
         for index, word in enumerate(text.split()):
             phonemes = []
-            for expected in phones_of(word):
+            heard = phones_of(heard_words[index]) if index < len(heard_words) else []
+            expected_phones = phones_of(word)
+            for position, expected in enumerate(expected_phones):
                 produced = self._voice.user_errors.get(expected, expected)
+                if len(heard) == len(expected_phones) and heard[position] != expected:
+                    # What was actually said wins: a respelling is heard as its own phones.
+                    produced = heard[position]
                 if produced == expected:
                     entry = pa_phoneme(
                         expected, 95, nbest=[(expected, 95)], offset_ms=offset, duration_ms=50
@@ -226,6 +232,13 @@ class OracleVoice:
             self._ids[text] = n
             self._texts[n] = text
         return self._ids[text]
+
+    def spoken_text_or_empty(self, wav: Path) -> str:
+        """What a clip said, or nothing for a WAV this voice did not make."""
+        try:
+            return self.spoken_text(wav)
+        except KeyError:
+            return ""
 
     def spoken_text(self, wav: Path) -> str:
         with wave.open(str(wav), "rb") as handle:

@@ -733,3 +733,15 @@ def retry_exhausted_error(tmp: Path) -> tuple[str, str]:
         rendered = str(exc) + repr(exc) + "".join(traceback.format_exception(exc))
         return "retry exhaustion error and traceback", rendered
     raise AssertionError("retry_call did not give up after its attempts")
+
+
+@leak_surface
+def calibration_route_bodies(tmp: Path) -> tuple[str, str]:
+    """The calibration routes' bodies with no run open: the 404 read and the 409 refusal."""
+    settings = planted_settings(tmp / "data")
+    app = create_app(settings, start_runner=False)
+    with loopback_client(app) as client:
+        read = client.get("/api/calibration")
+        refused = client.post("/api/calibration/finish")
+    assert read.status_code == 404 and refused.status_code == 409
+    return "calibration route bodies", "\n".join([read.text, refused.text])

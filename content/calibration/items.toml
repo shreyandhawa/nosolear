@@ -1,52 +1,53 @@
-# Calibration recording items, ported from the Phase 0b spike.
-# Each spec yields a correct take and two deliberate-error takes per word.
+# Calibration recording items, ported from the Phase 0b spike and extended in Phase 0e.
+# Each spec yields a correct take and two deliberate-error takes per word. Every key has five
+# words: ten error takes and five TTS controls, enough for the calibration rule (section 9.2).
 
 [[specs]]
 error_key = "sound.sub.v.w"
 description = "W instead of V"
-words = [["vest", "west"], ["very", "werry"], ["van", "wan"]]
+words = [["vest", "west"], ["very", "werry"], ["van", "wan"], ["vine", "wine"], ["veil", "wail"]]
 
 [[specs]]
 error_key = "sound.sub.w.v"
 description = "V instead of W"
-words = [["west", "vest"], ["wine", "vine"]]
+words = [["west", "vest"], ["wine", "vine"], ["wet", "vet"], ["wail", "veil"], ["worse", "verse"]]
 
 [[specs]]
 error_key = "sound.sub.f.p"
 description = "P instead of F"
-words = [["fan", "pan"], ["fine", "pine"], ["coffee", "coppee"]]
+words = [["fan", "pan"], ["fine", "pine"], ["coffee", "coppee"], ["fast", "past"], ["feel", "peel"]]
 
 [[specs]]
 error_key = "sound.sub.θ.t"
 description = "T instead of TH"
-words = [["think", "tink"], ["three", "tree"], ["thanks", "tanks"]]
+words = [["think", "tink"], ["three", "tree"], ["thanks", "tanks"], ["thin", "tin"], ["thought", "taught"]]
 
 [[specs]]
 error_key = "sound.sub.ð.d"
 description = "D instead of the voiced TH"
-words = [["this", "dis"], ["they", "day"]]
+words = [["this", "dis"], ["they", "day"], ["then", "den"], ["those", "doze"], ["there", "dare"]]
 
 [[specs]]
 error_key = "sound.sub.ʃ.s"
 description = "S instead of SH"
-words = [["ship", "sip"], ["she", "see"], ["shop", "sop"]]
+words = [["ship", "sip"], ["she", "see"], ["shop", "sop"], ["shell", "sell"], ["shine", "sign"]]
 
 [[specs]]
 error_key = "sound.sub.s.ʃ"
 description = "SH instead of S"
-words = [["sip", "ship"], ["see", "she"]]
+words = [["sip", "ship"], ["see", "she"], ["sell", "shell"], ["sign", "shine"], ["seat", "sheet"]]
 
 [[specs]]
 error_key = "sound.sub.z.dʒ"
 description = "a J sound instead of Z"
-words = [["zoo", "joo"], ["zero", "jero"]]
+words = [["zoo", "joo"], ["zero", "jero"], ["zest", "jest"], ["zone", "jone"], ["zeal", "jeal"]]
 
 [[specs]]
 error_key = "sound.sub.z.s"
 description = "S instead of Z"
-words = [["zip", "sip"], ["buzz", "buss"]]
+words = [["zip", "sip"], ["buzz", "buss"], ["prize", "price"], ["eyes", "ice"], ["rise", "rice"]]
 
 [[specs]]
 error_key = "sound.ins.epenthesis_sC"
 description = "a vowel before it"
-words = [["school", "ischool"], ["speak", "ispeak"], ["street", "istreet"], ["sport", "isport"]]
+words = [["school", "ischool"], ["speak", "ispeak"], ["street", "istreet"], ["sport", "isport"], ["smile", "ismile"]]

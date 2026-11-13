@@ -22,6 +22,7 @@ READ_ONLY_GET_ROUTES = {
     "/api/profile",
     "/api/readiness",
     "/api/jobs/{job_id}",
+    "/api/calibration",
 }  # later phases add theirs
 
 

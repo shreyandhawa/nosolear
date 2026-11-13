@@ -1,6 +1,259 @@
 {
   "components": {
     "schemas": {
+      "CalibrationItemOut": {
+        "properties": {
+          "attempt_id": {
+            "title": "Attempt Id",
+            "type": "string"
+          },
+          "deliberate": {
+            "title": "Deliberate",
+            "type": "boolean"
+          },
+          "error_key": {
+            "title": "Error Key",
+            "type": "string"
+          },
+          "instruction": {
+            "title": "Instruction",
+            "type": "string"
+          },
+          "job_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Status"
+          },
+          "order": {
+            "title": "Order",
+            "type": "integer"
+          },
+          "recorded": {
+            "title": "Recorded",
+            "type": "boolean"
+          },
+          "stand_in_text": {
+            "title": "Stand In Text",
+            "type": "string"
+          },
+          "take": {
+            "title": "Take",
+            "type": "integer"
+          },
+          "word": {
+            "title": "Word",
+            "type": "string"
+          }
+        },
+        "required": [
+          "attempt_id",
+          "order",
+          "error_key",
+          "word",
+          "deliberate",
+          "take",
+          "instruction",
+          "stand_in_text",
+          "recorded",
+          "job_status"
+        ],
+        "title": "CalibrationItemOut",
+        "type": "object"
+      },
+      "CalibrationResultOut": {
+        "properties": {
+          "controls": {
+            "title": "Controls",
+            "type": "integer"
+          },
+          "correct_flags": {
+            "title": "Correct Flags",
+            "type": "integer"
+          },
+          "correct_take_flag_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correct Take Flag Rate"
+          },
+          "correct_takes": {
+            "title": "Correct Takes",
+            "type": "integer"
+          },
+          "covered": {
+            "title": "Covered",
+            "type": "boolean"
+          },
+          "detector": {
+            "title": "Detector",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "error_key": {
+            "title": "Error Key",
+            "type": "string"
+          },
+          "errors": {
+            "title": "Errors",
+            "type": "integer"
+          },
+          "false_alarm_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "False Alarm Rate"
+          },
+          "false_alarms": {
+            "title": "False Alarms",
+            "type": "integer"
+          },
+          "hit_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hit Rate"
+          },
+          "hits": {
+            "title": "Hits",
+            "type": "integer"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning"
+          }
+        },
+        "required": [
+          "detector",
+          "error_key",
+          "errors",
+          "hits",
+          "controls",
+          "false_alarms",
+          "correct_takes",
+          "correct_flags",
+          "covered",
+          "enabled",
+          "hit_rate",
+          "false_alarm_rate",
+          "correct_take_flag_rate",
+          "warning"
+        ],
+        "title": "CalibrationResultOut",
+        "type": "object"
+      },
+      "CalibrationRunOut": {
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CalibrationItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/CalibrationResultOut"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "scoring_config_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scoring Config Id"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "done",
+              "skipped"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "session_id",
+          "status",
+          "scoring_config_id",
+          "started_at",
+          "completed_at",
+          "items",
+          "results"
+        ],
+        "title": "CalibrationRunOut",
+        "type": "object"
+      },
       "ErrorOut": {
         "properties": {
           "code": {
@@ -557,6 +810,76 @@
           }
         },
         "summary": "Upload Attempt Recording"
+      }
+    },
+    "/api/calibration": {
+      "get": {
+        "operationId": "getCalibration",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalibrationRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Route"
+      },
+      "post": {
+        "operationId": "startCalibration",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalibrationRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Start Route"
+      }
+    },
+    "/api/calibration/finish": {
+      "post": {
+        "operationId": "finishCalibration",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAcceptedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Finish Route"
+      }
+    },
+    "/api/calibration/skip": {
+      "post": {
+        "operationId": "skipCalibration",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalibrationRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Skip Route"
       }
     },
     "/api/health": {

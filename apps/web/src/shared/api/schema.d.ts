@@ -21,6 +21,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/calibration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Route */
+        get: operations["getCalibration"];
+        put?: never;
+        /** Start Route */
+        post: operations["startCalibration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/calibration/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Finish Route */
+        post: operations["finishCalibration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/calibration/skip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Skip Route */
+        post: operations["skipCalibration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -127,6 +179,85 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** CalibrationItemOut */
+        CalibrationItemOut: {
+            /** Attempt Id */
+            attempt_id: string;
+            /** Deliberate */
+            deliberate: boolean;
+            /** Error Key */
+            error_key: string;
+            /** Instruction */
+            instruction: string;
+            /** Job Status */
+            job_status: string | null;
+            /** Order */
+            order: number;
+            /** Recorded */
+            recorded: boolean;
+            /** Stand In Text */
+            stand_in_text: string;
+            /** Take */
+            take: number;
+            /** Word */
+            word: string;
+        };
+        /** CalibrationResultOut */
+        CalibrationResultOut: {
+            /** Controls */
+            controls: number;
+            /** Correct Flags */
+            correct_flags: number;
+            /** Correct Take Flag Rate */
+            correct_take_flag_rate: number | null;
+            /** Correct Takes */
+            correct_takes: number;
+            /** Covered */
+            covered: boolean;
+            /** Detector */
+            detector: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Error Key */
+            error_key: string;
+            /** Errors */
+            errors: number;
+            /** False Alarm Rate */
+            false_alarm_rate: number | null;
+            /** False Alarms */
+            false_alarms: number;
+            /** Hit Rate */
+            hit_rate: number | null;
+            /** Hits */
+            hits: number;
+            /** Warning */
+            warning: string | null;
+        };
+        /** CalibrationRunOut */
+        CalibrationRunOut: {
+            /** Completed At */
+            completed_at: string | null;
+            /** Items */
+            items: components["schemas"]["CalibrationItemOut"][];
+            /** Results */
+            results: components["schemas"]["CalibrationResultOut"][];
+            /** Run Id */
+            run_id: string;
+            /** Scoring Config Id */
+            scoring_config_id: string | null;
+            /** Session Id */
+            session_id: string | null;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "done" | "skipped";
+        };
         /** ErrorOut */
         ErrorOut: {
             /** Code */
@@ -376,6 +507,86 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    getCalibration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationRunOut"];
+                };
+            };
+        };
+    };
+    startCalibration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationRunOut"];
+                };
+            };
+        };
+    };
+    finishCalibration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAcceptedOut"];
+                };
+            };
+        };
+    };
+    skipCalibration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationRunOut"];
                 };
             };
         };

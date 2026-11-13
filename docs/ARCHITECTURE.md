@@ -552,7 +552,7 @@ Calibration measures, on the user's own voice, how well each detector catches ea
 - **Result:** a new calibrated scoring config, followed by a re-scoring job over every earlier recording (§6.8).
 - **Items:** a shared calibration set under `content/calibration/`, keyed by error key, seeded from the 78 items salvaged from the spike branch. The active pack decides which keys come first. The salvaged set has two to four words per key, so Phase 0e extends it to meet the minimum for every key it covers. Each word also has one attempted-correct take; calibration reports its flag rate next to the TTS false-alarm rate as a warning, without using it in the rule.
 - **Skippable and repeatable:** skipping records a skipped run, and the scores stay provisional. Calibration can be re-run at any time, for example after changing the Azure resource or installing the `local` extra.
-- **Prosody:** the salvaged items cover sound keys only. Prosody keys are not calibrated in this plan set, so their observations stay provisional until a later phase adds a prosody calibration method.
+- **Prosody:** the calibration items cover sound keys only. Prosody keys are not calibrated in Phase 0e (decided 2026-11-13, §18), so their observations stay provisional until a later phase adds a prosody calibration method.
 
 ### 9.3 Baseline (Phase 0e, about 5½ minutes)
 
@@ -883,7 +883,7 @@ Decided:
 4. ~~Licence~~ **Decided 2026-11-12: MIT.**
 5. ~~Network~~ **Decided 2026-11-12: localhost only.** Token mode is designed now and built in Phase 6, before phone access.
 6. ~~Platforms~~ **Decided 2026-11-12: macOS (Apple Silicon) and Linux (x86-64, optional CUDA)** are first-class and tested in CI; Windows via WSL2.
-7. ~~`v0` margins and thresholds~~ **Decided 2026-11-12: the values in §6.8.** Prosody keys stay provisional until a later phase calibrates them (§9.2).
+7. ~~`v0` margins and thresholds~~ **Decided 2026-11-12: the values in §6.8.** **Decided 2026-11-13: prosody keys are not calibrated in Phase 0e;** they stay provisional until a later phase calibrates them (§9.2).
 
 Accepted with those decisions: the re-plan covers the old Phase 0 build plus the Phase 1 daily-loop backend; the target stays General American with the locale as a setting; calibration keeps the old S2 method; UI work waits for Phase 2; the spike branch is kept for salvage.
 
