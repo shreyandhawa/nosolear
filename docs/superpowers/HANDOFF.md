@@ -46,6 +46,7 @@ Phase 0b (open-source foundation) is done as of 2026-11-13. Next is Phase 0c (au
 - 2026-11-13: Phase 0c Task 1: pure WAV parsing, validation and resampling (`domain/audio.py`: `parse_wav`, `check_declared_length`, `to_16k`, `encode_wav`) and the typed errors (`domain/errors.py`), with `numpy==2.5.4` pinned as a direct dependency and the synthetic WAV builders in `tests/wavs.py`.
 - 2026-11-13: Phase 0c Task 2: the `AudioStore` port, `FilesystemAudioStore` (temp file in `recordings/.incoming/`, validate and resample to 16 kHz, `recordings/<uuid>.wav` at 0600, symlink-safe `resolve`) and `FakeAudioStore` in `tests/fakes.py`, with a shared contract test.
 - 2026-11-13: Phase 0c Task 3: migration `0004_recordings_jobs_ledger` and models for `recordings`, `jobs`, `usage_ledger` and `analyses` (CHECKs, partial unique indexes on analyses), plus `PRAGMA busy_timeout=5000`.
+- 2026-11-13: Phase 0c Task 4: the usage ledger (`domain/budget.py` caps, UTC periods and `fits`; `ports/ledger.py`; `persistence/ledger.py` `SqliteUsageLedger` reserving under `BEGIN IMMEDIATE`, with orphan reservations settled at their estimate on startup; `FakeUsageLedger` in `tests/fakes.py`).
 
 ## In progress
 
