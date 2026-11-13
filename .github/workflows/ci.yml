@@ -106,21 +106,21 @@ jobs:
           uvx --from pip-audit==2.10.1 pip-audit -r "$RUNNER_TEMP/requirements.txt" --no-deps --disable-pip
         working-directory: apps/api
       - uses: pnpm/action-setup@v6
-        if: runner.os == 'Linux'
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
         with:
           package_json_file: apps/web/package.json
       - uses: actions/setup-node@v7
-        if: runner.os == 'Linux'
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
         with:
           node-version-file: .node-version
           cache: pnpm
           cache-dependency-path: apps/web/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-        if: runner.os == 'Linux'
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
         working-directory: apps/web
       # Waivers live in apps/web/pnpm-workspace.yaml (auditConfig.ignoreGhsas), each with a reason.
       - run: pnpm audit --audit-level=moderate
-        if: runner.os == 'Linux'
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
         working-directory: apps/web
 
   # Keeps the required check name `audit` stable for branch protection across the matrix legs.
