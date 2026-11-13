@@ -158,8 +158,12 @@ def read_usage(settings: Settings) -> UsageSnapshot | None:
     database = settings.data_dir / DATABASE_NAME
     if not database.is_file():
         return None
+    # With no `-wal` file the server is stopped, and a plain read-only open of a WAL database would
+    # create `-wal` and `-shm`; `immutable=1` reads the file without creating either.
+    wal_present = database.with_name(database.name + "-wal").exists()
+    mode = "mode=ro" if wal_present else "mode=ro&immutable=1"
     try:
-        conn = sqlite3.connect(f"file:{quote(str(database))}?mode=ro", uri=True)
+        conn = sqlite3.connect(f"file:{quote(str(database))}?{mode}", uri=True)
     except sqlite3.Error:
         return None
     try:

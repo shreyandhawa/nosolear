@@ -128,3 +128,19 @@ def test_read_usage_sums_recorded_and_open_reservations_for_the_current_periods(
     assert read_usage(settings) == UsageSnapshot(
         azure_audio_hours=1.0, tts_chars=40, claude_tokens=500
     )
+
+
+def test_read_usage_on_a_stopped_server_creates_no_wal_or_shm_files(tmp_path: Path) -> None:
+    settings = make_settings(data_dir=tmp_path)
+    engine = _migrated(settings)
+    try:
+        ledger = SqliteUsageLedger(engine, caps=_caps(settings), clock=SystemClock())
+        ledger.record(ledger.reserve(Provider.ANTHROPIC, Unit.TOKENS, 500), 200)
+    finally:
+        engine.dispose()
+    before = sorted(p.name for p in tmp_path.iterdir())
+
+    assert read_usage(settings) == UsageSnapshot(
+        azure_audio_hours=0.0, tts_chars=0, claude_tokens=200
+    )
+    assert sorted(p.name for p in tmp_path.iterdir()) == before
