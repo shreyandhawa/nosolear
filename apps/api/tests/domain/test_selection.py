@@ -3,6 +3,7 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from factories import NOW, PACK, TAX, entry, profile_of
+
 from nosolear.domain.profile import Profile
 from nosolear.domain.rechecks import RecheckState
 from nosolear.domain.selection import (
@@ -22,7 +23,6 @@ SECOND_SOUND = "sound.sub.θ.t"  # impact 2
 
 def always_scored(key: str) -> bool:
     return True
-
 
 
 def run(
@@ -176,7 +176,7 @@ def test_empty_profile_still_has_one_focus_per_skill() -> None:
 
 def test_naive_now_is_rejected() -> None:
     with pytest.raises(ValueError):
-        run(None, now=datetime(2026, 11, 12, 8, 0))  # noqa: DTZ001
+        run(None, now=datetime(2026, 11, 12, 8, 0))
 
 
 def test_provisional_flag_is_carried() -> None:

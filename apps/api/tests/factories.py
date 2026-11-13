@@ -12,10 +12,9 @@ from sqlalchemy import Engine, text
 from nosolear.adapters.content_files import load_pack
 from nosolear.domain.coach import CoachAnalysis, CoachFinding, Rubric
 from nosolear.domain.estimates import BetaState, estimate
+from nosolear.domain.observations import Context, Observation, Outcome, make_observation
 from nosolear.domain.packs import LanguagePack
 from nosolear.domain.profile import ALGO_VERSION, DEFAULT_CONFIG, Profile, ProfileEntry
-from nosolear.domain.observations import Context, Observation, Outcome, make_observation
-from nosolear.domain.status import Status
 from nosolear.domain.speech import (
     NBestPhoneme,
     PhonemeAssessment,
@@ -28,6 +27,7 @@ from nosolear.domain.speech import (
     WordAssessment,
     WordTiming,
 )
+from nosolear.domain.status import Status
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY, Detector
 from nosolear.settings import CONTENT_DIR, Settings
 

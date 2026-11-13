@@ -59,7 +59,7 @@ class Selection:
 
 
 def seed_for_date(day: date) -> int:
-    """A 64-bit seed from the ISO date. Python's `hash()` is salted per process, so it is not used."""
+    """A 64-bit seed from the ISO date. Python's hash() is salted per process, so it is not used."""
     digest = hashlib.sha256(day.isoformat().encode("ascii")).digest()
     return int.from_bytes(digest[:8], "big")
 
@@ -200,9 +200,7 @@ def _probe(
         due.append((entry.definition, state.next_at))
     if not due:
         return None
-    definition, due_at = min(
-        due, key=lambda item: (-item[0].impact, item[1], item[0].key)
-    )
+    definition, due_at = min(due, key=lambda item: (-item[0].impact, item[1], item[0].key))
     return RecheckProbe(skill=definition.skill, error_key=definition.key, due_at=due_at)
 
 
@@ -231,7 +229,7 @@ def select(
     """
     _require_aware(now)
     probe = _probe(profile=profile, rechecks=rechecks, is_scored=is_scored, now=now)
-    excluded = frozenset({probe.error_key}) if probe is not None else frozenset()
+    excluded: frozenset[str] = frozenset({probe.error_key} if probe is not None else ())
     entries = profile.entries if profile is not None else ()
     owned = frozenset(e.definition.key for e in entries)
     foci: list[Focus] = []
