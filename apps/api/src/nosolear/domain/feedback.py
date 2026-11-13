@@ -8,7 +8,6 @@ import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Literal
 
 from nosolear.domain.coach import MAX_EXPLANATION_CHARS, MAX_MODEL_TEXT_CHARS, CoachExplanation
 from nosolear.domain.observations import Outcome
@@ -16,10 +15,6 @@ from nosolear.domain.profile import Profile
 from nosolear.domain.selection import SKILL_ORDER
 from nosolear.domain.taxonomy import Family, Skill, Taxonomy
 from nosolear.ports.feedback import StoredObservation
-
-FallbackReason = Literal[
-    "cap_exceeded", "provider_unavailable", "capability_missing", "invalid_output"
-]
 
 # Families whose coach rewrite is shown as model_text. Sounds use the word from the audio and
 # fluency has no model text at all.

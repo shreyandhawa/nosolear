@@ -269,3 +269,40 @@ def test_profile_roundtrip_keeps_provisional(db_engine: Engine) -> None:
             text("SELECT entries_json FROM profile_snapshots WHERE id = :id"), {"id": snapshot_id}
         ).scalar_one()
     assert all("provisional" in entry for entry in json.loads(entries_json))
+
+
+def _two_sessions(engine: Engine) -> None:
+    stamp = format_utc(T0)
+    with engine.begin() as conn:
+        for session_id in ("s-one", "s-two"):
+            conn.execute(
+                text(
+                    "INSERT INTO sessions (id, kind, protocol_version, started_at) "
+                    "VALUES (:id, 'daily', 1, :stamp)"
+                ),
+                {"id": session_id, "stamp": stamp},
+            )
+        for attempt_id, session_id in (("a-one", "s-one"), ("a-two", "s-two")):
+            conn.execute(
+                text(
+                    "INSERT INTO attempts (id, session_id, step, scripted, created_at) "
+                    "VALUES (:id, :session, 'speak', 1, :stamp)"
+                ),
+                {"id": attempt_id, "session": session_id, "stamp": stamp},
+            )
+
+
+def test_for_session_only_returns_that_sessions_observations_with_ids(db_engine: Engine) -> None:
+    _two_sessions(db_engine)
+    late = mk("sound.sub.v.w", MISS, T0.replace(hour=9), attempt_id="a-one", evidence={"w": "late"})
+    early = mk("sound.sub.θ.t", MISS, T0, attempt_id="a-one", evidence={"w": "early"})
+    other = mk("sound.sub.v.w", MISS, T0, attempt_id="a-two", evidence={"w": "other"})
+    repo = ObservationRepository(db_engine)
+    repo.add_many([late, other, early])
+    with db_engine.connect() as conn:
+        rows = conn.execute(text("SELECT id, evidence_json FROM observations")).all()
+    id_of = {json.loads(evidence)["w"]: row_id for row_id, evidence in rows}
+    found = repo.for_session("s-one")
+    assert [s.observation for s in found] == [early, late]
+    assert [s.id for s in found] == [id_of["early"], id_of["late"]]
+    assert repo.for_session("nobody") == []
