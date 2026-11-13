@@ -31,6 +31,7 @@ from pydantic import ValidationError
 from sqlalchemy import text
 
 from nosolear.api.app import create_app
+from nosolear.budget.meter import Meter
 from nosolear.cli import main
 from nosolear.domain.budget import Caps, Provider, Unit
 from nosolear.domain.errors import CapExceeded
@@ -455,6 +456,37 @@ def usage_ledger_rows_and_cap_message(tmp: Path) -> tuple[str, str]:
         engine.dispose()
     assert len(rows) == 1, "the refused reservation must not write a row"
     return "usage_ledger rows and CapExceeded", repr(rows) + str(refusal) + repr(refusal)
+
+
+@leak_surface
+def metered_failure_rows_and_log(tmp: Path) -> tuple[str, str]:
+    """A paid call that fails with a key in its message: the ledger rows and the logged failure."""
+    settings = planted_settings(tmp)
+    install_secret_scrubbing(settings.secret_values())
+    engine = create_engine_for(f"sqlite:///{tmp / 'metered.sqlite'}")
+    try:
+        upgrade_to_head(engine)
+        caps = Caps(azure_audio_seconds=1000, azure_tts_chars=1000, claude_tokens=1000)
+        ledger = SqliteUsageLedger(
+            engine, caps=caps, clock=FixedClock(datetime(2026, 11, 13, tzinfo=UTC))
+        )
+
+        def fail() -> int:
+            raise RuntimeError(PLANTED_AZURE_KEY)
+
+        with LogCapture(logging.Formatter(FORMAT)) as cap:
+            try:
+                Meter(ledger).call(Provider.AZURE, Unit.AUDIO_SECONDS, 30, fail, actual=lambda n: n)
+            except RuntimeError as exc:
+                cap.logger.error("paid call failed", exc_info=exc)
+        with engine.connect() as conn:
+            rows = [tuple(row) for row in conn.execute(text("SELECT * FROM usage_ledger"))]
+    finally:
+        engine.dispose()
+    assert len(rows) == 1, "the failed call must leave one settled row"
+    return "metered call: usage_ledger rows and logged failure", repr(rows) + _marked(
+        cap.text, "Traceback", REDACTED
+    )
 
 
 def _import_surface_modules() -> None:

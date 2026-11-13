@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from factories import FixedClock, count
+from factories import FixedClock, count, insert_job
 from sqlalchemy import Engine, create_engine, event, text
 from sqlalchemy.exc import OperationalError
 
@@ -20,20 +20,6 @@ CAPS = Caps(azure_audio_seconds=100, azure_tts_chars=100, claude_tokens=100)
 
 def _ledger(engine: Engine, now: datetime = T0, caps: Caps = CAPS) -> SqliteUsageLedger:
     return SqliteUsageLedger(engine, caps=caps, clock=FixedClock(now))
-
-
-def _insert_job(engine: Engine, job_id: str) -> None:
-    """Jobs have no queue yet, so the foreign key target is inserted directly."""
-    stamp = "2026-11-12T08:00:00.000000+00:00"
-    with engine.begin() as conn:
-        conn.execute(
-            text(
-                "INSERT INTO jobs (id, kind, attempt_id, status, step, progress, steps_json, "
-                "tries, created_at, updated_at) VALUES (:id, 'analyze', NULL, 'queued', NULL, "
-                "0.0, '[]', 0, :stamp, :stamp)"
-            ),
-            {"id": job_id, "stamp": stamp},
-        )
 
 
 def _rows(engine: Engine) -> list[tuple[object, ...]]:
@@ -119,7 +105,7 @@ def test_period_rolls_over(db_engine: Engine):
 
 
 def test_job_id_is_optional_and_stored(db_engine: Engine):
-    _insert_job(db_engine, "job-1")
+    insert_job(db_engine, "job-1")
     ledger = _ledger(db_engine)
     ledger.reserve(Provider.ANTHROPIC, Unit.TOKENS, 1)
     ledger.reserve(Provider.ANTHROPIC, Unit.TOKENS, 1, job_id="job-1")

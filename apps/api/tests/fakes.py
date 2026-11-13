@@ -163,3 +163,19 @@ class FakeUsageLedger:
         recorded = sum(row.actual or 0 for row in mine if row.state == "recorded")
         reserved = sum(row.estimate for row in mine if row.state == "reserved")
         return recorded, reserved
+
+
+class FakePaidPort:
+    """A raw paid adapter stand-in. `run` counts every attempt, even one that fails."""
+
+    layer = "raw"
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self.fail_with: Exception | None = None
+
+    def run(self, units: int) -> int:
+        self.calls += 1
+        if self.fail_with is not None:
+            raise self.fail_with
+        return units
