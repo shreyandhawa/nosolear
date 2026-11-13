@@ -4,6 +4,12 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Weekly, so an advisory published against unchanged lockfiles is reported.
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
 
 jobs:
   hygiene:
@@ -83,26 +89,45 @@ jobs:
       - run: pnpm --dir apps/web gen:api
       - run: git diff --exit-code
 
-  audit:
-    runs-on: ubuntu-latest
+  audit-matrix:
+    name: audit (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3
-      - uses: pnpm/action-setup@v6
-        with:
-          package_json_file: apps/web/package.json
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-          cache-dependency-path: apps/web/pnpm-lock.yaml
       # A vulnerability with no fixed version may be waived only with --ignore-vuln <ID> and a
       # comment naming the advisory and the reason.
       - run: |
           uv export --locked --no-emit-project --all-extras --format requirements-txt -o "$RUNNER_TEMP/requirements.txt"
           uvx --from pip-audit==2.10.1 pip-audit -r "$RUNNER_TEMP/requirements.txt" --no-deps --disable-pip
         working-directory: apps/api
+      - uses: pnpm/action-setup@v6
+        if: runner.os == 'Linux'
+        with:
+          package_json_file: apps/web/package.json
+      - uses: actions/setup-node@v7
+        if: runner.os == 'Linux'
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+        if: runner.os == 'Linux'
         working-directory: apps/web
-      - run: pnpm audit --audit-level=high
+      # Waivers live in apps/web/pnpm-workspace.yaml (auditConfig.ignoreGhsas), each with a reason.
+      - run: pnpm audit --audit-level=moderate
+        if: runner.os == 'Linux'
         working-directory: apps/web
+
+  # Keeps the required check name `audit` stable for branch protection across the matrix legs.
+  audit:
+    needs: audit-matrix
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail unless every audit-matrix leg succeeded
+        run: test "${{ needs.audit-matrix.result }}" = success

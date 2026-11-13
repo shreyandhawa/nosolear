@@ -18,6 +18,10 @@ BLOCKED = [
     *[f"x/{ext_name}.{ext.upper()}" for ext_name in ["take"] for ext in AUDIO],
     *[f"apps/api/{base}{suffix}" for base in DB_BASES for suffix in DB_SUFFIXES],
     "nosolear.SQLITE-WAL",
+    ".env",
+    "apps/api/.env",
+    ".env.local",
+    "apps/web/.env.production",
 ]
 
 
@@ -31,6 +35,11 @@ def test_allows_code_and_docs():
 
 def test_allows_names_that_only_look_similar():
     assert run(["apps/api/src/metadata/x.py", "docs/database.md", "src/mydata/x.py"]) == 0
+
+
+def test_allows_env_example_and_env_lookalikes():
+    paths = [".env.example", "apps/api/.env.example", "docs/env.md", "src/.environment.py"]
+    assert run(paths) == 0
 
 
 def test_allows_empty_input():

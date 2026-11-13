@@ -2,3 +2,9 @@ minimumReleaseAgeExclude:
   - vite@8.3.8
   # msw 3.0.5 is newer than the release-age gate allows
   - msw@3.0.5
+auditConfig:
+  ignoreGhsas:
+    # minimatch denial of service via globparts amplification (CWE-405, CVE-2026-118764).
+    # Reached only through eslint dev tooling with repo-controlled globs; the fix is minimatch
+    # 11.0.1, a major bump that eslint's dependency tree does not accept.
+    - GHSA-g3hv-75wg-m249

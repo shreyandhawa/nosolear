@@ -120,7 +120,8 @@ Prices below were checked on 2026-11-11 and are subject to each provider's terms
 ## Security
 
 - **Run it on a single-user machine only.** Until the per-install token mode ships (Phase 6), the API has no login. It listens on 127.0.0.1, refuses to start on any other address, and answers only loopback peers, but any user or program on the same machine can reach it.
-- **Never run the web dev server with `--host`**, and never expose ports 5173 or 8000 to the network. The API trusts the dev proxy on this machine.
+- **Never run the web dev server (or `vite preview`) with `--host`**, and never expose ports 5173 or 8000 to the network. `make web` pins the dev server, and `vite preview` of the built app, to `localhost` and refuses to start if `--host` is a non-loopback address, because the API trusts the dev proxy on this machine.
+- Keep the data directory (`NOSOLEAR_DATA_DIR`, `data/` by default) under your home directory, not in a directory other users can write to such as `/tmp`.
 - Keep keys in `.env` (git-ignored) and never in issues or chat. Keys are scrubbed from logs and never returned by the API.
 
 Report a vulnerability through the private form described in [SECURITY.md](SECURITY.md).

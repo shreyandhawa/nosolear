@@ -297,13 +297,14 @@ def _usage(i: ReadinessInputs) -> ReadinessRow:
     caps, used = i.caps, i.usage
     if used is None:
         reason = (
-            f"daily caps: Azure {caps.azure_audio_hours:g} h, TTS {_count(caps.tts_chars)} chars,"
-            f" Claude {_count(caps.claude_tokens)} tokens; usage tracking arrives with the ledger"
+            f"caps: Azure {caps.azure_audio_hours:g} h and TTS {_count(caps.tts_chars)} chars"
+            f" a month, Claude {_count(caps.claude_tokens)} tokens a day (UTC);"
+            " usage tracking arrives with the ledger"
         )
     else:
         reason = (
-            f"Azure {used.azure_audio_hours:g} of {caps.azure_audio_hours:g} h,"
-            f" TTS {_count(used.tts_chars)} of {_count(caps.tts_chars)} chars,"
+            f"Azure {used.azure_audio_hours:g} of {caps.azure_audio_hours:g} h"
+            f" and TTS {_count(used.tts_chars)} of {_count(caps.tts_chars)} chars this month,"
             f" Claude {_count(used.claude_tokens)} of {_count(caps.claude_tokens)} tokens today"
         )
     return _row(Component.USAGE, ReadinessStatus.READY, reason)
