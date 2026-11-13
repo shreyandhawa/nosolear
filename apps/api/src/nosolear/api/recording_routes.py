@@ -74,6 +74,9 @@ async def upload_attempt_recording(
     exists = await run_in_threadpool(services.attempts.exists, attempt_id)
     if not exists:
         raise ApiError(404, "unknown_attempt", UNKNOWN_ATTEMPT)
+    # An early answer only: the unique constraint stays the real guard against a concurrent upload.
+    if await run_in_threadpool(services.recordings.for_attempt, attempt_id) is not None:
+        raise ApiError(409, "recording_exists", RECORDING_EXISTS)
     check_declared_length(request.headers.get("content-length"))
     upload = services.audio_store.begin_upload()
     try:

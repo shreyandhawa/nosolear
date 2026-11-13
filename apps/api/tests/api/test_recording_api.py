@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import cast
 
 import httpx
+import pytest
 from factories import FixedClock, loopback_client, make_settings
 from fakes import FakeStep
 from fastapi import FastAPI
@@ -13,12 +14,14 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 from wavs import make_wav, raw_wav
 
+from nosolear.adapters.filesystem_audio_store import FilesystemAudioStore
 from nosolear.api.app import create_app
 from nosolear.api.deps import Services
 from nosolear.app.steps import StepRegistry
 from nosolear.domain.audio import parse_wav
 from nosolear.domain.jobs import JobKind
 from nosolear.persistence.repositories import AttemptRepository, RecordingRepository
+from nosolear.ports.audio import PendingUpload
 
 NOW = datetime(2026, 11, 13, 9, 0, tzinfo=UTC)
 STEPS = ("score", "transcribe", "probe", "coach", "extract")
@@ -273,3 +276,22 @@ def test_openapi_describes_audio_wav_body(tmp_path: Path) -> None:
     assert operation["operationId"] == "uploadRecording"
     assert "audio/wav" in operation["requestBody"]["content"]
     assert "202" in operation["responses"]
+
+
+def test_second_upload_is_rejected_before_any_body_is_stored(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with loopback_client(_app(tmp_path)) as client:
+        attempt_id = _attempt(client)
+        assert _wav_post(client, attempt_id, make_wav(0.5)).status_code == 202
+        begun: list[object] = []
+        original = FilesystemAudioStore.begin_upload
+
+        def counting(self: FilesystemAudioStore) -> PendingUpload:
+            begun.append(self)
+            return original(self)
+
+        monkeypatch.setattr(FilesystemAudioStore, "begin_upload", counting)
+        second = _wav_post(client, attempt_id, make_wav(1.0))
+    assert second.status_code == 409
+    assert begun == []
