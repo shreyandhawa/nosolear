@@ -37,6 +37,11 @@ def test_pragmas_set_on_every_connection(db_engine: Engine) -> None:
             assert conn.execute(text("PRAGMA journal_mode")).scalar_one() == "wal"
 
 
+def test_busy_timeout_is_set(db_engine: Engine) -> None:
+    with db_engine.connect() as conn:
+        assert conn.execute(text("PRAGMA busy_timeout")).scalar_one() == 5000
+
+
 def test_foreign_keys_enforced(db_engine: Engine) -> None:
     with pytest.raises(IntegrityError):
         ObservationRepository(db_engine).add_many([replace(OBS, attempt_id="missing")])
