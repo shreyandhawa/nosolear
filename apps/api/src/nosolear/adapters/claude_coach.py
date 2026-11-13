@@ -64,7 +64,7 @@ class ClaudeCoach:
                 max_retries=0,
                 timeout=timeout_s,
                 http_client=http_client,
-                # An explicit option stops the SDK reading ANTHROPIC_OPEN_TELEMETRY* (content capture).
+                # An explicit option stops the SDK reading ANTHROPIC_OPEN_TELEMETRY* variables.
                 open_telemetry=False,
             )
             # The SDK reads ANTHROPIC_CUSTOM_HEADERS while it builds the client, and its headers
