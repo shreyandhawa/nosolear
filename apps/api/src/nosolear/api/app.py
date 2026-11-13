@@ -15,6 +15,7 @@ from nosolear.api.baseline_routes import router as baseline_router
 from nosolear.api.calibration_routes import router as calibration_router
 from nosolear.api.deps import RawPorts, Services, build_services, load_active_pack
 from nosolear.api.errors import install_error_handlers
+from nosolear.api.feedback_routes import router as feedback_router
 from nosolear.api.guards import RequestGuardMiddleware
 from nosolear.api.job_routes import router as job_router
 from nosolear.api.onboarding_routes import router as onboarding_router
@@ -23,6 +24,7 @@ from nosolear.api.profile_routes import router as profile_router
 from nosolear.api.readiness_routes import router as readiness_router
 from nosolear.api.recording_routes import router as recording_router
 from nosolear.api.rescore_routes import router as rescore_router
+from nosolear.api.session_routes import router as session_router
 from nosolear.app.ensure_profile_pack import ensure_profile_pack
 from nosolear.app.steps import StepRegistry
 from nosolear.domain.content import ContentInvalid, SeedContent, seed_items
@@ -147,6 +149,8 @@ def create_app(
     app.state.seed_content = None
     app.include_router(profile_router)
     app.include_router(plan_router)
+    app.include_router(feedback_router)
+    app.include_router(session_router)
     app.include_router(readiness_router)
     app.include_router(job_router)
     app.include_router(recording_router)

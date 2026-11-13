@@ -279,6 +279,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sessions/{session_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete Session */
+        post: operations["completeDailySession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/{session_id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Session Feedback */
+        get: operations["getFeedback"];
+        put?: never;
+        /** Generate Session Feedback */
+        post: operations["generateFeedback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -449,6 +484,18 @@ export interface components {
             /** Word */
             word: string | null;
         };
+        /** CompleteOut */
+        CompleteOut: {
+            /** Already Completed */
+            already_completed: boolean;
+            /**
+             * Completed At
+             * Format: date-time
+             */
+            completed_at: string;
+            /** Session Id */
+            session_id: string;
+        };
         /** DailySessionOut */
         DailySessionOut: {
             /** Attempts */
@@ -476,6 +523,45 @@ export interface components {
             code: string;
             /** Message */
             message: string;
+        };
+        /**
+         * FeedbackItemOut
+         * @description One card's text. `source` says whether the coach wrote it or a template did, and a template
+         *     carries the reason the coach was not used.
+         */
+        FeedbackItemOut: {
+            /** Attempt Id */
+            attempt_id: string | null;
+            /** End Ms */
+            end_ms: number | null;
+            /** Error Key */
+            error_key: string;
+            /** Fallback Reason */
+            fallback_reason: ("cap_exceeded" | "provider_unavailable" | "capability_missing" | "invalid_output") | null;
+            /** Id */
+            id: string;
+            /** Message */
+            message: string;
+            /** Model Text */
+            model_text: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "coach" | "template";
+            /** Start Ms */
+            start_ms: number | null;
+            /** Word */
+            word: string | null;
+        };
+        /** FeedbackOut */
+        FeedbackOut: {
+            /** Degraded */
+            degraded: boolean;
+            /** Session Id */
+            session_id: string;
+            /** Skills */
+            skills: components["schemas"]["SkillFeedbackOut"][];
         };
         /**
          * FocusOut
@@ -735,6 +821,24 @@ export interface components {
             skill: string;
             /** Status */
             status: string;
+        };
+        /**
+         * SkillFeedbackOut
+         * @description `clean` means the skill was scored with no miss; `not_scored` means it was not scored today.
+         *     Neither has a card.
+         */
+        SkillFeedbackOut: {
+            item: components["schemas"]["FeedbackItemOut"] | null;
+            /**
+             * Skill
+             * @enum {string}
+             */
+            skill: "sounds" | "on_the_spot" | "articulate";
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "fix" | "clean" | "not_scored";
         };
         /** SkillScoreOut */
         SkillScoreOut: {
@@ -1295,6 +1399,134 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobAcceptedOut"];
+                };
+            };
+        };
+    };
+    completeDailySession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompleteOut"];
+                };
+            };
+            /** @description no such session */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not a daily session, its analysis has not finished, or no pack */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    getFeedback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackOut"];
+                };
+            };
+            /** @description no feedback has been generated for this session */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generateFeedback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackOut"];
+                };
+            };
+            /** @description no such session */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not a daily session, or its analysis has not finished */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -32,7 +32,7 @@ from nosolear.domain.speech import ProviderCapabilities, RawResult
 from nosolear.persistence.capabilities import CapabilityRepository
 from nosolear.persistence.repositories import AttemptRepository, ObservationRepository
 from nosolear.ports.clock import Clock
-from nosolear.ports.providers import Synthesizer
+from nosolear.ports.providers import PronunciationScorer, Synthesizer
 
 PROBE_INSTALLED: Final = "nosolear.api.deps.phone_probe_installed"
 _next_id = id_counter()
@@ -143,16 +143,18 @@ def make_harness(tmp_path: Path) -> Iterator[Callable[..., Harness]]:
         content: SeedContent | None = None,
         rubric: Rubric | None = None,
         readiness: ReadinessReport | None = None,
+        coach: FakeCoach | None = None,
+        scorer: PronunciationScorer | None = None,
     ) -> Harness:
         data_dir = tmp_path / f"h{next(_next_id)}"
         voice = OracleVoice()
         clock_used: Clock = clock or FixedClock(T0)
         ports = RawPorts(
-            scorer=voice.scorer,
+            scorer=scorer if scorer is not None else voice.scorer,
             transcriber=voice.transcriber,
             speech_synthesizer=voice.speech_synthesizer,
             phone_probe=voice.probe if probe else None,
-            coach=FakeCoach([_empty_coach(rubric)]),
+            coach=coach if coach is not None else FakeCoach([_empty_coach(rubric)]),
         )
         app = create_app(
             make_settings(data_dir=data_dir),

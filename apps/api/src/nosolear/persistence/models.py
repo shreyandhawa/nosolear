@@ -29,6 +29,7 @@ from nosolear.domain.observations import Context, Outcome
 from nosolear.domain.scoring import ConfigKind
 from nosolear.domain.status import Status
 from nosolear.domain.taxonomy import Detector, Skill
+from nosolear.ports.feedback import FALLBACK_REASONS, FEEDBACK_SOURCES
 
 
 def format_utc(value: datetime) -> str:
@@ -386,6 +387,29 @@ daily_plans = Table(
     C("drills_json", Text, nullable=False),
     C("seed", Integer, nullable=False),
     UniqueConstraint("for_date", name="uq_daily_plans_for_date"),
+)
+
+# ARCHITECTURE.md section 7 plus the Phase 1 columns: why a feedback item came from the coach or a
+# template, and the reason a template was used.
+feedback_items = Table(
+    "feedback_items",
+    metadata,
+    C("id", String, primary_key=True),
+    C("session_id", String, ForeignKey("sessions.id"), nullable=False),
+    C("skill", String, nullable=False),
+    C("error_key", String, nullable=False),
+    C("observation_id", Integer, ForeignKey("observations.id"), nullable=False),
+    C("message", Text, nullable=False),
+    C("model_text", Text, nullable=True),
+    C("source", String, nullable=False),
+    C("fallback_reason", String, nullable=True),
+    C("created_at", UTCDateTime, nullable=False),
+    UniqueConstraint("session_id", "skill", name="uq_feedback_items_session_skill"),
+    CheckConstraint(_in_list("skill", Skill), name="ck_feedback_items_skill"),
+    CheckConstraint(_in_list("source", FEEDBACK_SOURCES), name="ck_feedback_items_source"),
+    CheckConstraint(
+        _in_list("fallback_reason", FALLBACK_REASONS), name="ck_feedback_items_fallback_reason"
+    ),
 )
 
 skill_scores = Table(

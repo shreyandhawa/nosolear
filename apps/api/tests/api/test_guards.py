@@ -27,6 +27,7 @@ READ_ONLY_GET_ROUTES = {
     "/api/baseline/report",
     "/api/onboarding",
     "/api/plan/today",
+    "/api/sessions/{session_id}/feedback",
 }  # later phases add theirs
 
 

@@ -80,6 +80,11 @@ from nosolear.persistence.baseline_repository import BaselineRepository
 from nosolear.persistence.calibration_repository import CalibrationRepository
 from nosolear.persistence.capabilities import CapabilityRepository, read_capability_records
 from nosolear.persistence.db import create_engine_for, upgrade_to_head
+from nosolear.persistence.feedback_repositories import (
+    FeedbackRepository,
+    SessionJobRepository,
+    SessionRepository,
+)
 from nosolear.persistence.job_queue import SqliteJobQueue
 from nosolear.persistence.ledger import SqliteUsageLedger
 from nosolear.persistence.plan_repositories import (
@@ -108,6 +113,7 @@ from nosolear.ports.baseline_store import BaselineStore
 from nosolear.ports.calibration_store import CalibrationStore
 from nosolear.ports.clock import Clock
 from nosolear.ports.environment import EnvironmentProbe
+from nosolear.ports.feedback import FeedbackStore, SessionJobStatus, SessionReader
 from nosolear.ports.jobs import JobQueue
 from nosolear.ports.ledger import UsageLedger
 from nosolear.ports.plan import (
@@ -127,6 +133,7 @@ from nosolear.ports.providers import (
     Transcriber,
 )
 from nosolear.ports.scoring_stores import ExtractionInputs, ScoringConfigReader
+from nosolear.ports.stores import SessionCompleter
 from nosolear.settings import Settings
 
 DATABASE_NAME = "nosolear.sqlite"
@@ -242,6 +249,26 @@ def get_scored_keys(request: Request) -> ScoredKeys:
 def get_recheck_store(request: Request) -> RecheckStore:
     engine = cast(Engine, request.app.state.engine)
     return RecheckRepository(engine)
+
+
+def get_session_reader(request: Request) -> SessionReader:
+    engine = cast(Engine, request.app.state.engine)
+    return SessionRepository(engine)
+
+
+def get_session_completer(request: Request) -> SessionCompleter:
+    engine = cast(Engine, request.app.state.engine)
+    return SessionRepository(engine)
+
+
+def get_session_jobs(request: Request) -> SessionJobStatus:
+    engine = cast(Engine, request.app.state.engine)
+    return SessionJobRepository(engine)
+
+
+def get_feedback_store(request: Request) -> FeedbackStore:
+    engine = cast(Engine, request.app.state.engine)
+    return FeedbackRepository(engine)
 
 
 def get_observation_repository(request: Request) -> ObservationRepository:

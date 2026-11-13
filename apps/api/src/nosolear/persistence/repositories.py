@@ -45,6 +45,7 @@ from nosolear.ports.audio import (
     RecordingExists,
 )
 from nosolear.ports.clock import Clock
+from nosolear.ports.feedback import StoredObservation
 
 
 def _now() -> datetime:
@@ -74,6 +75,32 @@ class ObservationRepository:
             scored=ExtractionRepository(self._engine).scored(),
             config_order=scoring_config_order(self._engine),
         )
+
+    def for_session(self, session_id: str) -> list[StoredObservation]:
+        """The session's observations with their row ids, under the same newest-config rule as
+        `current`. Filtering keeps the input objects, so the ids are matched by identity."""
+        stmt = (
+            select(observations)
+            .join(attempts, observations.c.attempt_id == attempts.c.id)
+            .where(attempts.c.session_id == session_id)
+            .order_by(observations.c.observed_at, observations.c.id)
+        )
+        with self._engine.connect() as conn:
+            rows = conn.execute(stmt).all()
+        decoded = [observation_from_row(r) for r in rows]
+        kept = {
+            id(o)
+            for o in current_observations(
+                decoded,
+                scored=ExtractionRepository(self._engine).scored(),
+                config_order=scoring_config_order(self._engine),
+            )
+        }
+        return [
+            StoredObservation(id=int(row.id), observation=o)
+            for row, o in zip(rows, decoded, strict=True)
+            if id(o) in kept
+        ]
 
 
 def _entry_row(profile: Profile, e: ProfileEntry) -> dict[str, Any]:

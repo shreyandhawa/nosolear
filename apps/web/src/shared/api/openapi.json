@@ -530,6 +530,30 @@
         "title": "ClipOut",
         "type": "object"
       },
+      "CompleteOut": {
+        "properties": {
+          "already_completed": {
+            "title": "Already Completed",
+            "type": "boolean"
+          },
+          "completed_at": {
+            "format": "date-time",
+            "title": "Completed At",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "completed_at",
+          "already_completed"
+        ],
+        "title": "CompleteOut",
+        "type": "object"
+      },
       "DailySessionOut": {
         "properties": {
           "attempts": {
@@ -600,6 +624,143 @@
           "message"
         ],
         "title": "ErrorOut",
+        "type": "object"
+      },
+      "FeedbackItemOut": {
+        "description": "One card's text. `source` says whether the coach wrote it or a template did, and a template\ncarries the reason the coach was not used.",
+        "properties": {
+          "attempt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attempt Id"
+          },
+          "end_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Ms"
+          },
+          "error_key": {
+            "title": "Error Key",
+            "type": "string"
+          },
+          "fallback_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "cap_exceeded",
+                  "provider_unavailable",
+                  "capability_missing",
+                  "invalid_output"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Reason"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "model_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Text"
+          },
+          "source": {
+            "enum": [
+              "coach",
+              "template"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "start_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Ms"
+          },
+          "word": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Word"
+          }
+        },
+        "required": [
+          "id",
+          "error_key",
+          "message",
+          "model_text",
+          "source",
+          "fallback_reason",
+          "attempt_id",
+          "start_ms",
+          "end_ms",
+          "word"
+        ],
+        "title": "FeedbackItemOut",
+        "type": "object"
+      },
+      "FeedbackOut": {
+        "properties": {
+          "degraded": {
+            "title": "Degraded",
+            "type": "boolean"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "skills": {
+            "items": {
+              "$ref": "#/components/schemas/SkillFeedbackOut"
+            },
+            "title": "Skills",
+            "type": "array"
+          }
+        },
+        "required": [
+          "session_id",
+          "degraded",
+          "skills"
+        ],
+        "title": "FeedbackOut",
         "type": "object"
       },
       "FocusOut": {
@@ -1302,6 +1463,46 @@
         "title": "ReportItemOut",
         "type": "object"
       },
+      "SkillFeedbackOut": {
+        "description": "`clean` means the skill was scored with no miss; `not_scored` means it was not scored today.\nNeither has a card.",
+        "properties": {
+          "item": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeedbackItemOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "skill": {
+            "enum": [
+              "sounds",
+              "on_the_spot",
+              "articulate"
+            ],
+            "title": "Skill",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "fix",
+              "clean",
+              "not_scored"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill",
+          "state",
+          "item"
+        ],
+        "title": "SkillFeedbackOut",
+        "type": "object"
+      },
       "SkillScoreOut": {
         "properties": {
           "score": {
@@ -1951,6 +2152,136 @@
           }
         },
         "summary": "Start Rescore"
+      }
+    },
+    "/api/sessions/{session_id}/complete": {
+      "post": {
+        "operationId": "completeDailySession",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompleteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "no such session"
+          },
+          "409": {
+            "description": "not a daily session, its analysis has not finished, or no pack"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Session"
+      }
+    },
+    "/api/sessions/{session_id}/feedback": {
+      "get": {
+        "operationId": "getFeedback",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "no feedback has been generated for this session"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Session Feedback"
+      },
+      "post": {
+        "operationId": "generateFeedback",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "no such session"
+          },
+          "409": {
+            "description": "not a daily session, or its analysis has not finished"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Generate Session Feedback"
       }
     }
   }
