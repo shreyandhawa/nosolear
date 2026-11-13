@@ -9,19 +9,32 @@ from uuid import uuid4
 from sqlalchemy import Engine, Row, delete, insert, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Connection
+from sqlalchemy.exc import IntegrityError
 
 from nosolear.domain.analyses import AnalysisKind, NewAnalysis, StoredAnalysis
 from nosolear.domain.estimates import BetaState, KeyEstimate
+from nosolear.domain.jobs import Job, JobKind, JobStatus, initial_steps
 from nosolear.domain.observations import Context, Observation, Outcome
 from nosolear.domain.profile import Profile, ProfileEntry
 from nosolear.domain.status import Status
 from nosolear.domain.taxonomy import Detector, Taxonomy
+from nosolear.persistence.job_queue import new_job_row
 from nosolear.persistence.models import (
     analyses,
+    attempts,
     format_utc,
+    jobs,
     observations,
     profile_entries,
     profile_snapshots,
+    recordings,
+    sessions,
+)
+from nosolear.ports.audio import (
+    AttemptInfo,
+    NewRecording,
+    Recording,
+    RecordingExists,
 )
 from nosolear.ports.clock import Clock
 
@@ -230,3 +243,135 @@ def _analysis(row: Row[Any]) -> StoredAnalysis:
         raw=json.loads(row.raw_json),
         created_at=row.created_at,
     )
+
+
+_RECORDING_ATTEMPT_CONSTRAINT = "recordings.attempt_id"
+
+
+def _recording(row: Row[Any]) -> Recording:
+    return Recording(
+        id=row.id,
+        attempt_id=row.attempt_id,
+        path=row.path,
+        duration_ms=row.duration_ms,
+        sample_rate=row.sample_rate,
+        sha256=row.sha256,
+    )
+
+
+class RecordingRepository:
+    """Recordings rows; the matching ANALYZE job is inserted in the same transaction."""
+
+    def __init__(self, engine: Engine, clock: Clock) -> None:
+        self._engine = engine
+        self._clock = clock
+
+    def add_and_enqueue(self, new: NewRecording) -> tuple[Recording, Job]:
+        now = self._clock.now()
+        recording_id = uuid4().hex
+        job_row = new_job_row(JobKind.ANALYZE, new.attempt_id, now)
+        try:
+            with self._engine.begin() as conn:
+                conn.execute(
+                    insert(recordings).values(
+                        id=recording_id,
+                        attempt_id=new.attempt_id,
+                        path=new.stored.path,
+                        duration_ms=new.stored.duration_ms,
+                        sample_rate=new.stored.sample_rate,
+                        sha256=new.stored.sha256,
+                        created_at=now,
+                    )
+                )
+                conn.execute(insert(jobs).values(**job_row))
+        except IntegrityError as exc:
+            if _RECORDING_ATTEMPT_CONSTRAINT in str(exc.orig):
+                raise RecordingExists("This attempt already has a recording.") from None
+            raise
+        recording = Recording(
+            id=recording_id,
+            attempt_id=new.attempt_id,
+            path=new.stored.path,
+            duration_ms=new.stored.duration_ms,
+            sample_rate=new.stored.sample_rate,
+            sha256=new.stored.sha256,
+        )
+        job = Job(
+            id=job_row["id"],
+            kind=JobKind.ANALYZE,
+            attempt_id=new.attempt_id,
+            status=JobStatus.QUEUED,
+            step=None,
+            progress=0.0,
+            steps=initial_steps(JobKind.ANALYZE),
+            tries=0,
+            created_at=now,
+            updated_at=now,
+        )
+        return recording, job
+
+    def for_attempt(self, attempt_id: str) -> Recording | None:
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                select(recordings).where(recordings.c.attempt_id == attempt_id)
+            ).first()
+        return None if row is None else _recording(row)
+
+
+class AttemptRepository:
+    """Sessions and attempts: the attempt reader for uploads and analyses, and the creator the
+    CLI's `--new-attempt` uses."""
+
+    def __init__(self, engine: Engine) -> None:
+        self._engine = engine
+
+    def exists(self, attempt_id: str) -> bool:
+        with self._engine.connect() as conn:
+            row = conn.execute(select(attempts.c.id).where(attempts.c.id == attempt_id)).first()
+        return row is not None
+
+    def get(self, attempt_id: str) -> AttemptInfo | None:
+        with self._engine.connect() as conn:
+            row = conn.execute(select(attempts).where(attempts.c.id == attempt_id)).first()
+        if row is None:
+            return None
+        return AttemptInfo(
+            id=row.id,
+            session_id=row.session_id,
+            step=row.step,
+            reference_text=row.reference_text,
+            scripted=row.scripted,
+        )
+
+    def create_attempt(
+        self,
+        *,
+        session_kind: str,
+        step: str,
+        reference_text: str | None,
+        scripted: bool,
+        now: datetime,
+    ) -> str:
+        session_id = uuid4().hex
+        attempt_id = uuid4().hex
+        with self._engine.begin() as conn:
+            conn.execute(
+                insert(sessions).values(
+                    id=session_id,
+                    kind=session_kind,
+                    protocol_version=1,
+                    started_at=now,
+                    completed_at=None,
+                )
+            )
+            conn.execute(
+                insert(attempts).values(
+                    id=attempt_id,
+                    session_id=session_id,
+                    step=step,
+                    reference_text=reference_text,
+                    scripted=scripted,
+                    created_at=now,
+                )
+            )
+        return attempt_id

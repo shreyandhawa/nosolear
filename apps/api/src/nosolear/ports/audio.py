@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from nosolear.domain.jobs import Job
+
 RECORDING_PATH_PATTERN = re.compile(r"^recordings/[0-9a-f-]{36}\.wav$")
 
 
@@ -60,3 +62,44 @@ class AudioStore(Protocol):
         ...
 
     def delete(self, path: str) -> None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class NewRecording:
+    attempt_id: str
+    stored: StoredRecording
+
+
+@dataclass(frozen=True, slots=True)
+class AttemptInfo:
+    id: str
+    session_id: str
+    step: str
+    reference_text: str | None
+    scripted: bool
+
+
+class RecordingExists(ValueError):
+    """The attempt already has a recording (HTTP 409)."""
+
+
+class UnknownAttempt(ValueError):
+    """No attempt has this id (HTTP 404)."""
+
+
+class AttemptReader(Protocol):
+    def exists(self, attempt_id: str) -> bool: ...
+
+    def get(self, attempt_id: str) -> AttemptInfo | None:
+        """The attempt's step, reference text and scripted flag (read by the analysis steps)."""
+        ...
+
+
+class RecordingStore(Protocol):
+    def add_and_enqueue(self, new: NewRecording) -> tuple[Recording, Job]:
+        """The recordings row and a queued ANALYZE job, in one transaction.
+
+        Raises `RecordingExists` if the attempt already has a recording."""
+        ...
+
+    def for_attempt(self, attempt_id: str) -> Recording | None: ...
