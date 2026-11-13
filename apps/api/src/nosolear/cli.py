@@ -18,6 +18,7 @@ from nosolear.api.deps import (
     build_capability_probes,
     build_ledger,
     build_providers,
+    build_stand_in_synthesizer,
     get_environment,
     load_active_pack,
     read_capabilities,
@@ -46,6 +47,7 @@ from nosolear.persistence.repositories import (
     ObservationRepository,
     ProfileRepository,
 )
+from nosolear.ports.providers import Synthesizer
 from nosolear.settings import REPO_ROOT, Settings, settings_error_summary
 from nosolear.startup import prepare_process
 
@@ -178,8 +180,14 @@ def _job(args: argparse.Namespace, api: ApiClient) -> int:
     return 0
 
 
-def _api_command(args: argparse.Namespace, settings: Settings, client: ApiClient | None) -> int:
-    """`upload` and `job`: both talk to the running API, through `client` or a new one."""
+def _api_command(
+    args: argparse.Namespace,
+    settings: Settings,
+    client: ApiClient | None,
+    synthesizer: Synthesizer | None,
+) -> int:
+    """`upload`, `job` and the first-run commands: all talk to the running API, through `client`
+    or a new one. `stand-in` alone needs a synthesizer, built here when none was given."""
     if args.command == "upload" and args.new_attempt and settings.data_dir == REPO_ROOT / "data":
         print(
             "refusing to create an attempt in the real data directory; set NOSOLEAR_DATA_DIR to a"
@@ -213,7 +221,9 @@ def _api_command(args: argparse.Namespace, settings: Settings, client: ApiClient
     try:
         if args.command == "upload":
             return _upload(args, api, attempt_id)
-        handled = first_run_cli.run(args, api)
+        if args.command == first_run_cli.STAND_IN and synthesizer is None:
+            synthesizer = build_stand_in_synthesizer(settings)
+        handled = first_run_cli.run(args, api, synthesizer=synthesizer, data_dir=settings.data_dir)
         return _job(args, api) if handled is None else handled
     except CliError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -272,7 +282,12 @@ def _doctor_probe(settings: Settings) -> int:
         engine.dispose()
 
 
-def main(argv: Sequence[str] | None = None, *, client: ApiClient | None = None) -> int:
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    client: ApiClient | None = None,
+    synthesizer: Synthesizer | None = None,
+) -> int:
     args = _parser().parse_args(argv)
     try:
         settings = Settings()
@@ -321,8 +336,10 @@ def main(argv: Sequence[str] | None = None, *, client: ApiClient | None = None) 
         first_run_cli.RESCORE,
         first_run_cli.CALIBRATE,
         first_run_cli.BASELINE,
+        first_run_cli.ONBOARDING,
+        first_run_cli.STAND_IN,
     ):
-        return _api_command(args, settings, client)
+        return _api_command(args, settings, client, synthesizer)
     if args.command == "dev-seed" and settings.data_dir == REPO_ROOT / "data":
         print(
             "refusing to seed the real data directory (the observation log has no delete path);"

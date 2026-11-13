@@ -634,6 +634,79 @@
         "title": "JobOut",
         "type": "object"
       },
+      "OnboardingBlockerOut": {
+        "properties": {
+          "component": {
+            "title": "Component",
+            "type": "string"
+          },
+          "fix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fix"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "component",
+          "status",
+          "fix"
+        ],
+        "title": "OnboardingBlockerOut",
+        "type": "object"
+      },
+      "OnboardingOut": {
+        "properties": {
+          "baseline": {
+            "title": "Baseline",
+            "type": "string"
+          },
+          "baseline_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline Session Id"
+          },
+          "blockers": {
+            "items": {
+              "$ref": "#/components/schemas/OnboardingBlockerOut"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "calibration": {
+            "title": "Calibration",
+            "type": "string"
+          },
+          "step": {
+            "title": "Step",
+            "type": "string"
+          }
+        },
+        "required": [
+          "step",
+          "blockers",
+          "calibration",
+          "baseline",
+          "baseline_session_id"
+        ],
+        "title": "OnboardingOut",
+        "type": "object"
+      },
       "ProfileEntryOut": {
         "properties": {
           "ci_high": {
@@ -1427,6 +1500,24 @@
           }
         },
         "summary": "Resume Job"
+      }
+    },
+    "/api/onboarding": {
+      "get": {
+        "operationId": "getOnboarding",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Onboarding"
       }
     },
     "/api/profile": {

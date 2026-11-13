@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import Engine, Row, delete, insert, select
+from sqlalchemy import Engine, Row, delete, func, insert, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
@@ -402,6 +402,11 @@ class AttemptRepository:
         with self._engine.connect() as conn:
             row = conn.execute(select(attempts.c.id).where(attempts.c.id == attempt_id)).first()
         return row is not None
+
+    def count_sessions(self, kind: str) -> int:
+        stmt = select(func.count()).select_from(sessions).where(sessions.c.kind == kind)
+        with self._engine.connect() as conn:
+            return int(conn.execute(stmt).scalar_one())
 
     def get(self, attempt_id: str) -> AttemptInfo | None:
         with self._engine.connect() as conn:

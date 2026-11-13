@@ -773,3 +773,29 @@ def baseline_cli_output(tmp: Path) -> tuple[str, str]:
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             main(["baseline", "complete"], client=ApiClient(client))  # pyright: ignore[reportArgumentType]
     return "baseline CLI output", out.getvalue() + err.getvalue()
+
+
+@leak_surface
+def onboarding_route_body(tmp: Path) -> tuple[str, str]:
+    """`GET /api/onboarding` with planted keys in the settings: the readiness blockers and fixes."""
+    settings = planted_settings(tmp / "data")
+    app = create_app(settings, start_runner=False)
+    with loopback_client(app) as client:
+        body = client.get("/api/onboarding")
+    assert body.status_code == 200
+    return "onboarding route body", body.text
+
+
+@leak_surface
+def onboarding_cli_output(tmp: Path) -> tuple[str, str]:
+    """`nosolear onboarding` through the real CLI against a loopback API with planted keys."""
+    from nosolear.cli_client import ApiClient
+
+    settings = planted_settings(tmp / "data")
+    app = create_app(settings, start_runner=False)
+    with loopback_client(app) as client, pytest.MonkeyPatch.context() as mp:
+        _planted_env(mp, tmp / "data")
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            main(["onboarding"], client=ApiClient(client))  # pyright: ignore[reportArgumentType]
+    return "onboarding CLI output", out.getvalue() + err.getvalue()

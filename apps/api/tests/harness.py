@@ -23,10 +23,11 @@ from sqlalchemy import Engine
 
 from nosolear.adapters.azure_pa import ADAPTER_VERSION as AZURE_PA_VERSION
 from nosolear.api.app import create_app
-from nosolear.api.deps import RawPorts
+from nosolear.api.deps import RawPorts, get_readiness_report
 from nosolear.domain.coach import CoachAnalysis, Rubric, parse_coach_analysis
 from nosolear.domain.content import SeedContent
 from nosolear.domain.observations import Observation
+from nosolear.domain.readiness import Component, ReadinessReport, ReadinessRow, ReadinessStatus
 from nosolear.domain.speech import ProviderCapabilities, RawResult
 from nosolear.persistence.capabilities import CapabilityRepository
 from nosolear.persistence.repositories import AttemptRepository, ObservationRepository
@@ -60,6 +61,22 @@ def _empty_coach(rubric: Rubric | None = None) -> CoachAnalysis:
         payload=message_json(text),
     )
     return parse_coach_analysis(raw, transcript="", allowed_keys=())
+
+
+def ready_report() -> ReadinessReport:
+    """Every component ready, the phone probe not installed (its absence never blocks)."""
+    rows = tuple(
+        ReadinessRow(
+            component,
+            ReadinessStatus.NOT_INSTALLED
+            if component is Component.PHONE_PROBE
+            else ReadinessStatus.READY,
+            "ready for the test",
+            None,
+        )
+        for component in Component
+    )
+    return ReadinessReport(rows=rows)
 
 
 @dataclass
@@ -125,6 +142,7 @@ def make_harness(tmp_path: Path) -> Iterator[Callable[..., Harness]]:
         start_runner: bool = False,
         content: SeedContent | None = None,
         rubric: Rubric | None = None,
+        readiness: ReadinessReport | None = None,
     ) -> Harness:
         data_dir = tmp_path / f"h{next(_next_id)}"
         voice = OracleVoice()
@@ -143,6 +161,8 @@ def make_harness(tmp_path: Path) -> Iterator[Callable[..., Harness]]:
             start_runner=start_runner,
             content=content,
         )
+        report = readiness if readiness is not None else ready_report()
+        app.dependency_overrides[get_readiness_report] = lambda: report
         if not probe:
             stack.enter_context(patch(PROBE_INSTALLED, return_value=False))
         client = stack.enter_context(loopback_client(app))

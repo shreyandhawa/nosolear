@@ -176,6 +176,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/onboarding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Onboarding */
+        get: operations["getOnboarding"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/profile": {
         parameters: {
             query?: never;
@@ -437,6 +454,28 @@ export interface components {
             steps: components["schemas"]["StepOut"][];
             /** Tries */
             tries: number;
+        };
+        /** OnboardingBlockerOut */
+        OnboardingBlockerOut: {
+            /** Component */
+            component: string;
+            /** Fix */
+            fix: string | null;
+            /** Status */
+            status: string;
+        };
+        /** OnboardingOut */
+        OnboardingOut: {
+            /** Baseline */
+            baseline: string;
+            /** Baseline Session Id */
+            baseline_session_id: string | null;
+            /** Blockers */
+            blockers: components["schemas"]["OnboardingBlockerOut"][];
+            /** Calibration */
+            calibration: string;
+            /** Step */
+            step: string;
         };
         /** ProfileEntryOut */
         ProfileEntryOut: {
@@ -948,6 +987,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    getOnboarding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboardingOut"];
                 };
             };
         };

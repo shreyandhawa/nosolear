@@ -2,21 +2,25 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
-from live_support import require_keys
+from factories import loopback_client
+from fastapi.testclient import TestClient
+from live_support import LiveHarness, require_keys
 
 from nosolear.adapters.azure_speech import AzureSpeech
 from nosolear.adapters.azure_tts import AzureTts
 from nosolear.adapters.system_clock import SystemClock
 from nosolear.adapters.tts_cache import CachedSynthesizer
+from nosolear.api.app import create_app
 from nosolear.api.deps import build_ledger, paid_speech_synthesizer
 from nosolear.budget.meter import Meter
+from nosolear.domain.content import SeedContent
 from nosolear.persistence.db import create_engine_for, upgrade_to_head
 from nosolear.persistence.tts_cache import TtsCacheRepository
 from nosolear.ports.ledger import UsageLedger
 from nosolear.settings import Settings
 from nosolear.startup import prepare_process
 
-__all__ = ["live_settings", "require_keys"]
+__all__ = ["live_harness", "live_settings", "make_live_harness", "require_keys"]
 
 
 @pytest.fixture
@@ -55,6 +59,45 @@ def real_ledger() -> Iterator[UsageLedger]:
 @pytest.fixture
 def live_meter(real_ledger: UsageLedger) -> Meter:
     return Meter(real_ledger)
+
+
+@pytest.fixture
+def make_live_harness(
+    live_settings: Settings, real_ledger: UsageLedger
+) -> Iterator[Callable[..., LiveHarness]]:
+    """A started app on a temporary data directory, sharing the user's real ledger so the caps
+    still apply. `content` overrides the committed content, for a smaller calibration set."""
+    stack: list[TestClient] = []
+
+    def build(*, content: SeedContent | None = None) -> LiveHarness:
+        app = create_app(
+            live_settings,
+            ledger=real_ledger,
+            start_runner=False,
+            content=content,
+        )
+        client = loopback_client(app)
+        client.__enter__()
+        stack.append(client)
+        services: object = app.state.services  # pyright: ignore[reportAttributeAccessIssue]
+        synthesizer = services.providers.synthesizer  # pyright: ignore[reportAttributeAccessIssue]
+        return LiveHarness(
+            client=client,
+            synthesizer=synthesizer,
+            engine=app.state.engine,  # pyright: ignore[reportAttributeAccessIssue]
+            data_dir=live_settings.data_dir,
+        )
+
+    try:
+        yield build
+    finally:
+        for client in stack:
+            client.__exit__(None, None, None)
+
+
+@pytest.fixture
+def live_harness(make_live_harness: Callable[..., LiveHarness]) -> LiveHarness:
+    return make_live_harness()
 
 
 @pytest.fixture
