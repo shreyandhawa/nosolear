@@ -858,10 +858,10 @@ Everything else stays in the data dir: recordings, raw provider results, transcr
 
 | Component | How it is used | Licence note |
 |---|---|---|
-| CrisperWhisper | Opt-in transcriber, never picked by `auto` | Non-commercial; the exact terms are confirmed in the notices task. The README and notices say that the MIT licence doesn't cover it |
-| espeak-ng | A separate executable the user installs (Homebrew, apt), run as a subprocess; not linked, bundled or loaded as a library | GPL-3.0; the exact version string is confirmed in the notices task. The app doesn't use `phonemizer`, which loads libespeak-ng into the Python process |
-| wav2vec2-lv-60-espeak-cv-ft weights | Downloaded from Hugging Face at a pinned revision | Each model has its own licence; confirm in the notices task |
-| Whisper weights for mlx-whisper and faster-whisper | Downloaded at pinned revisions | Confirm in the notices task |
+| CrisperWhisper | Opt-in transcriber, never picked by `auto` | The code is MIT. The weights (`nyralabs/CrisperWhisper`, formerly `nyrahealth/`) are CC BY-NC 4.0: research and non-commercial use only. The upstream README also names a "Nyra Health Non-Commercial Research License" for the weights, so Phase 0d checks the licence of the revision it pins. The README and notices say that the MIT licence doesn't cover the weights |
+| espeak-ng | A separate executable the user installs (Homebrew, apt), run as a subprocess; not linked, bundled or loaded as a library | GPL-3.0 or later (release 1.52.0 when checked). The app doesn't use `phonemizer`, which loads libespeak-ng into the Python process |
+| wav2vec2-lv-60-espeak-cv-ft weights | Downloaded from Hugging Face at a pinned revision | Apache-2.0, as the model card declares |
+| Whisper weights for mlx-whisper and faster-whisper | Downloaded at pinned revisions | `openai/whisper-large-v3-turbo` and `Systran/faster-whisper-small.en` are MIT. `mlx-community/whisper-large-v3-turbo` declares no licence on its card; it is a conversion of OpenAI's MIT `large-v3-turbo` |
 | Python and JavaScript dependencies | Installed from the lockfiles | Each package's licence, listed from the lockfiles in the notices task |
 
 **Files Phase 0b adds:**
@@ -890,7 +890,6 @@ Still open, each with the phase that decides it:
 - Free-talk scoring: unscripted mode or transcribe-then-score (Phase 0d, §4).
 - `v0` margins and thresholds (Phase 0e, §6.8).
 - A prosody calibration method; until a later phase adds one, prosody keys stay provisional (§9.2).
-- CrisperWhisper's exact licence terms and every model's licence (the notices task in Phase 0b, §17).
 
 ---
 
