@@ -12,6 +12,7 @@ from provider_fakes import FakeScorer, FakeTranscriber, assessment, wrapper_chai
 from sqlalchemy import Engine, text
 from wavs import write_wav
 
+import nosolear.api.deps as deps
 from nosolear.adapters.azure_pa import AzurePronunciationScorer
 from nosolear.adapters.azure_speech import AzureSpeech
 from nosolear.adapters.azure_stt import AzureTranscriber
@@ -43,6 +44,9 @@ from nosolear.budget.metered_ports import (
 )
 from nosolear.domain.errors import RequestNotSent
 from nosolear.domain.jobs import JobKind
+from nosolear.domain.speech import LOCAL, ProviderCapabilities
+from nosolear.domain.transcriber_choice import Platform, TranscriberName
+from nosolear.persistence.capabilities import CapabilityRepository
 from nosolear.persistence.db import create_engine_for, upgrade_to_head
 
 NOW = datetime(2026, 11, 13, 9, 0, tzinfo=UTC)
@@ -204,3 +208,37 @@ def test_create_app_hands_its_raw_ports_to_the_lifespan(tmp_path):
         make_settings(data_dir=tmp_path), start_runner=False, raw_ports=ports, clock=FixedClock(NOW)
     )
     assert app.state.raw_ports is ports
+
+
+@pytest.mark.parametrize(
+    ("factor", "expected"),
+    [(0.9, TranscriberName.AZURE_STT), (0.2, TranscriberName.FASTER_WHISPER)],
+)
+def test_the_server_auto_choice_uses_the_stored_speed(
+    tmp_path, monkeypatch, factor: float, expected: TranscriberName
+):
+    # `doctor` and the running server must agree: both read the stored speed figures.
+    settings = make_settings(data_dir=tmp_path, transcriber="auto")
+    engine = _engine(tmp_path)
+    CapabilityRepository(engine).add(
+        ProviderCapabilities(
+            provider=LOCAL,
+            adapter=TranscriberName.FASTER_WHISPER.value,
+            adapter_version=1,
+            provider_version="small.en",
+            region=None,
+            locale=None,
+            capabilities={"real_time_factor": factor},
+            probed_at=NOW,
+        )
+    )
+    monkeypatch.setattr(deps, "current_platform", lambda: Platform.OTHER)
+    monkeypatch.setattr(
+        deps, "installed_transcribers", lambda: frozenset({TranscriberName.FASTER_WHISPER})
+    )
+    services = build_services(settings, engine, clock=FixedClock(NOW))
+    try:
+        assert services.providers.transcriber_choice.name is expected
+    finally:
+        services.runner.stop(timeout=10.0)
+        engine.dispose()
