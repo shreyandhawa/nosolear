@@ -46,23 +46,31 @@ def complete_daily_session(
         raise SessionNotDaily("Feedback is only made for a daily session.")
     if jobs.unfinished(session_id) > 0:
         raise SessionNotAnalyzed("The session is still being analyzed.")
-    done = sessions_writer.completed_at(session_id)
-    if done is not None:
+    now = clock.now()
+    # Claim before any work: the check and the close are one guarded UPDATE, so of two concurrent
+    # calls only one reads the ladder and advances it.
+    if not sessions_writer.claim(session_id, now):
+        done = sessions_writer.completed_at(session_id)
+        if done is None:
+            raise SessionNotFound("No such session.")
         return CompletedSession(session_id=session_id, completed_at=done, already_completed=True)
 
-    profile = rebuild_profile(
-        observations=all_observations,
-        profiles=profiles,
-        taxonomy=taxonomy,
-        pack=pack,
-        clock=clock,
-        session_id=session_id,
-        reason="daily",
-    )
-    now = clock.now()
-    checked = {row.observation.error_key for row in observations.for_session(session_id)}
-    rechecks.save(
-        advance_rechecks(profile=profile, previous=rechecks.load(), checked=checked, now=now)
-    )
-    sessions_writer.complete(session_id, now)
+    try:
+        profile = rebuild_profile(
+            observations=all_observations,
+            profiles=profiles,
+            taxonomy=taxonomy,
+            pack=pack,
+            clock=clock,
+            session_id=session_id,
+            reason="daily",
+        )
+        checked = {row.observation.error_key for row in observations.for_session(session_id)}
+        rechecks.save(
+            advance_rechecks(profile=profile, previous=rechecks.load(), checked=checked, now=now)
+        )
+    except BaseException:
+        # The snapshot or the ladder failed: the session must stay open for a retry.
+        sessions_writer.reopen(session_id, now)
+        raise
     return CompletedSession(session_id=session_id, completed_at=now, already_completed=False)

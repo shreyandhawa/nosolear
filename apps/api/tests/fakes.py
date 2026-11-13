@@ -609,7 +609,7 @@ class FakeFeedbackStore:
 
 
 class FakeSessionCompleter:
-    """`SessionCompleter` in memory: the completion time of each session, once set."""
+    """`SessionCompleter` in memory: the completion time of each session, once claimed."""
 
     def __init__(self) -> None:
         self.done: dict[str, datetime] = {}
@@ -618,6 +618,15 @@ class FakeSessionCompleter:
     def completed_at(self, session_id: str) -> datetime | None:
         return self.done.get(session_id)
 
-    def complete(self, session_id: str, at: datetime) -> None:
+    def claim(self, session_id: str, at: datetime) -> bool:
+        if session_id in self.done:
+            return False
         self.calls.append(session_id)
         self.done[session_id] = at
+        return True
+
+    def reopen(self, session_id: str, at: datetime) -> bool:
+        if self.done.get(session_id) != at:
+            return False
+        del self.done[session_id]
+        return True

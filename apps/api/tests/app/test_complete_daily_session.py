@@ -1,5 +1,8 @@
 """complete_daily_session: snapshot the profile for the session, advance the re-checks once."""
 
+import threading
+import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -12,12 +15,15 @@ from fakes import (
     FakeSessionJobStatus,
     FakeSessionReader,
 )
+from sqlalchemy import Engine, text
 
-from nosolear.app.complete_daily_session import complete_daily_session
+from nosolear.app.complete_daily_session import CompletedSession, complete_daily_session
 from nosolear.domain.feedback import SessionNotAnalyzed, SessionNotDaily, SessionNotFound
 from nosolear.domain.observations import Observation, Outcome
 from nosolear.domain.rechecks import RecheckState
 from nosolear.domain.taxonomy import Detector
+from nosolear.persistence.feedback_repositories import SessionRepository
+from nosolear.persistence.models import format_utc
 from nosolear.ports.feedback import StoredObservation
 
 SESSION = "s1"
@@ -150,3 +156,91 @@ def test_unknown_session_refuses() -> None:
     w.sessions = FakeSessionReader({})
     with pytest.raises(SessionNotFound):
         call(w)
+
+
+class _WidenedRecheckStore(FakeRecheckStore):
+    """Holds the window open after the save lands. A second complete that read the ladder during
+    the pause advances it again, which is the double advance the claim exists to prevent."""
+
+    def save(self, states: Mapping[str, RecheckState]) -> None:
+        super().save(states)
+        time.sleep(0.1)
+
+
+def test_concurrent_completes_advance_the_ladder_once(db_engine: Engine) -> None:
+    """Two daily completes released together on real SQLite. Exactly one claims the session."""
+    with db_engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO sessions (id, kind, protocol_version, started_at) "
+                "VALUES (:id, 'daily', 1, :at)"
+            ),
+            {"id": SESSION, "at": format_utc(NOW)},
+        )
+    log = _log(ok_count=40)
+    sessions = FakeSessionReader({SESSION: "daily"})
+    jobs = FakeSessionJobStatus({})
+    profiles = FakeProfileStore()
+    rechecks = _WidenedRecheckStore()
+    completer = SessionRepository(db_engine)
+    barrier = threading.Barrier(2)
+    outcomes: list[object] = []
+    lock = threading.Lock()
+
+    def complete() -> None:
+        barrier.wait()
+        try:
+            outcome: object = complete_daily_session(
+                session_id=SESSION,
+                sessions=sessions,
+                sessions_writer=completer,
+                jobs=jobs,
+                observations=log,
+                all_observations=log,
+                profiles=profiles,
+                rechecks=rechecks,
+                taxonomy=TAX,
+                pack=PACK,
+                clock=FixedClock(NOW),
+            )
+        except Exception as exc:
+            outcome = exc
+        with lock:
+            outcomes.append(outcome)
+
+    threads = [threading.Thread(target=complete) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert all(isinstance(o, CompletedSession) for o in outcomes), outcomes
+    flags = sorted(o.already_completed for o in outcomes if isinstance(o, CompletedSession))
+    assert flags == [False, True]
+    assert len(profiles.saved) == 1, "the losing complete must not snapshot the profile"
+    assert rechecks.states[SOUND].stage == 0, "the ladder must advance once, not twice"
+
+
+class _FailingOnceRecheckStore(FakeRecheckStore):
+    def __init__(self) -> None:
+        super().__init__()
+        self.failed = False
+
+    def save(self, states: Mapping[str, RecheckState]) -> None:
+        if not self.failed:
+            self.failed = True
+            raise OSError("disk full")
+        super().save(states)
+
+
+def test_failed_complete_reopens_the_session_for_a_retry() -> None:
+    w = world(log=_log(ok_count=40))
+    rechecks = _FailingOnceRecheckStore()
+    w.rechecks = rechecks
+    with pytest.raises(OSError):
+        call(w)
+    assert SESSION not in w.completer.done, "the claim must be undone when the ladder fails"
+
+    retried = call(w, at=NOW + DAY)
+    assert retried.already_completed is False
+    assert rechecks.states[SOUND].stage == 0

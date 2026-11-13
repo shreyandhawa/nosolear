@@ -35,11 +35,25 @@ class SessionRepository:
         with self._engine.connect() as conn:
             return cast(datetime | None, conn.execute(stmt).scalar_one_or_none())
 
-    def complete(self, session_id: str, at: datetime) -> None:
+    def claim(self, session_id: str, at: datetime) -> bool:
+        """A guarded UPDATE: only the call that finds the session open gets rowcount 1."""
         with self._engine.begin() as conn:
-            conn.execute(
-                update(sessions).where(sessions.c.id == session_id).values(completed_at=at)
+            result = conn.execute(
+                update(sessions)
+                .where(sessions.c.id == session_id, sessions.c.completed_at.is_(None))
+                .values(completed_at=at)
             )
+        return result.rowcount == 1
+
+    def reopen(self, session_id: str, at: datetime) -> bool:
+        """Only the claim made at `at` is undone, so a later completion is never reopened."""
+        with self._engine.begin() as conn:
+            result = conn.execute(
+                update(sessions)
+                .where(sessions.c.id == session_id, sessions.c.completed_at == at)
+                .values(completed_at=None)
+            )
+        return result.rowcount == 1
 
 
 class SessionJobRepository:
