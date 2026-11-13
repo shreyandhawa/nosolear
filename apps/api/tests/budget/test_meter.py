@@ -147,3 +147,13 @@ class _MeteredFake:
             lambda: self._port.run(units),
             actual=lambda n: n,
         )
+
+
+def test_negative_actual_is_recorded_at_the_estimate_and_closes_the_reservation():
+    ledger, port, meter = _fake()
+    result = meter.call(
+        Provider.AZURE, Unit.AUDIO_SECONDS, 40, lambda: port.run(5), actual=lambda n: -1
+    )
+    assert result == 5
+    usage = ledger.usage(Provider.AZURE, Unit.AUDIO_SECONDS)
+    assert (usage.recorded, usage.reserved) == (40, 0)

@@ -38,7 +38,8 @@ class Meter:
         except BaseException:
             self._ledger.record(reservation, estimate)
             raise
-        self._ledger.record(reservation, measured)
+        # A negative measure is a bug in `actual`; record at the estimate so the reservation closes.
+        self._ledger.record(reservation, measured if measured >= 0 else estimate)
         return result
 
 
