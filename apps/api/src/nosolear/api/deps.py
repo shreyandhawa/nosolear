@@ -48,6 +48,7 @@ from nosolear.adapters.wav2vec2_espeak import Wav2Vec2EspeakProbe
 from nosolear.app.analysis_steps import provider_steps
 from nosolear.app.check_readiness import check_readiness
 from nosolear.app.run_job import run_job
+from nosolear.app.scoring_steps import ExtractStep, RescoreStep, ScoringDeps
 from nosolear.app.steps import StepRegistry, current_job_id
 from nosolear.budget.compose import compose_paid_port, layers_of
 from nosolear.budget.meter import Meter
@@ -59,8 +60,9 @@ from nosolear.budget.metered_ports import (
 )
 from nosolear.domain.budget import Caps, Provider, Unit, period_for
 from nosolear.domain.capabilities import real_time_factors
+from nosolear.domain.extraction.opportunities import tracked_keys
 from nosolear.domain.jobs import JobKind
-from nosolear.domain.packs import LanguagePack
+from nosolear.domain.packs import LanguagePack, PackError
 from nosolear.domain.readiness import ReadinessReport, UsageSnapshot
 from nosolear.domain.speech import ProviderCapabilities
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY, Taxonomy
@@ -79,6 +81,11 @@ from nosolear.persistence.repositories import (
     ObservationRepository,
     ProfileRepository,
     RecordingRepository,
+)
+from nosolear.persistence.scoring_repository import (
+    ExtractionInputsRepository,
+    ExtractionRepository,
+    ScoringConfigRepository,
 )
 from nosolear.persistence.tts_cache import TtsCacheRepository
 from nosolear.ports.analyses import AnalysisStore
@@ -426,6 +433,19 @@ def build_services(
     recordings = RecordingRepository(engine, clock)
     attempts = AttemptRepository(engine)
     audio = FilesystemAudioStore(settings.data_dir)
+    configs = ScoringConfigRepository(engine, DEFAULT_TAXONOMY)
+    observations = ObservationRepository(engine)
+    profiles = ProfileRepository(engine, DEFAULT_TAXONOMY)
+    scoring = ScoringDeps(
+        inputs=ExtractionInputsRepository(engine),
+        configs=configs,
+        extractions=ExtractionRepository(engine),
+        observations=observations,
+        profiles=profiles,
+        pack=lambda: load_active_pack(settings),
+        taxonomy=DEFAULT_TAXONOMY,
+        clock=clock,
+    )
     for step in provider_steps(
         scorer=providers.scorer,
         transcriber=providers.transcriber,
@@ -436,9 +456,15 @@ def build_services(
         recordings=recordings,
         attempts=attempts,
         audio=audio,
+        configs=configs,
+        tracked=lambda: _tracked_keys(settings),
     ):
         if registry.get(JobKind.ANALYZE, step.name) is None:
             registry.register(JobKind.ANALYZE, step)
+    if registry.get(JobKind.ANALYZE, ExtractStep.name) is None:
+        registry.register(JobKind.ANALYZE, ExtractStep(scoring))
+    if registry.get(JobKind.RESCORE, RescoreStep.name) is None:
+        registry.register(JobKind.RESCORE, RescoreStep(scoring))
 
     def run(job_id: str) -> object:
         return run_job(job_id=job_id, jobs=jobs, registry=registry)
@@ -452,11 +478,20 @@ def build_services(
         runner=ThreadPoolJobRunner(jobs, run, workers=settings.job_workers),
         providers=providers,
         clock=clock,
-        observations=ObservationRepository(engine),
-        profiles=ProfileRepository(engine, DEFAULT_TAXONOMY),
+        observations=observations,
+        profiles=profiles,
         recordings=recordings,
         attempts=attempts,
     )
+
+
+def _tracked_keys(settings: Settings) -> frozenset[str]:
+    """Every key the active pack can add, or the taxonomy alone when the pack does not load."""
+    try:
+        pack = load_active_pack(settings)
+    except PackError:
+        return frozenset(d.key for d in DEFAULT_TAXONOMY.defined())
+    return tracked_keys(DEFAULT_TAXONOMY, pack)
 
 
 def read_capabilities(settings: Settings) -> tuple[ProviderCapabilities, ...]:

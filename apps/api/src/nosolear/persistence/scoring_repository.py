@@ -8,6 +8,9 @@ from typing import Any
 from sqlalchemy import Engine, Row, insert, select
 from sqlalchemy.exc import IntegrityError
 
+from nosolear.domain.analyses import AnalysisKind, StoredAnalysis
+from nosolear.domain.attempts import AttemptStep
+from nosolear.domain.extraction.extract import ExtractionItem
 from nosolear.domain.observations import Context, Observation, Outcome
 from nosolear.domain.scoring import (
     ConfigKind,
@@ -17,7 +20,13 @@ from nosolear.domain.scoring import (
     rules_to_json,
 )
 from nosolear.domain.taxonomy import Detector, Taxonomy
-from nosolear.persistence.models import extractions, scoring_configs
+from nosolear.persistence.models import (
+    analyses,
+    attempts,
+    extractions,
+    recordings,
+    scoring_configs,
+)
 from nosolear.persistence.models import observations as observations_table
 
 
@@ -177,3 +186,58 @@ class ExtractionRepository:
                 )
             ).first()
         return row is not None
+
+
+def _stored_analysis(row: Row[Any]) -> StoredAnalysis:
+    return StoredAnalysis(
+        id=row.id,
+        attempt_id=row.attempt_id,
+        kind=AnalysisKind(row.kind),
+        provider=row.provider,
+        provider_version=row.provider_version,
+        adapter=row.adapter,
+        adapter_version=row.adapter_version,
+        raw=json.loads(row.raw_json),
+        created_at=row.created_at,
+    )
+
+
+class ExtractionInputsRepository:
+    """Reads what the extract use cases need. An observation's time is the recording's
+    `created_at`, else the attempt's."""
+
+    def __init__(self, engine: Engine) -> None:
+        self._engine = engine
+
+    def item(self, attempt_id: str) -> ExtractionItem | None:
+        with self._engine.connect() as conn:
+            row = conn.execute(select(attempts).where(attempts.c.id == attempt_id)).first()
+            if row is None:
+                return None
+            recorded_at = conn.execute(
+                select(recordings.c.created_at).where(recordings.c.attempt_id == attempt_id)
+            ).scalar()
+        return ExtractionItem(
+            attempt_id=row.id,
+            step=row.step,
+            scripted=row.scripted,
+            reference_text=row.reference_text,
+            observed_at=recorded_at if recorded_at is not None else row.created_at,
+        )
+
+    def analyses(self, attempt_id: str) -> list[StoredAnalysis]:
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                select(analyses).where(analyses.c.attempt_id == attempt_id).order_by(analyses.c.id)
+            ).all()
+        return [_stored_analysis(row) for row in rows]
+
+    def rescorable_attempt_ids(self) -> list[str]:
+        has_analysis = select(analyses.c.id).where(analyses.c.attempt_id == attempts.c.id)
+        stmt = (
+            select(attempts.c.id)
+            .where(attempts.c.step != AttemptStep.CALIBRATION.value, has_analysis.exists())
+            .order_by(attempts.c.created_at, attempts.c.id)
+        )
+        with self._engine.connect() as conn:
+            return [str(row.id) for row in conn.execute(stmt)]

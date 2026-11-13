@@ -1,9 +1,23 @@
 """Hypothesis strategies for scoring configs and observations. Import from `strategies`."""
 
-from factories import T0, TAX, mk
+from factories import (
+    T0,
+    TAX,
+    coach_analysis,
+    finding,
+    mk,
+    pa_phone,
+    pa_result,
+    pa_word,
+    probe_result,
+    transcript,
+)
 from hypothesis import strategies as st
 
+from nosolear.domain.coach import CoachAnalysis, CoachFinding
+from nosolear.domain.extraction.extract import ExtractionItem, ProviderResults
 from nosolear.domain.observations import Observation, Outcome
+from nosolear.domain.phones import AZURE_PHONES
 from nosolear.domain.scoring import (
     ConfigKind,
     FamilyRule,
@@ -11,6 +25,13 @@ from nosolear.domain.scoring import (
     ScoringConfig,
     Thresholds,
     TrialCounts,
+)
+from nosolear.domain.speech import (
+    PhonemeAssessment,
+    PhoneProbeResult,
+    PronunciationAssessment,
+    Transcript,
+    WordAssessment,
 )
 from nosolear.domain.taxonomy import Detector, Family
 
@@ -140,4 +161,124 @@ def attempt_observations() -> st.SearchStrategy[list[Observation]]:
 def scored_pairs() -> st.SearchStrategy[list[tuple[str, str]]]:
     return st.lists(
         st.tuples(st.sampled_from(ATTEMPTS), st.sampled_from(CONFIG_ORDER)), max_size=12
+    )
+
+
+_PHONES = sorted(AZURE_PHONES)
+_ERROR_TYPES = ["None", "Mispronunciation", "Omission", "Insertion"]
+_PROSODY = ["UnexpectedBreak", "MissingBreak", "Monotone"]
+
+
+@st.composite
+def _phone_assessments(draw: st.DrawFn) -> PhonemeAssessment:
+    phone = draw(st.sampled_from(_PHONES))
+    accuracy = draw(st.floats(min_value=0.0, max_value=100.0, allow_nan=False))
+    nbest = draw(
+        st.lists(
+            st.tuples(
+                st.sampled_from(_PHONES),
+                st.floats(min_value=0.0, max_value=100.0, allow_nan=False),
+            ),
+            max_size=3,
+        )
+    )
+    return pa_phone(phone, accuracy, nbest)
+
+
+@st.composite
+def _word_assessments(draw: st.DrawFn) -> WordAssessment:
+    phones = draw(st.lists(_phone_assessments(), max_size=4))
+    return pa_word(
+        "w",
+        phones,
+        error_type=draw(st.sampled_from(_ERROR_TYPES)),
+        prosody=draw(st.lists(st.sampled_from(_PROSODY), max_size=2)),
+    )
+
+
+@st.composite
+def pronunciation_results(
+    draw: st.DrawFn, has_nbest: bool | None = None, has_prosody: bool | None = None
+) -> PronunciationAssessment:
+    words = draw(st.lists(_word_assessments(), max_size=5))
+    nbest = draw(st.booleans()) if has_nbest is None else has_nbest
+    prosody = draw(st.booleans()) if has_prosody is None else has_prosody
+    return pa_result(words, has_nbest=nbest, has_prosody=prosody)
+
+
+@st.composite
+def probe_results(draw: st.DrawFn) -> PhoneProbeResult:
+    expected = draw(
+        st.lists(st.lists(st.sampled_from(_PHONES), min_size=1, max_size=4), min_size=0, max_size=3)
+    )
+    heard = draw(st.lists(st.sampled_from(_PHONES), max_size=8))
+    return probe_result(None, expected, heard)
+
+
+_WORDS = ["I", "um", "went", "home.", "we", "think", "uh", "yesterday?", "fun!", "the", "Well,"]
+_QUOTES = [None, "I went", "went home", "um", "the market", "I think"]
+_STEPS = [
+    "speak",
+    "read_aloud",
+    "word_list",
+    "quick_answer",
+    "articulate",
+    "retell",
+    "drill",
+    "shadow",
+    "calibration",
+]
+
+
+@st.composite
+def transcripts(draw: st.DrawFn) -> Transcript:
+    items = draw(
+        st.lists(
+            st.tuples(
+                st.sampled_from(_WORDS),
+                st.integers(min_value=0, max_value=2500),
+                st.integers(min_value=0, max_value=800),
+            ),
+            max_size=12,
+        )
+    )
+    words: list[tuple[str, int, int]] = []
+    now = 0
+    for text, gap, length in items:
+        start = now + gap
+        words.append((text, start, start + length))
+        now = start + length
+    return transcript(*words, fillers_kept=draw(st.booleans()))
+
+
+@st.composite
+def coach_analyses(draw: st.DrawFn) -> CoachAnalysis:
+    keys = [*_KEYS, "grammar.x'); DROP TABLE observations;--"]
+    findings: list[CoachFinding] = draw(
+        st.lists(
+            st.tuples(st.sampled_from(keys), st.sampled_from(_QUOTES)),
+            max_size=6,
+        ).map(lambda picked: [finding(key, quote) for key, quote in picked])
+    )
+    return coach_analysis(findings)
+
+
+@st.composite
+def extraction_items(draw: st.DrawFn) -> ExtractionItem:
+    return ExtractionItem(
+        attempt_id="a1",
+        step=draw(st.sampled_from(_STEPS)),
+        scripted=draw(st.booleans()),
+        reference_text=draw(st.one_of(st.none(), st.just("Seven vans."))),
+        observed_at=T0,
+    )
+
+
+@st.composite
+def provider_results(draw: st.DrawFn) -> ProviderResults:
+    return ProviderResults(
+        pronunciation=draw(st.one_of(st.none(), pronunciation_results())),
+        transcript=draw(st.one_of(st.none(), transcripts())),
+        phone_probe=draw(st.one_of(st.none(), probe_results())),
+        coach=draw(st.one_of(st.none(), coach_analyses())),
     )

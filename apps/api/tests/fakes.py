@@ -393,10 +393,14 @@ class FakeProfileStore:
     def __init__(self, stored_pack_id: str | None = None) -> None:
         self._seed_pack_id = stored_pack_id
         self.saved: list[tuple[Profile, str | None, str]] = []
+        self.replaced: list[Profile] = []
 
     def save(self, profile: Profile, *, session_id: str | None, reason: str) -> str:
         self.saved.append((profile, session_id, reason))
         return f"snapshot-{len(self.saved)}"
+
+    def replace(self, profile: Profile) -> None:
+        self.replaced.append(profile)
 
     def latest_pack_id(self) -> str | None:
         return self.saved[-1][0].pack_id if self.saved else self._seed_pack_id

@@ -10,7 +10,20 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 
 from nosolear.adapters.content_files import load_pack
+from nosolear.domain.coach import CoachAnalysis, CoachFinding, Rubric
 from nosolear.domain.observations import Context, Observation, Outcome, make_observation
+from nosolear.domain.speech import (
+    NBestPhoneme,
+    PhonemeAssessment,
+    PhoneProbeResult,
+    PronunciationAssessment,
+    ProsodyFeedback,
+    RawResult,
+    ScoringMode,
+    Transcript,
+    WordAssessment,
+    WordTiming,
+)
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY, Detector
 from nosolear.settings import CONTENT_DIR, Settings
 
@@ -132,4 +145,113 @@ def loopback_client(app: FastAPI, *, port: int = 8000, **kwargs: Any) -> TestCli
     """
     return TestClient(
         app, base_url=f"http://127.0.0.1:{port}", client=("127.0.0.1", 50000), **kwargs
+    )
+
+
+RAW_PA = RawResult("azure", "test", "azure_pa", 1, {})
+RAW_PROBE = RawResult("local", "test", "phone_probe", 1, {})
+
+
+def pa_phone(
+    phone: str, accuracy: float, nbest: Iterable[tuple[str, float]] = ()
+) -> PhonemeAssessment:
+    return PhonemeAssessment(
+        phoneme=phone,
+        accuracy=accuracy,
+        nbest=tuple(NBestPhoneme(p, s) for p, s in nbest),
+        start_ms=None,
+        end_ms=None,
+    )
+
+
+def pa_word(
+    text: str,
+    phones: Iterable[PhonemeAssessment],
+    error_type: str = "None",
+    prosody: Iterable[str] = (),
+    start_ms: int | None = 100,
+    end_ms: int | None = 520,
+) -> WordAssessment:
+    error_types = tuple(prosody)
+    feedback = ProsodyFeedback(error_types, None, None, None) if error_types else None
+    return WordAssessment(
+        word=text,
+        accuracy=None,
+        error_type=error_type,
+        start_ms=start_ms,
+        end_ms=end_ms,
+        phonemes=tuple(phones),
+        prosody=feedback,
+    )
+
+
+def pa_result(
+    words: Iterable[WordAssessment], has_nbest: bool = True, has_prosody: bool = True
+) -> PronunciationAssessment:
+    return PronunciationAssessment(
+        mode=ScoringMode.SCRIPTED,
+        words=tuple(words),
+        accuracy=None,
+        fluency=None,
+        completeness=None,
+        prosody=None,
+        has_nbest=has_nbest,
+        has_prosody=has_prosody,
+        raw=RAW_PA,
+    )
+
+
+def probe_result(
+    reference_text: str | None,
+    expected_words: Iterable[Iterable[str]],
+    heard: Iterable[str],
+) -> PhoneProbeResult:
+    """The probe result for a reference text. The text is not stored on the result; callers pass
+    it to the extraction again, so it is accepted here only to read like the call site."""
+    del reference_text
+    return PhoneProbeResult(
+        expected_words=tuple(tuple(word) for word in expected_words),
+        heard=tuple(heard),
+        raw=RAW_PROBE,
+    )
+
+
+RAW_STT = RawResult("local", "test", "faster_whisper", 1, {})
+RAW_COACH = RawResult("anthropic", "test", "claude_coach", 1, {})
+
+
+def transcript(*words: tuple[str, int, int], fillers_kept: bool = True) -> Transcript:
+    """A transcript from (text, start_ms, end_ms) triples."""
+    timings = tuple(WordTiming(text, start, end) for text, start, end in words)
+    return Transcript(
+        text=" ".join(w.text for w in timings),
+        words=timings,
+        fillers_kept=fillers_kept,
+        raw=RAW_STT,
+    )
+
+
+def transcript_from(text: str) -> Transcript:
+    """Each whitespace token is a word, 400 ms long, back to back from 0 ms."""
+    words = tuple(WordTiming(piece, 400 * i, 400 * i + 400) for i, piece in enumerate(text.split()))
+    return Transcript(text=text, words=words, fillers_kept=True, raw=RAW_STT)
+
+
+def finding(error_key: str, quote: str | None) -> CoachFinding:
+    return CoachFinding(
+        error_key=error_key,
+        quote=quote,
+        correction="Say it another way.",
+        explanation="A short reason.",
+    )
+
+
+def coach_analysis(findings: Iterable[CoachFinding], rubric: Rubric | None = None) -> CoachAnalysis:
+    return CoachAnalysis(
+        findings=tuple(findings),
+        rubric=rubric,
+        rewrite=None,
+        dropped=0,
+        tokens_used=0,
+        raw=RAW_COACH,
     )

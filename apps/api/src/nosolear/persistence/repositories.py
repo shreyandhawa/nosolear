@@ -121,6 +121,14 @@ class ProfileRepository:
         self._engine = engine
         self._taxonomy = taxonomy
 
+    def replace(self, profile: Profile) -> None:
+        """Replace every current entry without a snapshot."""
+        rows = [_entry_row(profile, e) for e in profile.entries]
+        with self._engine.begin() as conn:
+            conn.execute(delete(profile_entries))
+            if rows:
+                conn.execute(insert(profile_entries), rows)
+
     def save(self, profile: Profile, *, session_id: str | None, reason: str) -> str:
         """Replace every current entry and append a snapshot, atomically."""
         rows = [_entry_row(profile, e) for e in profile.entries]

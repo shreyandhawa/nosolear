@@ -76,3 +76,7 @@ class UploadAcceptedOut(BaseModel):
     recording_id: str
     job_id: str
     duration_ms: int
+
+
+class JobAcceptedOut(BaseModel):
+    job_id: str

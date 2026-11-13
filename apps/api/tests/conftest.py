@@ -10,6 +10,8 @@ from nosolear.logging_setup import uninstall_secret_scrubbing
 from nosolear.persistence.db import create_engine_for, upgrade_to_head
 from nosolear.settings import Settings
 
+pytest_plugins = ("harness",)
+
 settings.register_profile("default", max_examples=100, deadline=None)
 settings.register_profile("heavy", max_examples=1000, deadline=None)
 settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))

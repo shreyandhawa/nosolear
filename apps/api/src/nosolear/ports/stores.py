@@ -15,6 +15,10 @@ class ObservationReader(Protocol):
 class ProfileWriter(Protocol):
     def save(self, profile: Profile, *, session_id: str | None, reason: str) -> str: ...
 
+    def replace(self, profile: Profile) -> None:
+        """Replace the current entries with no snapshot."""
+        ...
+
 
 class ProfilePackReader(Protocol):
     def latest_pack_id(self) -> str | None: ...
