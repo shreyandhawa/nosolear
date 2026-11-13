@@ -11,10 +11,14 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Protocol, cast
 
+import numpy as np
+from numpy.typing import NDArray
+
 from nosolear.adapters.hf_models import ModelSpec, disable_hf_telemetry, ensure_model
 from nosolear.adapters.lazy_model import LazyModel
 from nosolear.adapters.local_env import installed_version, torch_device
 from nosolear.adapters.model_specs import FASTER_WHISPER
+from nosolear.adapters.wav_samples import read_16k_mono
 from nosolear.domain.errors import ProviderUnavailable
 from nosolear.domain.results import parse_local_transcript
 from nosolear.domain.speech import LOCAL, RawResult, Transcript
@@ -49,7 +53,9 @@ class _SegmentLike(Protocol):
 
 
 class WhisperModelLike(Protocol):
-    def transcribe(self, audio: str, **kwargs: object) -> tuple[Iterable[_SegmentLike], object]: ...
+    def transcribe(
+        self, audio: NDArray[np.float32], **kwargs: object
+    ) -> tuple[Iterable[_SegmentLike], object]: ...
 
 
 class _Constructor(Protocol):
@@ -87,7 +93,7 @@ class FasterWhisperTranscriber:
         try:
             model = self._model.get()
             segments, _info = model.transcribe(
-                str(wav),
+                read_16k_mono(wav),
                 language="en",
                 word_timestamps=True,
                 beam_size=5,

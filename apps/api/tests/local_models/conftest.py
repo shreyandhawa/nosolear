@@ -27,7 +27,7 @@ def espeak_wav(tmp_path: Path) -> Callable[[str], Path]:
         raw = tmp_path / f"espeak-{next(counter)}.wav"
         subprocess.run(
             [str(exe), "-v", "en-us", "-w", str(raw), "--stdin"],
-            input=text,
+            input=text + "\n",  # without it, espeak-ng drops the last character
             text=True,
             capture_output=True,
             check=True,

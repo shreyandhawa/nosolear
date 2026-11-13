@@ -8,7 +8,7 @@ from nosolear.domain.phone_alignment import align_phones
 
 
 @pytest.mark.local_models
-@pytest.mark.parametrize("word", ["school", "vest", "think"])
+@pytest.mark.parametrize("word", ["stop", "vest", "think"])
 def test_probe_on_espeak_audio(espeak_wav, word):
     exe = espeak_ng_path()
     if exe is None:

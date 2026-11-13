@@ -59,7 +59,7 @@ def local_transcriber_library_error(tmp: Path) -> tuple[str, str]:
     """A library error that repeats an audio path and a planted key."""
 
     class BrokenModel:
-        def transcribe(self, audio: str, **kwargs: object) -> NoReturn:
+        def transcribe(self, audio: object, **kwargs: object) -> NoReturn:
             raise RuntimeError(f"{PLANTED_ANTHROPIC_KEY} while reading {audio}")
 
     transcriber = FasterWhisperTranscriber(model=LazyModel(BrokenModel))
