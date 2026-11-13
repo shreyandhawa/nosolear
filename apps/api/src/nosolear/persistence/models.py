@@ -210,6 +210,19 @@ usage_ledger = Table(
     Index("ix_ledger_totals", "provider", "unit", "period", "state"),
 )
 
+tts_cache = Table(
+    "tts_cache",
+    metadata,
+    C("hash", String, primary_key=True),
+    C("text", Text, nullable=False),
+    C("voice", String, nullable=False),
+    C("rate", Integer, nullable=False),
+    C("path", String, nullable=False),
+    C("word_timings_json", Text, nullable=False),
+    C("created_at", UTCDateTime, nullable=False),
+    CheckConstraint("path = 'tts/' || hash || '.wav'", name="ck_tts_cache_path"),
+)
+
 # `tts_hash` and `calibration_run_id` get their foreign keys in 0d/0e, once those tables exist.
 _ANALYSES_ATTEMPT_KEY = "attempt_id IS NOT NULL"
 _ANALYSES_TTS_KEY = "attempt_id IS NULL"
