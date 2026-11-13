@@ -4,7 +4,7 @@ Read this first in a new session, then continue from **Next**.
 
 ## Current phase
 
-Phase 0d (provider adapters) is done as of 2026-11-13. Next is Phase 0e (scoring, calibration, baseline).
+Phase 0e (scoring, calibration, baseline) is done as of 2026-11-13. Phase 1 (daily loop backend) is in progress.
 
 ## Done
 
@@ -92,21 +92,36 @@ Phase 0d (provider adapters) is done as of 2026-11-13. Next is Phase 0e (scoring
 - 2026-11-13: Phase 1 Task 1: the selection policy in `domain/selection.py` (Thompson sampling per key seeded from the date, one focus per skill with the variety rule, a fallback from unseen defined keys, one re-check probe, unscored keys never chosen), with `RecheckState` in `domain/rechecks.py`.
 - 2026-11-13: Phase 1 Task 2: the re-check schedule. `advance_rechecks` in `domain/rechecks.py` (the 2, 4, 8, 16, 32 day ladder, a relapsed key dropped), migration `0008_recheck_columns` adds nullable `profile_entries.next_recheck_at` and `recheck_stage`, `RecheckRepository` implements the `RecheckStore` port in `ports/plan.py`, and `ProfileRepository.save`/`replace` carry the schedule for keys still mastered.
 - 2026-11-13: Phase 1 Task 3: daily plan assembly in `domain/daily_plan.py` (the fixed `PLAN_STEPS` protocol times, `choose_prompt` by focus and probe density with recent prompts avoided, one drill per focus with the taxonomy's drill family, and the seeded `assemble_plan`), all pure and covered by Hypothesis properties.
+
 - 2026-11-13: Phase 1 Task 4: `build_daily_plan` (`app/build_daily_plan.py`) builds today's plan once per local date in `NOSOLEAR_TIMEZONE`, then returns the stored one. Migration `0009_daily_plans` and `DailyPlanRepository`, `PromptBankRepository` and `ScoringCoverage` (`persistence/plan_repositories.py`) store it with its prompt text and seed, so a retired prompt keeps its plan.
 - 2026-11-13: Phase 1 Task 5: the plan API and CLI. `POST /api/plan/today` (`buildTodayPlan`) builds the local day's plan (201, then 200 on repeat) and `GET /api/plan/today` (`getTodayPlan`) only reads it (404 `no_plan_for_today`); sampled scores stay out of `PlanOut`. `nosolear plan [--json]` prints one line per focus, the probe, the prompt (control and bidi characters stripped) and the step list. The web contract is regenerated.
 - 2026-11-13: Phase 1 Task 6: the daily session. `app/start_daily_session.py` builds or fetches today's plan and starts its one session (kind `daily`, `plan_id` unique, migration `0010_sessions_plan_id`) with one unscripted `speak` attempt whose content item is the plan prompt; `POST /api/plan/today/session` (`startDailySession`, 201 then 200) and `nosolear daily start` print the ids and the prompt, and the recording goes through the existing attempt upload path.
+- 2026-11-13: Phase 0e phase review. One combined opus pass over `3b8e6ee..8a7d3ab` found 0 Critical, 3 Important and 10 Minor. The fix PR covers all three Important findings: baseline start and complete are serialized (check and create in one `BEGIN IMMEDIATE`, complete as a guarded claim), the baseline report skips an undecodable transcript, and leak-surface producers cover rescore, calibrate, stand-in and the calibrate job. It also fixes three Minor ones: a racing calibration start returns the open run, calibrate steps act on their own run, and a failed complete reopens the session. The rest are under "Carried to later phases".
 
 ## In progress
 
-- Nothing open. Phase 0d is merged: PRs #36 (Tasks 1–2), #37 (Tasks 3–5), #38 (Tasks 6–9), #39 (Tasks 10–12), #40 (local-models fixes on real models) and #41 (phase review fixes and this close-out).
-- The Phase 0d subagent-driven-development ledger is at `.superpowers/sdd/2026-11-12-phase-0d-provider-adapters/progress.md` (git-ignored), with the review findings in `phase-review-findings.md` beside it. The next controller may delete it, and the 0c ledger too.
+- Phase 1 is running under the budget rule: Tasks 1–3 are merged (#46) and Tasks 4–6 are on `p1/04-plan-api-session`. Its ledger is at `.superpowers/sdd/2026-11-12-phase-1-daily-loop-backend/progress.md` (git-ignored).
+- Phase 0e is merged: #42 (Tasks 1–2), #43 (Tasks 3–5), #44 (Tasks 6–8), #45 (Tasks 9–11), and this PR (the review fixes and the close-out). Its ledger and review findings are in `.superpowers/sdd/2026-11-12-phase-0e-scoring-calibration-baseline/`. The 0c, 0d and 0e ledgers may be deleted.
 
 ## Next
 
-1. Execute Phase 0e: `docs/superpowers/plans/2026-11-12-phase-0e-scoring-calibration-baseline.md`, branch prefix `p0e/`, under the budget rule in "Working rules carried forward". Use `superpowers:subagent-driven-development` with a fresh ledger under `.superpowers/sdd/`. Then Phase 1.
-2. The owner runs `make test-live` with keys in `.env` and reports results; see "Adapters not yet verified against the live service".
+1. Finish Phase 1: `docs/superpowers/plans/2026-11-12-phase-1-daily-loop-backend.md`, branch prefix `p1/`, under the budget rule. Tasks 7–10 remain, then Task 11 (verification), one opus review and one fix dispatch.
+2. Owner:
+   - Run `make test-live` with keys in `.env`; see "Adapters not yet verified against the live service".
+   - Read the baseline passage (`content/baseline/protocol.json`) aloud once. It passes the validator, but nobody has reviewed it.
 3. Any task that adds a dependency reruns `uv run --project apps/api python scripts/third_party_licences.py`.
 4. At the end of each phase, run one combined opus security and final review over the phase range, then one fix dispatch. Then update this file and hand off to a fresh session.
+
+## What Phase 1 and later can rely on (from Phase 0e)
+
+- The 0e plan's "Produces for later phases" section, as shipped, with the deviations in the implementer reports in the 0e ledger.
+- End-to-end tests use `make_harness` (`tests/harness.py`).
+- `ScoringConfigRepository.newest()`, `rule_for` and `current_observations` are in `domain/scoring.py`.
+- `rebuild_profile(..., session_id=, reason=)`.
+- `content_items` and `attempts.content_item_id` exist.
+- The migration head is 0007.
+- `BaselineRepository.create` returns the open session if there is one, and `complete` is a guarded claim.
+- A calibrate job carries an attempt id that belongs to its run.
 
 ## What Phase 0e and later can rely on (from Phase 0d)
 
@@ -195,6 +210,15 @@ Cross-phase assumptions (from the 0c plan): None open: 0b's settings tree (inclu
   - M12: the Azure lock is per process, so `doctor --probe` during server jobs can put two requests in flight on F0.
   - Phone probe: `a` (heard between `æ` and `ɑ`) is unmapped, and `ɾ`, `ᵻ`, `ɐ` and `ʔ` were seen before the espeak newline fix. `θ` is heard as `s`, and espeak's dark final `l` is heard as `v a`, so the local-models test word `school` became `stop`. The map still fails loudly on unknown symbols (§4).
   - The Azure Speech SDK's licence is listed as "Other/Proprietary" in `THIRD_PARTY_NOTICES`; the owner should read its terms. The SDK has its own telemetry with no switch in its Python API (PRIVACY.md says so). Sixteen Linux-only NVIDIA wheel rows say "verify on the wheel".
+- **From the Phase 0e review (deferred Minors, see `phase-review-findings.md` in the 0e ledger):**
+  - `finish_calibration` can queue two calibrate jobs. This is harmless.
+  - The 0007 downgrade fails on any database that has run calibration.
+  - The 0007 `provisional` backfill marks phone-probe sound rows provisional, which disagrees with `rule_for`.
+  - The newest-config rule works per attempt, not per detector, during a partial rescore.
+  - The calibration Hypothesis strategy rarely reaches covered pairs.
+  - A retest baseline can send onboarding back to calibration.
+  - The stand-in command migrates the live database and never disposes its engine.
+  - From the fix: a start during the brief complete window can open a second session, and if that complete then fails, `reopen()` declines.
 - **Still open from the 0b list for 0d (not done in 0d):** register derived credentials (Azure `issueToken` JWTs) with the scrubber if one is ever used; a scrubbing `sys.excepthook` in `prepare_process`; run the leak harness with SDK DEBUG logging on; base64 forms in `secret_forms`; guard `install_secret_scrubbing` against recursion; flag unknown `NOSOLEAR_*` names in `.env`; report a data dir that is a file or belongs to another user as not ready; README "what leaves your machine" for `doctor --probe` and `make test-live`; make PRIVACY.md's test check each row against §16. Done in 0d: logger pins at WARNING, the `Transcriber` alias unified with `TranscriberName`, the licence script's extras rows, and the CrisperWhisper licence check (nyralabs, CC BY-NC 4.0).
 - **Phase 0e:**
   - Reject unknown keys in `parse_pack`. A `[[hypothesis]]` typo currently yields an empty pack.
@@ -290,6 +314,8 @@ None.
 - `p0b/spikes`: unmerged and kept. Everything is under `spikes/`, with no audio and no data.
 
 ## Adapters not yet verified against the live service
+
+Phase 0e adds two live checks: `tests/live/test_first_run_live.py` (onboarding, calibration and baseline on real Azure and Claude), and calibration on the user's own voice. Calibration has only been run with the test oracle and fakes. The oracle also flags TTS controls, so calibration tests use a clean voice.
 
 Every Phase 0d adapter has contract tests only, unless noted. Live checks need the owner to put the Azure and Claude keys in `.env` and run `make test-live`; never ask for a key in chat. Update this list as live tests pass.
 
