@@ -600,3 +600,17 @@ def test_daily_feedback_without_generate_reports_not_generated(
     captured = capsys.readouterr()
     assert "No feedback has been generated" in captured.err
     assert captured.out == ""
+
+
+def test_daily_complete_prints_confirmation(
+    make_harness: Callable[..., Harness], capsys: pytest.CaptureFixture[str]
+) -> None:
+    h = make_harness(coach=FakeCoach(explain_results=[_expl("unused")]))
+    session_id = _daily_with_misses(h, capsys)
+
+    assert main(["daily", "complete", session_id], client=_api(h)) == 0
+
+    out = capsys.readouterr().out
+    assert out.startswith(f"session {session_id} completed at ")
+    assert main(["daily", "complete", session_id], client=_api(h)) == 0
+    assert "was already completed" in capsys.readouterr().out

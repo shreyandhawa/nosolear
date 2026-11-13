@@ -1101,7 +1101,9 @@ def feedback_routes_openapi_and_logs(tmp: Path) -> tuple[str, str]:
         session_id = _seed_daily_feedback(cast(Engine, app.state.engine))
         posted = client.post(f"/api/sessions/{session_id}/feedback")
         fetched = client.get(f"/api/sessions/{session_id}/feedback")
+        completed = client.post(f"/api/sessions/{session_id}/complete")
     assert posted.status_code == 200, "the planted coach failure must still give a 200 template"
-    return "feedback bodies, openapi and logs", "\n".join(
-        [posted.text, fetched.text, json.dumps(app.openapi()), cap.text]
+    assert completed.status_code == 200, completed.text
+    return "feedback and completion bodies, openapi and logs", "\n".join(
+        [posted.text, fetched.text, completed.text, json.dumps(app.openapi()), cap.text]
     )

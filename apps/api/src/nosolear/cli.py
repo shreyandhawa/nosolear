@@ -104,6 +104,19 @@ def _parser() -> argparse.ArgumentParser:
         help="make or upgrade the cards (the coach is called only for cards it has not written)",
     )
     daily_feedback.add_argument("--base-url", help="the API address (default: from the settings)")
+    daily_complete = daily_commands.add_parser("complete", help="close a daily session once")
+    daily_complete.add_argument("session_id", help="the session printed by `daily start`")
+    daily_complete.add_argument("--base-url", help="the API address (default: from the settings)")
+    daily_run = daily_commands.add_parser(
+        "run", help="start, upload a WAV, follow the job, print the feedback, then complete"
+    )
+    daily_run.add_argument("wav", help="a 16-bit mono PCM WAV recording of the prompt")
+    daily_run.add_argument(
+        "--no-generate",
+        action="store_true",
+        help="print the stored feedback only (no coach call); it must have been generated",
+    )
+    daily_run.add_argument("--base-url", help="the API address (default: from the settings)")
     return parser
 
 
@@ -270,12 +283,52 @@ def _feedback_lines(body: object) -> list[str]:
     return lines
 
 
+def _session_path(session_id: str, suffix: str) -> str:
+    return f"/api/sessions/{quote(session_id, safe='')}/{suffix}"
+
+
 def _daily_feedback(args: argparse.Namespace, api: ApiClient) -> int:
-    path = f"/api/sessions/{quote(args.session_id, safe='')}/feedback"
+    path = _session_path(args.session_id, "feedback")
     body = api.post_json(path) if args.generate else api.get_json(path)
     for line in _feedback_lines(body):
         print(line)
     return 0
+
+
+def _complete(api: ApiClient, session_id: str) -> int:
+    done = _record(
+        api.post_json(_session_path(session_id, "complete")),
+        "session_id",
+        "completed_at",
+        "already_completed",
+    )
+    state = "was already completed" if done["already_completed"] else "completed"
+    print(f"session {done['session_id']} {state} at {done['completed_at']}")
+    return 0
+
+
+def _daily_run(args: argparse.Namespace, api: ApiClient) -> int:
+    """The whole day in one command. Only the feedback step can reach the coach, and only without
+    `--no-generate`. A failed job stops the run with its safe error."""
+    if not Path(args.wav).is_file():
+        print(
+            "cannot read the recording: the file does not exist or is not a file", file=sys.stderr
+        )
+        return 2
+    body = api.post_json("/api/plan/today/session")
+    for line in _daily_start_lines(body):
+        print(line)
+    session = _record(body, "session_id", "attempts")
+    first = _record(cast(list[object], session["attempts"])[0], "id")
+    code = _follow(api, api.upload_wav(str(first["id"]), Path(args.wav)))
+    if code != 0:
+        return code
+    session_id = str(session["session_id"])
+    path = _session_path(session_id, "feedback")
+    body = api.get_json(path) if args.no_generate else api.post_json(path)
+    for line in _feedback_lines(body):
+        print(line)
+    return _complete(api, session_id)
 
 
 def _plan(args: argparse.Namespace, api: ApiClient) -> int:
@@ -349,6 +402,10 @@ def _api_command(
         if args.command == "daily":
             if args.daily_command == "feedback":
                 return _daily_feedback(args, api)
+            if args.daily_command == "complete":
+                return _complete(api, args.session_id)
+            if args.daily_command == "run":
+                return _daily_run(args, api)
             return _daily_start(api)
         if args.command == first_run_cli.STAND_IN and synthesizer is None:
             synthesizer = build_stand_in_synthesizer(settings)

@@ -1,0 +1,73 @@
+"""The daily loop through the CLI: `daily run` does the whole day, and tomorrow's `plan` shows
+the focus for today's worst miss. The runner is real and threaded, so `follow_job` sees the job end
+on its own. Oracle providers and fakes only; no paid call."""
+
+from collections.abc import Callable
+from datetime import timedelta
+from pathlib import Path
+from typing import Any
+
+from e2e.test_daily_loop import SPOKEN, MovableClock, NoScorer, _coach, _speaker
+from factories import T0
+from harness import Harness
+
+from nosolear.cli import main
+from nosolear.cli_client import ApiClient
+
+CARD_PREFIXES = ("sounds:", "on_the_spot:", "articulate:")
+
+
+def _record_wav(h: Harness, tmp_path: Path) -> Path:
+    clip = h.synthesizer.synthesize(SPOKEN)
+    wav = tmp_path / "speech.wav"
+    wav.write_bytes((h.data_dir / clip.path).read_bytes())
+    return wav
+
+
+def _api(h: Harness) -> ApiClient:
+    # TestClient is an httpx client at runtime; the stub is typed narrower than it is.
+    return ApiClient(h.client)  # pyright: ignore[reportArgumentType]
+
+
+def test_daily_run_through_cli(
+    make_harness: Callable[..., Harness],
+    tmp_path: Path,
+    capsys: Any,
+) -> None:
+    clock = MovableClock(T0)
+    h = make_harness(start_runner=True, clock=clock, coach=_coach())
+    _speaker(h)
+    wav = _record_wav(h, tmp_path)
+    capsys.readouterr()
+
+    assert main(["daily", "run", str(wav)], client=_api(h)) == 0
+
+    out = capsys.readouterr().out
+    cards = [line for line in out.splitlines() if line.startswith(CARD_PREFIXES)]
+    assert len(cards) == 3, out
+    assert "was already completed" not in out
+    assert " completed at " in out
+
+    clock.advance(timedelta(days=1))
+    assert main(["plan"], client=_api(h)) == 0
+    plan_out = capsys.readouterr().out
+    assert plan_out, "the plan printed nothing"
+    plan_lines = plan_out.splitlines()
+    assert plan_lines[0].startswith("sounds: sound.sub.v.w (")
+
+
+def test_daily_run_stops_with_the_job_error_when_the_scorer_is_missing(
+    make_harness: Callable[..., Harness],
+    tmp_path: Path,
+    capsys: Any,
+) -> None:
+    h = make_harness(start_runner=True, coach=_coach(), scorer=NoScorer())  # pyright: ignore[reportArgumentType]
+    _speaker(h)
+    wav = _record_wav(h, tmp_path)
+    capsys.readouterr()
+
+    assert main(["daily", "run", str(wav)], client=_api(h)) == 1
+
+    out = capsys.readouterr().out
+    assert "failed: score" in out
+    assert not any(line.startswith(CARD_PREFIXES) for line in out.splitlines())
