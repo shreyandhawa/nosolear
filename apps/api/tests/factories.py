@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 
 from nosolear.adapters.content_files import load_pack
+from nosolear.domain.coach import CoachAnalysis, CoachFinding, Rubric
 from nosolear.domain.observations import Context, Observation, Outcome, make_observation
 from nosolear.domain.speech import (
     NBestPhoneme,
@@ -19,7 +20,9 @@ from nosolear.domain.speech import (
     ProsodyFeedback,
     RawResult,
     ScoringMode,
+    Transcript,
     WordAssessment,
+    WordTiming,
 )
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY, Detector
 from nosolear.settings import CONTENT_DIR, Settings
@@ -210,4 +213,45 @@ def probe_result(
         expected_words=tuple(tuple(word) for word in expected_words),
         heard=tuple(heard),
         raw=RAW_PROBE,
+    )
+
+
+RAW_STT = RawResult("local", "test", "faster_whisper", 1, {})
+RAW_COACH = RawResult("anthropic", "test", "claude_coach", 1, {})
+
+
+def transcript(*words: tuple[str, int, int], fillers_kept: bool = True) -> Transcript:
+    """A transcript from (text, start_ms, end_ms) triples."""
+    timings = tuple(WordTiming(text, start, end) for text, start, end in words)
+    return Transcript(
+        text=" ".join(w.text for w in timings),
+        words=timings,
+        fillers_kept=fillers_kept,
+        raw=RAW_STT,
+    )
+
+
+def transcript_from(text: str) -> Transcript:
+    """Each whitespace token is a word, 400 ms long, back to back from 0 ms."""
+    words = tuple(WordTiming(piece, 400 * i, 400 * i + 400) for i, piece in enumerate(text.split()))
+    return Transcript(text=text, words=words, fillers_kept=True, raw=RAW_STT)
+
+
+def finding(error_key: str, quote: str | None) -> CoachFinding:
+    return CoachFinding(
+        error_key=error_key,
+        quote=quote,
+        correction="Say it another way.",
+        explanation="A short reason.",
+    )
+
+
+def coach_analysis(findings: Iterable[CoachFinding], rubric: Rubric | None = None) -> CoachAnalysis:
+    return CoachAnalysis(
+        findings=tuple(findings),
+        rubric=rubric,
+        rewrite=None,
+        dropped=0,
+        tokens_used=0,
+        raw=RAW_COACH,
     )

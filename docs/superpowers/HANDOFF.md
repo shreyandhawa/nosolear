@@ -81,6 +81,7 @@ Phase 0d (provider adapters) is done as of 2026-11-13. Next is Phase 0e (scoring
 - 2026-11-13: Phase 0e Task 1: scoring configs in `domain/scoring.py` (`v0` rules, calibrated-config invariants, `rules_to_json`/`rules_from_json`, `current_observations` for the newest config per attempt), with `Observation` and `ProfileEntry` carrying `scoring_config_id`/`provisional`, and the seed stamped as `v0`.
 - 2026-11-13: Phase 0e Task 2: migration 0007 adds `scoring_configs` (with the `v0` row), `calibration_runs`, `calibration_trials`, `content_items`, `skill_scores` and `extractions`, and scores every existing observation under `v0`; `ObservationRepository.current()` and `ProfileRepository` carry the config and `provisional`, and `GET /api/profile` returns `provisional`. Migrations now run with foreign keys off and check `foreign_key_check` after.
 - 2026-11-13: Phase 0e Task 3: sound and prosody extraction in `domain/extraction/` (`phones.py`, `opportunities.py`, `sounds.py`): Azure n-best substitution, low-accuracy and prosody opportunities, and phone-probe substitution, epenthesis and final-cluster opportunities, all pure and tested with Hypothesis.
+- 2026-11-13: Phase 0e Task 4: fluency and coach extraction (`fluency.py`, `coach.py`: untrusted findings re-checked against the transcript and the step) and the pure `extract` entry point that turns one attempt's typed results into observations under one scoring config, stamping `provisional` from the rule.
 
 ## In progress
 
