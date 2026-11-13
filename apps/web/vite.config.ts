@@ -13,6 +13,8 @@ export default defineConfig({
     // which the API's host guard accepts.
     proxy: { "/api": { target: "http://127.0.0.1:8000", changeOrigin: false } },
   },
+  // `vite preview` inherits the proxy above, so it gets the same pinning.
+  preview: { host: "localhost", strictPort: true },
   test: {
     environment: "jsdom",
     globals: true,

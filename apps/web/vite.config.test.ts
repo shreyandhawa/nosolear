@@ -16,4 +16,9 @@ describe("vite config", () => {
     expect(server.strictPort).toBe(true);
     expect(server.allowedHosts).not.toBe(true);
   });
+
+  it("pins vite preview to localhost too, since it inherits the proxy", () => {
+    expect(config.preview!.host).toBe("localhost");
+    expect(config.preview!.strictPort).toBe(true);
+  });
 });
