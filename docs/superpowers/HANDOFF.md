@@ -43,6 +43,7 @@ Phase 0b (open-source foundation) is done as of 2026-11-13. Next is Phase 0c (au
     - A pack-change rebuild is logged.
     - The §14 example matches the code.
     - Three CI-shape test gaps.
+- 2026-11-13: Phase 0c Task 1: pure WAV parsing, validation and resampling (`domain/audio.py`: `parse_wav`, `check_declared_length`, `to_16k`, `encode_wav`) and the typed errors (`domain/errors.py`), with `numpy==2.5.4` pinned as a direct dependency and the synthetic WAV builders in `tests/wavs.py`.
 
 ## In progress
 
