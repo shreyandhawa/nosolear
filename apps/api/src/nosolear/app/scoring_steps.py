@@ -5,12 +5,14 @@ and the re-score job's only step. Both read stored analyses and call no provider
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from nosolear.app.baseline import refresh_completed_baselines
 from nosolear.app.extract_attempt import extract_attempt
 from nosolear.app.rebuild_profile import rebuild_profile
 from nosolear.app.rescore import rescore
 from nosolear.app.steps import StepContext
 from nosolear.domain.packs import LanguagePack
 from nosolear.domain.taxonomy import Taxonomy
+from nosolear.ports.baseline_store import BaselineStore
 from nosolear.ports.clock import Clock
 from nosolear.ports.scoring_stores import ExtractionInputs, ExtractionWriter, ScoringConfigReader
 from nosolear.ports.stores import ObservationReader, ProfileWriter
@@ -27,6 +29,7 @@ class ScoringDeps:
     """Loaded when a step runs, so a bad pack fails that job and not the whole app."""
     taxonomy: Taxonomy
     clock: Clock
+    baselines: BaselineStore
 
 
 class ExtractStep:
@@ -65,7 +68,8 @@ class ExtractStep:
 
 
 class RescoreStep:
-    """The whole re-score job: every stored attempt, then one profile rebuild."""
+    """The whole re-score job: every stored attempt, one profile rebuild, then a refresh of every
+    completed baseline's snapshot and scores (which also calls no provider)."""
 
     name = "extract"
 
@@ -87,4 +91,12 @@ class RescoreStep:
             taxonomy=deps.taxonomy,
             clock=deps.clock,
             on_progress=ctx.progress,
+        )
+        refresh_completed_baselines(
+            store=deps.baselines,
+            inputs=deps.inputs,
+            observations=deps.observations,
+            profiles=deps.profiles,
+            taxonomy=deps.taxonomy,
+            pack=deps.pack(),
         )

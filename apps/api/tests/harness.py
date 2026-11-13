@@ -4,6 +4,7 @@ Import as `from harness import Harness`; the fixtures `make_harness` and `harnes
 in `tests/conftest.py`.
 """
 
+import json
 from collections.abc import Callable, Iterator
 from contextlib import ExitStack
 from dataclasses import dataclass
@@ -23,7 +24,7 @@ from sqlalchemy import Engine
 from nosolear.adapters.azure_pa import ADAPTER_VERSION as AZURE_PA_VERSION
 from nosolear.api.app import create_app
 from nosolear.api.deps import RawPorts
-from nosolear.domain.coach import CoachAnalysis, parse_coach_analysis
+from nosolear.domain.coach import CoachAnalysis, Rubric, parse_coach_analysis
 from nosolear.domain.content import SeedContent
 from nosolear.domain.observations import Observation
 from nosolear.domain.speech import ProviderCapabilities, RawResult
@@ -36,13 +37,27 @@ PROBE_INSTALLED: Final = "nosolear.api.deps.phone_probe_installed"
 _next_id = id_counter()
 
 
-def _empty_coach() -> CoachAnalysis:
+def _empty_coach(rubric: Rubric | None = None) -> CoachAnalysis:
+    """The coach's answer with no findings, and the rubric when one is given."""
+    text = analysis_text()
+    if rubric is not None:
+        text = json.dumps(
+            {
+                "findings": [],
+                "rubric": {
+                    "structure": rubric.structure,
+                    "clarity": rubric.clarity,
+                    "concision": rubric.concision,
+                },
+                "rewrite": None,
+            }
+        )
     raw = RawResult(
         provider="anthropic",
         provider_version="oracle",
         adapter="claude_coach",
         adapter_version=1,
-        payload=message_json(analysis_text()),
+        payload=message_json(text),
     )
     return parse_coach_analysis(raw, transcript="", allowed_keys=())
 
@@ -109,6 +124,7 @@ def make_harness(tmp_path: Path) -> Iterator[Callable[..., Harness]]:
         clock: Clock | None = None,
         start_runner: bool = False,
         content: SeedContent | None = None,
+        rubric: Rubric | None = None,
     ) -> Harness:
         data_dir = tmp_path / f"h{next(_next_id)}"
         voice = OracleVoice()
@@ -118,7 +134,7 @@ def make_harness(tmp_path: Path) -> Iterator[Callable[..., Harness]]:
             transcriber=voice.transcriber,
             speech_synthesizer=voice.speech_synthesizer,
             phone_probe=voice.probe if probe else None,
-            coach=FakeCoach([_empty_coach()]),
+            coach=FakeCoach([_empty_coach(rubric)]),
         )
         app = create_app(
             make_settings(data_dir=data_dir),

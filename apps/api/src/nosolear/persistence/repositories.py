@@ -116,6 +116,52 @@ def _snapshot_entry(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _insert_snapshot(
+    conn: Connection,
+    profile: Profile,
+    rows: Sequence[dict[str, Any]],
+    *,
+    session_id: str | None,
+    reason: str,
+) -> str:
+    snapshot_id = uuid4().hex
+    conn.execute(
+        insert(profile_snapshots).values(
+            id=snapshot_id,
+            session_id=session_id,
+            reason=reason,
+            taken_at=_now(),
+            as_of=profile.as_of,
+            algo_version=profile.algo_version,
+            taxonomy_version=profile.taxonomy_version,
+            entries_json=json.dumps([_snapshot_entry(r) for r in rows]),
+            pack_id=profile.pack_id,
+        )
+    )
+    return snapshot_id
+
+
+def _restored_entry(taxonomy: Taxonomy, raw: dict[str, Any]) -> ProfileEntry:
+    return ProfileEntry(
+        definition=taxonomy.get(str(raw["error_key"])),
+        state=BetaState(
+            a=float(raw["a"]),
+            b=float(raw["b"]),
+            updated_at=datetime.fromisoformat(str(raw["updated_at"])),
+        ),
+        estimate=KeyEstimate(
+            p_hat=float(raw["p_hat"]),
+            ci_low=float(raw["ci_low"]),
+            ci_high=float(raw["ci_high"]),
+            n_eff=float(raw["n_eff"]),
+        ),
+        status=Status(str(raw["status"])),
+        last_seen_at=datetime.fromisoformat(str(raw["last_seen_at"])),
+        priority=float(raw["priority"]),
+        provisional=bool(raw["provisional"]),
+    )
+
+
 class ProfileRepository:
     def __init__(self, engine: Engine, taxonomy: Taxonomy) -> None:
         self._engine = engine
@@ -132,25 +178,44 @@ class ProfileRepository:
     def save(self, profile: Profile, *, session_id: str | None, reason: str) -> str:
         """Replace every current entry and append a snapshot, atomically."""
         rows = [_entry_row(profile, e) for e in profile.entries]
-        snapshot_id = uuid4().hex
         with self._engine.begin() as conn:
             conn.execute(delete(profile_entries))
             if rows:
                 conn.execute(insert(profile_entries), rows)
-            conn.execute(
-                insert(profile_snapshots).values(
-                    id=snapshot_id,
-                    session_id=session_id,
-                    reason=reason,
-                    taken_at=_now(),
-                    as_of=profile.as_of,
-                    algo_version=profile.algo_version,
-                    taxonomy_version=profile.taxonomy_version,
-                    entries_json=json.dumps([_snapshot_entry(r) for r in rows]),
-                    pack_id=profile.pack_id,
-                )
+            return _insert_snapshot(conn, profile, rows, session_id=session_id, reason=reason)
+
+    def snapshot(self, profile: Profile, *, session_id: str | None, reason: str) -> str:
+        """Append a snapshot and leave the current entries alone."""
+        rows = [_entry_row(profile, e) for e in profile.entries]
+        with self._engine.begin() as conn:
+            return _insert_snapshot(conn, profile, rows, session_id=session_id, reason=reason)
+
+    def latest_snapshot(self, session_id: str, reason: str) -> tuple[str, Profile] | None:
+        """The newest snapshot of this session and reason, with its profile rebuilt from JSON."""
+        stmt = (
+            select(profile_snapshots)
+            .where(
+                profile_snapshots.c.session_id == session_id,
+                profile_snapshots.c.reason == reason,
             )
-        return snapshot_id
+            .order_by(profile_snapshots.c.taken_at.desc())
+            .limit(1)
+        )
+        with self._engine.connect() as conn:
+            row = conn.execute(stmt).first()
+        if row is None:
+            return None
+        entries = tuple(
+            _restored_entry(self._taxonomy, raw) for raw in json.loads(str(row.entries_json))
+        )
+        profile = Profile(
+            as_of=row.as_of,
+            taxonomy_version=row.taxonomy_version,
+            algo_version=row.algo_version,
+            pack_id=row.pack_id,
+            entries=entries,
+        )
+        return str(row.id), profile
 
     def latest_pack_id(self) -> str | None:
         with self._engine.connect() as conn:

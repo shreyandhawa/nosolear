@@ -21,6 +21,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/baseline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Route */
+        get: operations["getBaseline"];
+        put?: never;
+        /** Start Route */
+        post: operations["startBaseline"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/baseline/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete Route */
+        post: operations["completeBaseline"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/baseline/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Report Route */
+        get: operations["getBaselineReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/calibration": {
         parameters: {
             query?: never;
@@ -179,6 +231,69 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** BaselineItemOut */
+        BaselineItemOut: {
+            /** Attempt Id */
+            attempt_id: string;
+            /** Job Status */
+            job_status: string | null;
+            /** Max Seconds */
+            max_seconds: number | null;
+            /** Order */
+            order: number;
+            /** Recorded */
+            recorded: boolean;
+            /** Scripted */
+            scripted: boolean;
+            /** Section */
+            section: string;
+            /** Stand In Text */
+            stand_in_text: string;
+            /** Start Limit Seconds */
+            start_limit_seconds: number | null;
+            /** Step */
+            step: string;
+            /** Text */
+            text: string;
+        };
+        /** BaselineReportOut */
+        BaselineReportOut: {
+            /** Calibration */
+            calibration: string;
+            /**
+             * Completed At
+             * Format: date-time
+             */
+            completed_at: string;
+            /** Items */
+            items: components["schemas"]["ReportItemOut"][];
+            /** Notes */
+            notes: string[];
+            /** Scoring Config Id */
+            scoring_config_id: string;
+            /** Session Id */
+            session_id: string;
+            /** Skill Scores */
+            skill_scores: components["schemas"]["SkillScoreOut"][];
+            /** Snapshot Id */
+            snapshot_id: string;
+        };
+        /** BaselineSessionOut */
+        BaselineSessionOut: {
+            /** Completed At */
+            completed_at: string | null;
+            /** Items */
+            items: components["schemas"]["BaselineItemOut"][];
+            /** Protocol Version */
+            protocol_version: number;
+            /** Session Id */
+            session_id: string;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+        };
         /** CalibrationItemOut */
         CalibrationItemOut: {
             /** Attempt Id */
@@ -257,6 +372,21 @@ export interface components {
              * @enum {string}
              */
             status: "running" | "done" | "skipped";
+        };
+        /** ClipOut */
+        ClipOut: {
+            /** Attempt Id */
+            attempt_id: string;
+            /** End Ms */
+            end_ms: number;
+            /** Expected */
+            expected: string | null;
+            /** Produced */
+            produced: string | null;
+            /** Start Ms */
+            start_ms: number;
+            /** Word */
+            word: string | null;
         };
         /** ErrorOut */
         ErrorOut: {
@@ -386,6 +516,48 @@ export interface components {
              */
             status: "ready" | "missing" | "not_installed" | "not_probed" | "degraded";
         };
+        /** ReportItemOut */
+        ReportItemOut: {
+            /** Ci High */
+            ci_high: number;
+            /** Ci Low */
+            ci_low: number;
+            /** Clips */
+            clips: components["schemas"]["ClipOut"][];
+            /** Description */
+            description: string;
+            /** Error Key */
+            error_key: string;
+            /** Impact */
+            impact: number;
+            /** N Eff */
+            n_eff: number;
+            /** P Hat */
+            p_hat: number;
+            /** Priority */
+            priority: number;
+            /** Provisional */
+            provisional: boolean;
+            /** Skill */
+            skill: string;
+            /** Status */
+            status: string;
+        };
+        /** SkillScoreOut */
+        SkillScoreOut: {
+            /** Score */
+            score: number;
+            /** Scores */
+            scores: {
+                [key: string]: number;
+            };
+            /** Skill */
+            skill: string;
+            /** Values */
+            values: {
+                [key: string]: number;
+            };
+        };
         /** StepOut */
         StepOut: {
             /** Error Code */
@@ -507,6 +679,86 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    getBaseline: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BaselineSessionOut"];
+                };
+            };
+        };
+    };
+    startBaseline: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BaselineSessionOut"];
+                };
+            };
+        };
+    };
+    completeBaseline: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BaselineReportOut"];
+                };
+            };
+        };
+    };
+    getBaselineReport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BaselineReportOut"];
                 };
             };
         };

@@ -402,6 +402,10 @@ class FakeProfileStore:
     def replace(self, profile: Profile) -> None:
         self.replaced.append(profile)
 
+    def snapshot(self, profile: Profile, *, session_id: str | None, reason: str) -> str:
+        self.saved.append((profile, session_id, reason))
+        return f"snapshot-{len(self.saved)}"
+
     def latest_pack_id(self) -> str | None:
         return self.saved[-1][0].pack_id if self.saved else self._seed_pack_id
 

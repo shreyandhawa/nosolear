@@ -1,4 +1,4 @@
-"""The `nosolear rescore` and `nosolear calibrate` commands. Both talk to the running API through
+"""The `nosolear rescore`, `calibrate` and `baseline` commands. They talk to the running API through
 the `ApiClient` and follow their jobs."""
 
 import argparse
@@ -10,6 +10,8 @@ from nosolear.cli_client import ApiClient, CliError, CliTimeout
 RESCORE: Final = "rescore"
 CALIBRATE: Final = "calibrate"
 CALIBRATE_STEPS: Final = ("start", "status", "skip", "finish")
+BASELINE: Final = "baseline"
+BASELINE_STEPS: Final = ("start", "status", "complete", "report")
 SKIPPED_MESSAGE: Final = "Calibration skipped. Scores stay provisional until you calibrate."
 
 
@@ -26,6 +28,14 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     steps.add_parser("status", help="show how many takes are recorded, and the results")
     steps.add_parser("skip", help="skip calibration; scores stay provisional")
     steps.add_parser("finish", help="score the recorded takes and enable the detectors that pass")
+    baseline = commands.add_parser(
+        BASELINE, help="the baseline session: record it, then read the ranked report"
+    )
+    baseline_steps = baseline.add_subparsers(dest="baseline_step", required=True)
+    baseline_steps.add_parser("start", help="list the baseline items to record")
+    baseline_steps.add_parser("status", help="show how many items are recorded")
+    baseline_steps.add_parser("complete", help="complete the baseline and print its report")
+    baseline_steps.add_parser("report", help="print the report of the latest completed baseline")
 
 
 def _job_id(body: object) -> str:
@@ -56,6 +66,8 @@ def _list(body: dict[str, Any], key: str) -> list[dict[str, Any]]:
 def run(args: argparse.Namespace, client: ApiClient) -> int | None:
     if args.command == CALIBRATE:
         return _calibrate(args.calibrate_step, client)
+    if args.command == BASELINE:
+        return _baseline(args.baseline_step, client)
     if args.command != RESCORE:
         return None
     job_id = _job_id(client.post_json("/api/rescore"))
@@ -109,4 +121,40 @@ def _calibrate(step: str, client: ApiClient) -> int:
         print("No detector passed the calibration rule. Scores stay provisional.")
     for result in enabled:
         print(f"enabled  {result['error_key']} via {result['detector']}")
+    return 0
+
+
+_EN_DASH: Final = "\u2013"
+
+
+def _baseline(step: str, client: ApiClient) -> int:
+    if step == "start":
+        body = _dict(client.post_json("/api/baseline"))
+        for item in _list(body, "items"):
+            print(f"{item['order']:>3}  {item['attempt_id']}  {item['section']}  {item['text']}")
+        return 0
+    if step == "status":
+        body = _dict(client.get_json("/api/baseline"))
+        items = _list(body, "items")
+        recorded = sum(1 for item in items if item["recorded"] is True)
+        print(f"Recorded {recorded} of {len(items)} baseline items.")
+        return 0
+    if step == "complete":
+        return _print_report(_dict(client.post_json("/api/baseline/complete")))
+    return _print_report(_dict(client.get_json("/api/baseline/report")))
+
+
+def _print_report(body: dict[str, Any]) -> int:
+    for number, item in enumerate(_list(body, "items"), start=1):
+        low = f"{item['ci_low']:.0%}"
+        high = f"{item['ci_high']:.0%}"
+        suffix = " provisional" if item["provisional"] is True else ""
+        print(
+            f"{number}. {item['description']}  {item['p_hat']:.0%} ({low}{_EN_DASH}{high})"
+            f"  n={item['n_eff']:.0f}{suffix}"
+        )
+    for score in _list(body, "skill_scores"):
+        print(f"{score['skill']}  {score['score']:.0f}")
+    for note in cast("list[str]", body.get("notes", [])):
+        print(note)
     return 0

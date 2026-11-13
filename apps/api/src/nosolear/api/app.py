@@ -11,6 +11,7 @@ from sqlalchemy import Engine
 
 from nosolear.adapters.content_files import load_seed_content
 from nosolear.adapters.system_clock import SystemClock
+from nosolear.api.baseline_routes import router as baseline_router
 from nosolear.api.calibration_routes import router as calibration_router
 from nosolear.api.deps import RawPorts, Services, build_services, load_active_pack
 from nosolear.api.errors import install_error_handlers
@@ -148,6 +149,7 @@ def create_app(
     app.include_router(recording_router)
     app.include_router(rescore_router)
     app.include_router(calibration_router)
+    app.include_router(baseline_router)
     install_error_handlers(app)
 
     @app.get("/api/health")

@@ -23,6 +23,8 @@ READ_ONLY_GET_ROUTES = {
     "/api/readiness",
     "/api/jobs/{job_id}",
     "/api/calibration",
+    "/api/baseline",
+    "/api/baseline/report",
 }  # later phases add theirs
 
 
