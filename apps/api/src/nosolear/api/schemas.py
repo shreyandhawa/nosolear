@@ -46,3 +46,26 @@ class ReadinessRowOut(BaseModel):
 class ReadinessOut(BaseModel):
     ready: bool
     rows: list[ReadinessRowOut]
+
+
+class StepOut(BaseModel):
+    name: str
+    state: Literal["pending", "running", "done", "skipped", "failed", "blocked"]
+    error_code: str | None
+    message: str | None
+
+
+class JobOut(BaseModel):
+    id: str
+    kind: Literal["analyze", "rescore"]
+    attempt_id: str | None
+    status: Literal["queued", "running", "done", "failed"]
+    step: str | None
+    progress: float
+    tries: int
+    steps: list[StepOut]
+
+
+class ErrorOut(BaseModel):
+    code: str
+    message: str

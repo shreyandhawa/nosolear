@@ -6,19 +6,24 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import Engine, delete, insert, select
+from sqlalchemy import Engine, Row, delete, insert, select
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.engine import Connection
 
+from nosolear.domain.analyses import AnalysisKind, NewAnalysis, StoredAnalysis
 from nosolear.domain.estimates import BetaState, KeyEstimate
 from nosolear.domain.observations import Context, Observation, Outcome
 from nosolear.domain.profile import Profile, ProfileEntry
 from nosolear.domain.status import Status
 from nosolear.domain.taxonomy import Detector, Taxonomy
 from nosolear.persistence.models import (
+    analyses,
     format_utc,
     observations,
     profile_entries,
     profile_snapshots,
 )
+from nosolear.ports.clock import Clock
 
 
 def _now() -> datetime:
@@ -160,3 +165,68 @@ class ProfileRepository:
             pack_id=first.pack_id,
             entries=entries,
         )
+
+
+class AnalysisRepository:
+    """Attempt-keyed analyses. Control rows keyed by TTS hash are added in Phase 0e."""
+
+    def __init__(self, engine: Engine, clock: Clock) -> None:
+        self._engine = engine
+        self._clock = clock
+
+    def get(self, attempt_id: str, kind: AnalysisKind) -> StoredAnalysis | None:
+        with self._engine.connect() as conn:
+            return _find_analysis(conn, attempt_id, kind)
+
+    def put(self, analysis: NewAnalysis) -> StoredAnalysis:
+        stmt = (
+            sqlite_insert(analyses)
+            .values(
+                attempt_id=analysis.attempt_id,
+                kind=analysis.kind.value,
+                provider=analysis.provider,
+                provider_version=analysis.provider_version,
+                adapter=analysis.adapter,
+                adapter_version=analysis.adapter_version,
+                raw_json=json.dumps(dict(analysis.raw), sort_keys=True),
+                created_at=self._clock.now(),
+            )
+            .on_conflict_do_nothing(
+                index_elements=[analyses.c.attempt_id, analyses.c.kind],
+                index_where=analyses.c.attempt_id.is_not(None),
+            )
+        )
+        with self._engine.begin() as conn:
+            conn.execute(stmt)
+            stored = _find_analysis(conn, analysis.attempt_id, analysis.kind)
+        if stored is None:
+            raise RuntimeError("the analysis row was not written")
+        return stored
+
+    def for_attempt(self, attempt_id: str) -> list[StoredAnalysis]:
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                select(analyses).where(analyses.c.attempt_id == attempt_id).order_by(analyses.c.id)
+            ).all()
+        return [_analysis(row) for row in rows]
+
+
+def _find_analysis(conn: Connection, attempt_id: str, kind: AnalysisKind) -> StoredAnalysis | None:
+    row = conn.execute(
+        select(analyses).where(analyses.c.attempt_id == attempt_id, analyses.c.kind == kind.value)
+    ).first()
+    return None if row is None else _analysis(row)
+
+
+def _analysis(row: Row[Any]) -> StoredAnalysis:
+    return StoredAnalysis(
+        id=row.id,
+        attempt_id=row.attempt_id,
+        kind=AnalysisKind(row.kind),
+        provider=row.provider,
+        provider_version=row.provider_version,
+        adapter=row.adapter,
+        adapter_version=row.adapter_version,
+        raw=json.loads(row.raw_json),
+        created_at=row.created_at,
+    )

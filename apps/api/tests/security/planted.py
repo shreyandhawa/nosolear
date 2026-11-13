@@ -22,22 +22,28 @@ import traceback
 from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import quote, quote_plus
 
 import pytest
 from factories import FixedClock, loopback_client, make_settings
+from fakes import FakeStep
 from pydantic import ValidationError
 from sqlalchemy import text
 
 from nosolear.api.app import create_app
+from nosolear.api.deps import Services
+from nosolear.app.run_job import run_job
+from nosolear.app.steps import StepRegistry
 from nosolear.budget.meter import Meter
 from nosolear.cli import main
 from nosolear.domain.budget import Caps, Provider, Unit
 from nosolear.domain.errors import CapExceeded
+from nosolear.domain.jobs import JobKind, JobStatus
 from nosolear.domain.redaction import REDACTED
 from nosolear.logging_setup import install_secret_scrubbing
 from nosolear.persistence.db import create_engine_for, upgrade_to_head
+from nosolear.persistence.job_queue import SqliteJobQueue
 from nosolear.persistence.ledger import SqliteUsageLedger
 from nosolear.settings import REPO_ROOT, Settings, settings_error_summary
 
@@ -486,6 +492,61 @@ def metered_failure_rows_and_log(tmp: Path) -> tuple[str, str]:
     assert len(rows) == 1, "the failed call must leave one settled row"
     return "metered call: usage_ledger rows and logged failure", repr(rows) + _marked(
         cap.text, "Traceback", REDACTED
+    )
+
+
+@leak_surface
+def job_steps_json_job_repr_and_log(tmp: Path) -> tuple[str, str]:
+    """A step that raises a planted key: the job's stored steps_json, its repr and the runner log.
+
+    `run_job` never sees the key's text; it logs only the exception type and stores only the
+    fixed internal-error message.
+    """
+    engine = create_engine_for(f"sqlite:///{tmp / 'jobs.sqlite'}")
+    try:
+        upgrade_to_head(engine)
+        queue = SqliteJobQueue(engine, clock=FixedClock(datetime(2026, 11, 13, tzinfo=UTC)))
+        job = queue.enqueue(JobKind.RESCORE, None)
+        registry = StepRegistry()
+        registry.register(
+            JobKind.RESCORE, FakeStep("extract", raises=RuntimeError(PLANTED_AZURE_KEY))
+        )
+        with LogCapture(logging.Formatter(FORMAT), "nosolear.app.run_job") as cap:
+            finished = run_job(job_id=job.id, jobs=queue, registry=registry)
+        with engine.connect() as conn:
+            steps_json = conn.execute(
+                text("SELECT steps_json FROM jobs WHERE id = :id"), {"id": job.id}
+            ).scalar_one()
+    finally:
+        engine.dispose()
+    assert finished.status is JobStatus.FAILED, "the planted failure must fail the job"
+    return "job steps_json, job repr and run_job log", "\n".join(
+        [steps_json, repr(finished), _marked(cap.text, "step failed")]
+    )
+
+
+@leak_surface
+def job_api_responses_and_runner_logs(tmp: Path) -> tuple[str, str]:
+    """A step that raises a planted key, run through the app: the `GET /api/jobs/{id}` body, the
+    `POST .../resume` body and the runner and run_job log text."""
+    settings = planted_settings(tmp / "data")
+    registry = StepRegistry()
+    registry.register(JobKind.ANALYZE, FakeStep("score", raises=RuntimeError(PLANTED_AZURE_KEY)))
+    app = create_app(settings, step_registry=registry, start_runner=False)
+    with (
+        LogCapture(logging.Formatter(FORMAT), "nosolear.app.run_job") as run_log,
+        LogCapture(logging.Formatter(FORMAT), "nosolear.adapters.thread_pool_runner") as runner_log,
+        loopback_client(app) as client,
+    ):
+        services = cast(Services, app.state.services)
+        job = services.jobs.enqueue(JobKind.ANALYZE, None)
+        services.runner.run_pending()
+        got = client.get(f"/api/jobs/{job.id}")
+        resumed = client.post(f"/api/jobs/{job.id}/resume")
+    assert got.status_code == 200 and resumed.status_code == 200
+    assert '"failed"' in got.text, "the planted failure must reach the job body"
+    return "GET /api/jobs/{id}, POST resume, runner and run_job logs", "\n".join(
+        [got.text, resumed.text, _marked(run_log.text, "step failed"), runner_log.text]
     )
 
 

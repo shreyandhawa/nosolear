@@ -7,6 +7,7 @@ from nosolear.domain.readiness import (
     PackStatus,
     ReadinessInputs,
     ReadinessReport,
+    UsageSnapshot,
     build_readiness,
 )
 from nosolear.ports.environment import EnvironmentProbe
@@ -29,8 +30,16 @@ def _mode(env: EnvironmentProbe, path: Path, errors: list[str]) -> int | None:
         return None
 
 
-def check_readiness(settings: Settings, env: EnvironmentProbe) -> ReadinessReport:
-    """Reads settings and probes the machine; writes nothing and never reveals a key."""
+def check_readiness(
+    settings: Settings,
+    env: EnvironmentProbe,
+    *,
+    usage: UsageSnapshot | None = None,
+) -> ReadinessReport:
+    """Reads settings and probes the machine; writes nothing and never reveals a key.
+
+    `usage` is this period's ledger figures (see `read_usage`), or None when there are none.
+    """
     system, machine = env.platform()
     errors: list[str] = []
     data_dir_mode = _mode(env, settings.data_dir, errors)
@@ -61,7 +70,7 @@ def check_readiness(settings: Settings, env: EnvironmentProbe) -> ReadinessRepor
                 tts_chars=settings.cap_azure_tts_chars,
                 claude_tokens=settings.cap_claude_tokens,
             ),
-            usage=None,
+            usage=usage,
             capabilities=None,
             inspect_errors=tuple(errors),
         )

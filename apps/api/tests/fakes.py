@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+import threading
 import uuid
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
 
+from nosolear.app.steps import StepContext
+from nosolear.domain.analyses import AnalysisKind, NewAnalysis, StoredAnalysis
 from nosolear.domain.audio import (
     DEFAULT_LIMITS,
     TARGET_RATE,
@@ -18,8 +22,20 @@ from nosolear.domain.audio import (
 )
 from nosolear.domain.budget import Caps, Provider, Unit, Usage, fits, period_for
 from nosolear.domain.errors import CapExceeded, InvalidAudio
+from nosolear.domain.jobs import (
+    Job,
+    JobKind,
+    JobStatus,
+    StepRecord,
+    initial_steps,
+    progress_of,
+    recover_running,
+    resume_plan,
+)
+from nosolear.domain.profile import Profile
 from nosolear.ports.audio import PendingUpload, StoredRecording, is_recording_path
 from nosolear.ports.clock import Clock
+from nosolear.ports.jobs import JobNotResumable, UnknownJob
 from nosolear.ports.ledger import LedgerError, Reservation
 
 
@@ -179,3 +195,200 @@ class FakePaidPort:
         if self.fail_with is not None:
             raise self.fail_with
         return units
+
+
+@dataclass(frozen=True, slots=True)
+class JobUpdate:
+    """One `FakeJobQueue.update` call, as it was made."""
+
+    job_id: str
+    steps: tuple[StepRecord, ...]
+    step: str | None
+    progress: float
+    status: JobStatus | None
+
+
+class FakeJobQueue:
+    """The job queue in memory, with the same transitions as `SqliteJobQueue`. Thread-safe."""
+
+    def __init__(self, clock: Clock) -> None:
+        self._clock = clock
+        self._jobs: dict[str, Job] = {}  # insertion order is creation order (FIFO claims)
+        self._lock = threading.Lock()
+        self.updates: list[JobUpdate] = []
+
+    def enqueue(self, kind: JobKind, attempt_id: str | None) -> Job:
+        now = self._clock.now()
+        job = Job(
+            id=uuid.uuid4().hex,
+            kind=kind,
+            attempt_id=attempt_id,
+            status=JobStatus.QUEUED,
+            step=None,
+            progress=0.0,
+            steps=initial_steps(kind),
+            tries=0,
+            created_at=now,
+            updated_at=now,
+        )
+        with self._lock:
+            self._jobs[job.id] = job
+        return job
+
+    def claim_next(self) -> Job | None:
+        now = self._clock.now()
+        with self._lock:
+            for job in self._jobs.values():
+                if job.status is JobStatus.QUEUED:
+                    claimed = replace(
+                        job, status=JobStatus.RUNNING, tries=job.tries + 1, updated_at=now
+                    )
+                    self._jobs[job.id] = claimed
+                    return claimed
+        return None
+
+    def get(self, job_id: str) -> Job | None:
+        with self._lock:
+            return self._jobs.get(job_id)
+
+    def update(
+        self,
+        job_id: str,
+        *,
+        steps: Sequence[StepRecord],
+        step: str | None,
+        progress: float,
+        status: JobStatus | None = None,
+    ) -> None:
+        now = self._clock.now()
+        with self._lock:
+            job = self._require(job_id)
+            self._jobs[job_id] = replace(
+                job,
+                steps=tuple(steps),
+                step=step,
+                progress=progress,
+                status=job.status if status is None else status,
+                updated_at=now,
+            )
+            self.updates.append(JobUpdate(job_id, tuple(steps), step, progress, status))
+
+    def resume(self, job_id: str) -> Job:
+        now = self._clock.now()
+        with self._lock:
+            job = self._require(job_id)
+            if job.status is not JobStatus.FAILED:
+                raise JobNotResumable("Only a failed job can be resumed.")
+            steps = resume_plan(job.kind, job.steps)
+            resumed = replace(
+                job,
+                status=JobStatus.QUEUED,
+                steps=steps,
+                step=None,
+                progress=progress_of(steps),
+                updated_at=now,
+            )
+            self._jobs[job_id] = resumed
+            return resumed
+
+    def requeue_running(self) -> int:
+        now = self._clock.now()
+        moved = 0
+        with self._lock:
+            for job in list(self._jobs.values()):
+                if job.status is JobStatus.RUNNING:
+                    steps = recover_running(job.steps)
+                    self._jobs[job.id] = replace(
+                        job,
+                        status=JobStatus.QUEUED,
+                        steps=steps,
+                        step=None,
+                        progress=progress_of(steps),
+                        updated_at=now,
+                    )
+                    moved += 1
+        return moved
+
+    def _require(self, job_id: str) -> Job:
+        job = self._jobs.get(job_id)
+        if job is None:
+            raise UnknownJob("No job has this id.")
+        return job
+
+
+class FakeAnalysisStore:
+    """The analysis store in memory: idempotent on (attempt_id, kind), like the SQLite table."""
+
+    def __init__(self, clock: Clock) -> None:
+        self._clock = clock
+        self._rows: dict[tuple[str, AnalysisKind], StoredAnalysis] = {}
+        self._next_id = 1
+
+    def get(self, attempt_id: str, kind: AnalysisKind) -> StoredAnalysis | None:
+        return self._rows.get((attempt_id, kind))
+
+    def put(self, analysis: NewAnalysis) -> StoredAnalysis:
+        key = (analysis.attempt_id, analysis.kind)
+        existing = self._rows.get(key)
+        if existing is not None:
+            return existing
+        stored = StoredAnalysis(
+            id=self._next_id,
+            attempt_id=analysis.attempt_id,
+            kind=analysis.kind,
+            provider=analysis.provider,
+            provider_version=analysis.provider_version,
+            adapter=analysis.adapter,
+            adapter_version=analysis.adapter_version,
+            raw=dict(analysis.raw),
+            created_at=self._clock.now(),
+        )
+        self._next_id += 1
+        self._rows[key] = stored
+        return stored
+
+    def for_attempt(self, attempt_id: str) -> list[StoredAnalysis]:
+        return [row for (owner, _), row in self._rows.items() if owner == attempt_id]
+
+
+class FakeStep:
+    """A `Step` that records every context it runs with. `raises` and `on_run` act on each run."""
+
+    def __init__(
+        self,
+        name: str,
+        *,
+        applies: bool = True,
+        raises: Exception | None = None,
+        on_run: Callable[[StepContext], None] | None = None,
+    ) -> None:
+        self.name = name
+        self.applies_to = applies
+        self.raises = raises
+        self.on_run = on_run
+        self.runs: list[StepContext] = []
+
+    def applies(self, ctx: StepContext) -> bool:
+        return self.applies_to
+
+    def run(self, ctx: StepContext) -> None:
+        self.runs.append(ctx)
+        if self.on_run is not None:
+            self.on_run(ctx)
+        if self.raises is not None:
+            raise self.raises
+
+
+class FakeProfileStore:
+    """A `ProfileStore` in memory. `stored_pack_id` is what it reports before anything is saved."""
+
+    def __init__(self, stored_pack_id: str | None = None) -> None:
+        self._seed_pack_id = stored_pack_id
+        self.saved: list[tuple[Profile, str | None, str]] = []
+
+    def save(self, profile: Profile, *, session_id: str | None, reason: str) -> str:
+        self.saved.append((profile, session_id, reason))
+        return f"snapshot-{len(self.saved)}"
+
+    def latest_pack_id(self) -> str | None:
+        return self.saved[-1][0].pack_id if self.saved else self._seed_pack_id

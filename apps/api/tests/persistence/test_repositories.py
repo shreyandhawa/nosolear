@@ -4,14 +4,20 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
-from factories import NEUTRAL, NPT, PACK, SAMPLE_OBS, T0, TAX, count, mk
+from factories import NEUTRAL, NPT, PACK, SAMPLE_OBS, T0, TAX, FixedClock, count, mk
 from sqlalchemy import Engine, text
 from sqlalchemy.exc import IntegrityError, StatementError
 
+from nosolear.domain.analyses import AnalysisKind, NewAnalysis
 from nosolear.domain.observations import Context, Outcome
 from nosolear.domain.profile import build_profile
 from nosolear.domain.taxonomy import Detector
-from nosolear.persistence.repositories import ObservationRepository, ProfileRepository
+from nosolear.persistence.models import format_utc
+from nosolear.persistence.repositories import (
+    AnalysisRepository,
+    ObservationRepository,
+    ProfileRepository,
+)
 
 MISS = Outcome.MISS
 
@@ -136,3 +142,74 @@ def test_pack_id_roundtrips_and_is_stored_on_the_snapshot(db_engine: Engine) -> 
     assert latest is not None and latest.pack_id == "neutral"
     with db_engine.connect() as conn:
         assert conn.execute(text("SELECT pack_id FROM profile_snapshots")).scalar_one() == "neutral"
+
+
+# ---- analyses ------------------------------------------------------------------------------
+
+ATTEMPT = "attempt-1"
+
+
+def _insert_attempt(engine: Engine, attempt_id: str) -> None:
+    """An attempt row, so analyses can reference it through the foreign key."""
+    stamp = format_utc(T0)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT OR IGNORE INTO sessions (id, kind, protocol_version, started_at, "
+                "completed_at) VALUES ('session-1', 'daily', 1, :stamp, NULL)"
+            ),
+            {"stamp": stamp},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO attempts (id, session_id, step, reference_text, scripted, "
+                "created_at) VALUES (:id, 'session-1', 'speak', NULL, 1, :stamp)"
+            ),
+            {"id": attempt_id, "stamp": stamp},
+        )
+
+
+def _new(kind: AnalysisKind, attempt_id: str = ATTEMPT, **raw: object) -> NewAnalysis:
+    return NewAnalysis(
+        attempt_id=attempt_id,
+        kind=kind,
+        provider="azure",
+        provider_version="2026-01",
+        adapter="azure_pa",
+        adapter_version=1,
+        raw=raw or {"score": 82.5, "words": ["vest", "west"]},
+    )
+
+
+def test_analysis_put_then_get_round_trips_raw(db_engine: Engine) -> None:
+    _insert_attempt(db_engine, ATTEMPT)
+    repo = AnalysisRepository(db_engine, FixedClock(T0))
+    stored = repo.put(_new(AnalysisKind.PRONUNCIATION))
+    assert stored.raw == {"score": 82.5, "words": ["vest", "west"]}
+    assert repo.get(ATTEMPT, AnalysisKind.PRONUNCIATION) == stored
+    assert stored.created_at == T0
+
+
+def test_analysis_put_is_idempotent(db_engine: Engine) -> None:
+    _insert_attempt(db_engine, ATTEMPT)
+    repo = AnalysisRepository(db_engine, FixedClock(T0))
+    first = repo.put(_new(AnalysisKind.TRANSCRIPT, score=1))
+    second = repo.put(_new(AnalysisKind.TRANSCRIPT, score=2))
+    assert second == first
+    assert second.raw == {"score": 1}
+    assert count(db_engine, "analyses") == 1
+
+
+def test_analysis_for_attempt_lists_all_kinds(db_engine: Engine) -> None:
+    _insert_attempt(db_engine, ATTEMPT)
+    repo = AnalysisRepository(db_engine, FixedClock(T0))
+    for kind in AnalysisKind:
+        repo.put(_new(kind))
+    assert sorted(a.kind for a in repo.for_attempt(ATTEMPT)) == sorted(AnalysisKind)
+    assert repo.get("missing", AnalysisKind.COACH) is None
+
+
+def test_analysis_for_unknown_attempt_raises_integrity_error(db_engine: Engine) -> None:
+    repo = AnalysisRepository(db_engine, FixedClock(T0))
+    with pytest.raises(IntegrityError):
+        repo.put(_new(AnalysisKind.COACH, attempt_id="no-such-attempt"))

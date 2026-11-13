@@ -11,6 +11,7 @@ from nosolear.domain.readiness import (
     ReadinessReport,
     ReadinessRow,
     ReadinessStatus,
+    UsageSnapshot,
     format_readiness,
 )
 from nosolear.settings import REPO_ROOT
@@ -173,3 +174,13 @@ def test_an_unreadable_env_file_is_reported(tmp_path: Path):
     report = check_readiness(make_settings(data_dir=tmp_path), env)
     row = _by(report)[Component.DATA_DIR]
     assert row.status is ReadinessStatus.MISSING and "Permission denied" in row.reason
+
+
+def test_usage_row_shows_the_recorded_figures(tmp_path: Path):
+    settings = make_settings(data_dir=tmp_path)
+    usage = UsageSnapshot(azure_audio_hours=1.5, tts_chars=2000, claude_tokens=3000)
+    report = check_readiness(settings, FakeEnvironment(), usage=usage)
+    reason = _by(report)[Component.USAGE].reason
+    assert reason == (
+        "Azure 1.5 of 4.5 h and TTS 2k of 450k chars this month, Claude 3k of 100k tokens today"
+    )
