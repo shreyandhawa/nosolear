@@ -53,7 +53,7 @@ def test_espeak_gets_fixed_argv_and_text_on_stdin():
 
     text = "school; rm -rf ~ $(whoami) --help -w /tmp/x"
     assert espeak_ipa(text, executable=EXE, run=run) == "s_k_ˈuː_l"
-    assert seen["argv"] == [str(EXE), *ESPEAK_ARGS] and seen["input"] == text
+    assert seen["argv"] == [str(EXE), *ESPEAK_ARGS] and seen["input"] == text + "\n"
     assert seen.get("shell", False) is False and seen["timeout"] == 10
 
 

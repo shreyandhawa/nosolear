@@ -4,6 +4,7 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any
 
+import numpy as np
 import pytest
 from wavs import write_wav
 
@@ -34,10 +35,12 @@ class FakeWhisperModel:
     segments: list[FakeSegment]
     kwargs: dict[str, Any] = field(default_factory=dict)
     error: Exception | None = None
+    audio: Any = None
 
-    def transcribe(self, audio: str, **kwargs: Any) -> tuple[list[FakeSegment], object]:
+    def transcribe(self, audio: Any, **kwargs: Any) -> tuple[list[FakeSegment], object]:
         if self.error is not None:
             raise self.error
+        self.audio = audio
         self.kwargs = kwargs
         return self.segments, None
 
@@ -47,6 +50,8 @@ def test_faster_whisper_passes_language_and_word_timestamps(tmp_path):
     t = FasterWhisperTranscriber(model=LazyModel(lambda: model)).transcribe(
         write_wav(tmp_path / "a.wav", 1)
     )
+    # an array, never a path: faster-whisper decodes a path with PyAV, which it breaks on
+    assert model.audio.dtype == np.float32 and model.audio.shape == (16000,)
     assert model.kwargs == {
         "language": "en",
         "word_timestamps": True,
@@ -71,7 +76,7 @@ def test_library_error_is_provider_unavailable_without_its_message(tmp_path, cap
 def test_mlx_maps_segments(tmp_path):
     seen: dict[str, Any] = {}
 
-    def fake_transcribe(wav: str, **kwargs: Any) -> dict[str, object]:
+    def fake_transcribe(wav: Any, **kwargs: Any) -> dict[str, object]:
         seen["wav"] = wav
         seen.update(kwargs)
         return {
@@ -83,7 +88,10 @@ def test_mlx_maps_segments(tmp_path):
 
     wav = write_wav(tmp_path / "a.wav", 1)
     t = MlxWhisperTranscriber(transcribe=fake_transcribe).transcribe(wav)
-    assert seen == {"wav": str(wav), "language": "en", "word_timestamps": True}
+    # an array, never a path: mlx-whisper runs ffmpeg on a path
+    audio = seen.pop("wav")
+    assert audio.dtype == np.float32 and audio.shape == (16000,)
+    assert seen == {"language": "en", "word_timestamps": True}
     assert t.words[0].text == "vest" and t.words[0].end_ms == 500
     assert t.raw.adapter == "mlx_whisper" and not t.fillers_kept
 

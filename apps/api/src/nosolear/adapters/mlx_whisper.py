@@ -10,9 +10,13 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Protocol, cast
 
+import numpy as np
+from numpy.typing import NDArray
+
 from nosolear.adapters.hf_models import ModelSpec, disable_hf_telemetry, ensure_model
 from nosolear.adapters.local_env import installed_version
 from nosolear.adapters.model_specs import MLX_WHISPER
+from nosolear.adapters.wav_samples import read_16k_mono
 from nosolear.domain.errors import ProviderUnavailable
 from nosolear.domain.results import parse_local_transcript
 from nosolear.domain.speech import LOCAL, RawResult, Transcript
@@ -23,17 +27,25 @@ _LIBRARY = "mlx-whisper"
 _FAILED = "The mlx_whisper transcriber failed on this recording"
 _log = logging.getLogger(__name__)
 
+# The audio goes in as a float32 array: a path would make mlx-whisper run ffmpeg.
 Transcribe = Callable[..., Mapping[str, object]]
 
 
 class _LibraryTranscribe(Protocol):
     def __call__(
-        self, audio: str, *, path_or_hf_repo: str, language: str, word_timestamps: bool
+        self,
+        audio: NDArray[np.float32],
+        *,
+        path_or_hf_repo: str,
+        language: str,
+        word_timestamps: bool,
     ) -> Mapping[str, object]: ...
 
 
 def _default_call(spec: ModelSpec) -> Transcribe:
-    def call(wav: str, *, language: str, word_timestamps: bool) -> Mapping[str, object]:
+    def call(
+        wav: NDArray[np.float32], *, language: str, word_timestamps: bool
+    ) -> Mapping[str, object]:
         disable_hf_telemetry()  # before any Hugging Face import
         from mlx_whisper import (  # pyright: ignore[reportMissingImports]
             transcribe,  # pyright: ignore[reportUnknownVariableType]
@@ -88,7 +100,7 @@ class MlxWhisperTranscriber:
 
     def transcribe(self, wav: Path) -> Transcript:
         try:
-            result = self._call(str(wav), language="en", word_timestamps=True)
+            result = self._call(read_16k_mono(wav), language="en", word_timestamps=True)
         except ProviderUnavailable:
             raise
         except Exception as exc:
