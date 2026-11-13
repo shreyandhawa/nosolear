@@ -127,7 +127,7 @@ Report a vulnerability through the private form described in [SECURITY.md](SECUR
 
 ## Licence
 
-MIT: see [LICENSE](LICENSE). Third-party components, including model weights you may download, keep their own licences; see [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES). CrisperWhisper, an opt-in transcriber, is non-commercial and is not covered by the MIT licence. `espeak-ng` is GPL-3.0 and runs as a separate program.
+MIT: see [LICENSE](LICENSE). Third-party components, including model weights you may download, keep their own licences; see [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES). CrisperWhisper, an opt-in transcriber, has MIT code but non-commercial model weights (CC BY-NC 4.0), which the MIT licence does not cover. `espeak-ng` is GPL-3.0 or later and runs as a separate program.
 
 ## Contributing
 
