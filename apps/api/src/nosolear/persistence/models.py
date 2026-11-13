@@ -15,6 +15,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    UniqueConstraint,
     false,
     text,
 )
@@ -370,6 +371,18 @@ content_items = Table(
     C("retired_at", UTCDateTime, nullable=True),
     CheckConstraint(_in_list("kind", CONTENT_KINDS), name="ck_content_items_kind"),
     CheckConstraint("source IN ('seed', 'coach')", name="ck_content_items_source"),
+)
+
+daily_plans = Table(
+    "daily_plans",
+    metadata,
+    C("id", String, primary_key=True),
+    C("for_date", String, nullable=False),
+    C("focus_json", Text, nullable=False),
+    C("prompt_item_id", String, ForeignKey("content_items.id"), nullable=True),
+    C("drills_json", Text, nullable=False),
+    C("seed", Integer, nullable=False),
+    UniqueConstraint("for_date", name="uq_daily_plans_for_date"),
 )
 
 skill_scores = Table(

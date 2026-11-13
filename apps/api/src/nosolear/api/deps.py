@@ -82,11 +82,17 @@ from nosolear.persistence.capabilities import CapabilityRepository, read_capabil
 from nosolear.persistence.db import create_engine_for, upgrade_to_head
 from nosolear.persistence.job_queue import SqliteJobQueue
 from nosolear.persistence.ledger import SqliteUsageLedger
+from nosolear.persistence.plan_repositories import (
+    DailyPlanRepository,
+    PromptBankRepository,
+    ScoringCoverage,
+)
 from nosolear.persistence.repositories import (
     AnalysisRepository,
     AttemptRepository,
     ObservationRepository,
     ProfileRepository,
+    RecheckRepository,
     RecordingRepository,
 )
 from nosolear.persistence.scoring_repository import (
@@ -103,6 +109,7 @@ from nosolear.ports.clock import Clock
 from nosolear.ports.environment import EnvironmentProbe
 from nosolear.ports.jobs import JobQueue
 from nosolear.ports.ledger import UsageLedger
+from nosolear.ports.plan import DailyPlanStore, PromptBank, RecheckStore, ScoredKeys
 from nosolear.ports.providers import (
     CapabilityProbe,
     Coach,
@@ -203,6 +210,26 @@ def get_extraction_inputs(request: Request) -> ExtractionInputs:
 def get_scoring_configs(request: Request) -> ScoringConfigReader:
     engine = cast(Engine, request.app.state.engine)
     return ScoringConfigRepository(engine, DEFAULT_TAXONOMY)
+
+
+def get_daily_plan_store(request: Request) -> DailyPlanStore:
+    engine = cast(Engine, request.app.state.engine)
+    return DailyPlanRepository(engine, DEFAULT_TAXONOMY)
+
+
+def get_prompt_bank(request: Request) -> PromptBank:
+    engine = cast(Engine, request.app.state.engine)
+    return PromptBankRepository(engine)
+
+
+def get_scored_keys(request: Request) -> ScoredKeys:
+    engine = cast(Engine, request.app.state.engine)
+    return ScoringCoverage(ScoringConfigRepository(engine, DEFAULT_TAXONOMY), DEFAULT_TAXONOMY)
+
+
+def get_recheck_store(request: Request) -> RecheckStore:
+    engine = cast(Engine, request.app.state.engine)
+    return RecheckRepository(engine)
 
 
 def get_observation_repository(request: Request) -> ObservationRepository:

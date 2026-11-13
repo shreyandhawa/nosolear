@@ -92,6 +92,7 @@ Phase 0d (provider adapters) is done as of 2026-11-13. Next is Phase 0e (scoring
 - 2026-11-13: Phase 1 Task 1: the selection policy in `domain/selection.py` (Thompson sampling per key seeded from the date, one focus per skill with the variety rule, a fallback from unseen defined keys, one re-check probe, unscored keys never chosen), with `RecheckState` in `domain/rechecks.py`.
 - 2026-11-13: Phase 1 Task 2: the re-check schedule. `advance_rechecks` in `domain/rechecks.py` (the 2, 4, 8, 16, 32 day ladder, a relapsed key dropped), migration `0008_recheck_columns` adds nullable `profile_entries.next_recheck_at` and `recheck_stage`, `RecheckRepository` implements the `RecheckStore` port in `ports/plan.py`, and `ProfileRepository.save`/`replace` carry the schedule for keys still mastered.
 - 2026-11-13: Phase 1 Task 3: daily plan assembly in `domain/daily_plan.py` (the fixed `PLAN_STEPS` protocol times, `choose_prompt` by focus and probe density with recent prompts avoided, one drill per focus with the taxonomy's drill family, and the seeded `assemble_plan`), all pure and covered by Hypothesis properties.
+- 2026-11-13: Phase 1 Task 4: `build_daily_plan` (`app/build_daily_plan.py`) builds today's plan once per local date in `NOSOLEAR_TIMEZONE`, then returns the stored one. Migration `0009_daily_plans` and `DailyPlanRepository`, `PromptBankRepository` and `ScoringCoverage` (`persistence/plan_repositories.py`) store it with its prompt text and seed, so a retired prompt keeps its plan.
 
 ## In progress
 
