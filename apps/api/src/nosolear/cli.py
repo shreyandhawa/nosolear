@@ -9,7 +9,7 @@ from sqlalchemy import Engine
 
 from nosolear.adapters.private_fs import DataDirError
 from nosolear.adapters.system_clock import SystemClock
-from nosolear.api.deps import get_environment, load_active_pack
+from nosolear.api.deps import get_environment, load_active_pack, read_usage
 from nosolear.app.check_readiness import check_readiness
 from nosolear.app.rebuild_profile import rebuild_profile
 from nosolear.dev.seed import seed_observations
@@ -87,7 +87,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("probes arrive in Phase 0d", file=sys.stderr)
             return 2
         prepare_process(settings, create_data_dir=False)
-        report = check_readiness(settings, get_environment())
+        report = check_readiness(settings, get_environment(), usage=read_usage(settings))
         print(format_readiness(report))
         return 0 if report.ready else 1
     if args.command == "dev-seed" and settings.data_dir == REPO_ROOT / "data":

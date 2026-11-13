@@ -2,10 +2,14 @@ import stat
 from pathlib import Path
 
 import pytest
+from factories import make_settings
 
+from nosolear.adapters.system_clock import SystemClock
 from nosolear.cli import main
+from nosolear.domain.budget import Caps, Provider, Unit
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY
 from nosolear.persistence.db import create_engine_for
+from nosolear.persistence.ledger import SqliteUsageLedger
 from nosolear.persistence.repositories import ProfileRepository
 from nosolear.settings import Settings
 
@@ -370,3 +374,39 @@ def test_serve_reports_a_bad_data_dir_and_does_not_start(
     monkeypatch.setattr("uvicorn.run", fail)
     assert main(["serve"]) == 2
     assert "data directory problem:" in capsys.readouterr().err
+
+
+def test_doctor_shows_the_recorded_usage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("NOSOLEAR_DATA_DIR", str(tmp_path))
+    assert main(["db", "upgrade"]) == 0
+    settings = make_settings(data_dir=tmp_path)
+    engine = create_engine_for(settings.database_url)
+    try:
+        caps = Caps.from_hours_chars_tokens(
+            azure_audio_hours=settings.cap_azure_audio_hours,
+            azure_tts_chars=settings.cap_azure_tts_chars,
+            claude_tokens=settings.cap_claude_tokens,
+        )
+        ledger = SqliteUsageLedger(engine, caps=caps, clock=SystemClock())
+        ledger.record(ledger.reserve(Provider.ANTHROPIC, Unit.TOKENS, 3000), 2000)
+        ledger.reserve(Provider.AZURE, Unit.AUDIO_SECONDS, 1800)  # still open
+    finally:
+        engine.dispose()
+    capsys.readouterr()
+    main(["doctor"])
+    out = capsys.readouterr().out
+    assert "Azure 0.5 of 4.5 h" in out
+    assert "Claude 2k of 100k tokens today" in out
+
+
+def test_doctor_without_a_database_keeps_the_caps_only_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    data = tmp_path / "data"
+    monkeypatch.setenv("NOSOLEAR_DATA_DIR", str(data))
+    main(["doctor"])
+    out = capsys.readouterr().out
+    assert "usage tracking arrives with the ledger" in out
+    assert not data.exists()
