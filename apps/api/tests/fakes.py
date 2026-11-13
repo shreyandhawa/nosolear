@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import threading
 import uuid
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from nosolear.domain.audio import (
@@ -18,8 +20,19 @@ from nosolear.domain.audio import (
 )
 from nosolear.domain.budget import Caps, Provider, Unit, Usage, fits, period_for
 from nosolear.domain.errors import CapExceeded, InvalidAudio
+from nosolear.domain.jobs import (
+    Job,
+    JobKind,
+    JobStatus,
+    StepRecord,
+    initial_steps,
+    progress_of,
+    recover_running,
+    resume_plan,
+)
 from nosolear.ports.audio import PendingUpload, StoredRecording, is_recording_path
 from nosolear.ports.clock import Clock
+from nosolear.ports.jobs import JobNotResumable, UnknownJob
 from nosolear.ports.ledger import LedgerError, Reservation
 
 
@@ -179,3 +192,122 @@ class FakePaidPort:
         if self.fail_with is not None:
             raise self.fail_with
         return units
+
+
+@dataclass(frozen=True, slots=True)
+class JobUpdate:
+    """One `FakeJobQueue.update` call, as it was made."""
+
+    job_id: str
+    steps: tuple[StepRecord, ...]
+    step: str | None
+    progress: float
+    status: JobStatus | None
+
+
+class FakeJobQueue:
+    """The job queue in memory, with the same transitions as `SqliteJobQueue`. Thread-safe."""
+
+    def __init__(self, clock: Clock) -> None:
+        self._clock = clock
+        self._jobs: dict[str, Job] = {}  # insertion order is creation order (FIFO claims)
+        self._lock = threading.Lock()
+        self.updates: list[JobUpdate] = []
+
+    def enqueue(self, kind: JobKind, attempt_id: str | None) -> Job:
+        now = self._clock.now()
+        job = Job(
+            id=uuid.uuid4().hex,
+            kind=kind,
+            attempt_id=attempt_id,
+            status=JobStatus.QUEUED,
+            step=None,
+            progress=0.0,
+            steps=initial_steps(kind),
+            tries=0,
+            created_at=now,
+            updated_at=now,
+        )
+        with self._lock:
+            self._jobs[job.id] = job
+        return job
+
+    def claim_next(self) -> Job | None:
+        now = self._clock.now()
+        with self._lock:
+            for job in self._jobs.values():
+                if job.status is JobStatus.QUEUED:
+                    claimed = replace(
+                        job, status=JobStatus.RUNNING, tries=job.tries + 1, updated_at=now
+                    )
+                    self._jobs[job.id] = claimed
+                    return claimed
+        return None
+
+    def get(self, job_id: str) -> Job | None:
+        with self._lock:
+            return self._jobs.get(job_id)
+
+    def update(
+        self,
+        job_id: str,
+        *,
+        steps: Sequence[StepRecord],
+        step: str | None,
+        progress: float,
+        status: JobStatus | None = None,
+    ) -> None:
+        now = self._clock.now()
+        with self._lock:
+            job = self._require(job_id)
+            self._jobs[job_id] = replace(
+                job,
+                steps=tuple(steps),
+                step=step,
+                progress=progress,
+                status=job.status if status is None else status,
+                updated_at=now,
+            )
+            self.updates.append(JobUpdate(job_id, tuple(steps), step, progress, status))
+
+    def resume(self, job_id: str) -> Job:
+        now = self._clock.now()
+        with self._lock:
+            job = self._require(job_id)
+            if job.status is not JobStatus.FAILED:
+                raise JobNotResumable("Only a failed job can be resumed.")
+            steps = resume_plan(job.kind, job.steps)
+            resumed = replace(
+                job,
+                status=JobStatus.QUEUED,
+                steps=steps,
+                step=None,
+                progress=progress_of(steps),
+                updated_at=now,
+            )
+            self._jobs[job_id] = resumed
+            return resumed
+
+    def requeue_running(self) -> int:
+        now = self._clock.now()
+        moved = 0
+        with self._lock:
+            for job in list(self._jobs.values()):
+                if job.status is JobStatus.RUNNING:
+                    steps = recover_running(job.steps)
+                    self._jobs[job.id] = replace(
+                        job,
+                        status=JobStatus.QUEUED,
+                        steps=steps,
+                        step=None,
+                        progress=progress_of(steps),
+                        updated_at=now,
+                    )
+                    moved += 1
+        return moved
+
+    def _require(self, job_id: str) -> Job:
+        job = self._jobs.get(job_id)
+        if job is None:
+            raise UnknownJob("No job has this id.")
+        return job

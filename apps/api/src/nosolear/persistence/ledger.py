@@ -4,15 +4,13 @@ Every write runs under `BEGIN IMMEDIATE`, so the write lock is taken before the 
 and two reservations can never both see the same headroom.
 """
 
-from collections.abc import Generator
-from contextlib import contextmanager
-
 from sqlalchemy import Engine, text
 from sqlalchemy.engine import Connection
 
 from nosolear.domain.budget import Caps, Provider, Unit, Usage, fits, period_for
 from nosolear.domain.errors import CapExceeded
 from nosolear.persistence.models import format_utc
+from nosolear.persistence.transactions import immediate
 from nosolear.ports.clock import Clock
 from nosolear.ports.ledger import LedgerError, Reservation
 
@@ -31,7 +29,7 @@ class SqliteUsageLedger:
             raise ValueError("estimate must not be negative")
         now = self._clock.now()
         period = period_for(provider, unit, now)
-        with self._immediate() as conn:
+        with immediate(self._engine) as conn:
             recorded, reserved = _totals(conn, provider, unit, period)
             if not fits(cap, recorded, reserved, estimate):
                 raise CapExceeded()
@@ -58,7 +56,7 @@ class SqliteUsageLedger:
     def record(self, reservation: Reservation, actual: int) -> None:
         if actual < 0:
             raise ValueError("actual must not be negative")
-        with self._immediate() as conn:
+        with immediate(self._engine) as conn:
             result = conn.execute(
                 text(
                     "UPDATE usage_ledger SET state = 'recorded', actual = :actual, "
@@ -70,7 +68,7 @@ class SqliteUsageLedger:
                 raise LedgerError("the reservation is not open")
 
     def release(self, reservation: Reservation) -> None:
-        with self._immediate() as conn:
+        with immediate(self._engine) as conn:
             result = conn.execute(
                 text(
                     "UPDATE usage_ledger SET state = 'released', settled_at = :now "
@@ -82,7 +80,7 @@ class SqliteUsageLedger:
                 raise LedgerError("the reservation is not open")
 
     def settle_open_reservations(self) -> int:
-        with self._immediate() as conn:
+        with immediate(self._engine) as conn:
             result = conn.execute(
                 text(
                     "UPDATE usage_ledger SET state = 'recorded', actual = estimate, "
@@ -105,23 +103,6 @@ class SqliteUsageLedger:
             reserved=reserved,
             cap=cap,
         )
-
-    @contextmanager
-    def _immediate(self) -> Generator[Connection]:
-        """A connection inside `BEGIN IMMEDIATE`: commit on success, roll back on any error.
-
-        pysqlite does not begin a transaction before a SELECT, so the BEGIN is issued by hand.
-        """
-        conn = self._engine.connect()
-        try:
-            conn.exec_driver_sql("BEGIN IMMEDIATE")
-            yield conn
-            conn.commit()
-        except BaseException:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
 
 
 def _totals(conn: Connection, provider: Provider, unit: Unit, period: str) -> tuple[int, int]:
