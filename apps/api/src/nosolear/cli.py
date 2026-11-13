@@ -7,6 +7,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import quote
 
 import httpx
 from pydantic import ValidationError
@@ -95,6 +96,14 @@ def _parser() -> argparse.ArgumentParser:
     daily_commands = daily.add_subparsers(dest="daily_command", required=True)
     daily_start = daily_commands.add_parser("start", help="start today's session and its attempt")
     daily_start.add_argument("--base-url", help="the API address (default: from the settings)")
+    daily_feedback = daily_commands.add_parser("feedback", help="a daily session's feedback cards")
+    daily_feedback.add_argument("session_id", help="the session printed by `daily start`")
+    daily_feedback.add_argument(
+        "--generate",
+        action="store_true",
+        help="make or upgrade the cards (the coach is called only for cards it has not written)",
+    )
+    daily_feedback.add_argument("--base-url", help="the API address (default: from the settings)")
     return parser
 
 
@@ -230,6 +239,45 @@ def _daily_start(api: ApiClient) -> int:
     return 0
 
 
+def _feedback_lines(body: object) -> list[str]:
+    """One card per skill: the fix with its text (and a template's reason), or clean, or not
+    scored today. Coach text is printed with control and bidi characters removed."""
+    feedback = _record(body, "skills")
+    skills = feedback["skills"]
+    if not isinstance(skills, list):
+        raise CliError(GENERIC_ERROR)
+    lines: list[str] = []
+    for raw_card in cast(list[object], skills):
+        card = _record(raw_card, "skill", "state", "item")
+        skill = str(card["skill"])
+        if card["state"] == "clean":
+            lines.append(f"{skill}: clean")
+            continue
+        if card["state"] == "not_scored":
+            lines.append(f"{skill}: not scored today")
+            continue
+        if card["item"] is None:
+            lines.append(f"{skill}: no card stored")
+            continue
+        item = _record(
+            card["item"], "error_key", "message", "model_text", "source", "fallback_reason"
+        )
+        tag = f" [template: {item['fallback_reason']}]" if item["source"] == "template" else ""
+        lines.append(f"{skill}: {item['error_key']}{tag}")
+        lines.append(f"  {_printable(str(item['message']))}")
+        if item["model_text"] is not None:
+            lines.append(f"  say: {_printable(str(item['model_text']))}")
+    return lines
+
+
+def _daily_feedback(args: argparse.Namespace, api: ApiClient) -> int:
+    path = f"/api/sessions/{quote(args.session_id, safe='')}/feedback"
+    body = api.post_json(path) if args.generate else api.get_json(path)
+    for line in _feedback_lines(body):
+        print(line)
+    return 0
+
+
 def _plan(args: argparse.Namespace, api: ApiClient) -> int:
     body = api.post_json("/api/plan/today")
     if args.json:
@@ -299,6 +347,8 @@ def _api_command(
         if args.command == "plan":
             return _plan(args, api)
         if args.command == "daily":
+            if args.daily_command == "feedback":
+                return _daily_feedback(args, api)
             return _daily_start(api)
         if args.command == first_run_cli.STAND_IN and synthesizer is None:
             synthesizer = build_stand_in_synthesizer(settings)

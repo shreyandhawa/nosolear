@@ -4,17 +4,22 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from factories import count, make_settings
+from factories import NOW, count, make_settings, mk
 from harness import Harness
+from provider_fakes import FakeCoach
 
 from nosolear.adapters.system_clock import SystemClock
 from nosolear.cli import main
 from nosolear.cli_client import ApiClient
 from nosolear.domain.budget import Caps, Provider, Unit
-from nosolear.domain.taxonomy import DEFAULT_TAXONOMY
+from nosolear.domain.coach import CoachExplanation
+from nosolear.domain.errors import CapExceeded
+from nosolear.domain.observations import Outcome
+from nosolear.domain.speech import RawResult
+from nosolear.domain.taxonomy import DEFAULT_TAXONOMY, Detector
 from nosolear.persistence.db import create_engine_for
 from nosolear.persistence.ledger import SqliteUsageLedger
-from nosolear.persistence.repositories import ProfileRepository
+from nosolear.persistence.repositories import ObservationRepository, ProfileRepository
 from nosolear.settings import Settings
 
 
@@ -497,3 +502,101 @@ def test_daily_start_twice_prints_same_ids(
     second = capsys.readouterr().out
 
     assert second == first
+
+
+def _expl(message: str) -> CoachExplanation:
+    raw = RawResult(
+        provider="anthropic",
+        provider_version="oracle",
+        adapter="claude_coach",
+        adapter_version=1,
+        payload={},
+    )
+    return CoachExplanation(message=message, model_text="rewrite", tokens_used=1, raw=raw)
+
+
+class _CappedCoach(FakeCoach):
+    def explain(self, *, error_key: str, quote: str, context: str) -> CoachExplanation:
+        raise CapExceeded()
+
+
+def _daily_with_misses(h: Harness, capsys: pytest.CaptureFixture[str]) -> str:
+    """Starts today's daily session through the CLI, stores one miss per skill for its attempt,
+    and returns the session id the CLI printed."""
+    assert main(["daily", "start"], client=_api(h)) == 0
+    lines = capsys.readouterr().out.splitlines()
+    session_id = lines[0].removeprefix("session ")
+    attempt_id = lines[1].removeprefix("attempt ")
+    ObservationRepository(h.engine).add_many(
+        [
+            mk(
+                "sound.sub.v.w",
+                Outcome.MISS,
+                NOW,
+                detector=Detector.AZURE_PA,
+                attempt_id=attempt_id,
+                evidence={"word": "very", "start_ms": 100, "end_ms": 300},
+            ),
+            mk(
+                "fluency.filler",
+                Outcome.MISS,
+                NOW,
+                detector=Detector.ASR_METRICS,
+                attempt_id=attempt_id,
+                evidence={"text": "um I think"},
+            ),
+            mk(
+                "clarity.vague",
+                Outcome.MISS,
+                NOW,
+                detector=Detector.COACH,
+                attempt_id=attempt_id,
+                evidence={"quote": "a lot of things"},
+            ),
+        ]
+    )
+    return session_id
+
+
+def test_daily_feedback_prints_card_per_skill(
+    make_harness: Callable[..., Harness], capsys: pytest.CaptureFixture[str]
+) -> None:
+    coach = FakeCoach(
+        explain_results=[_expl("Put your teeth on your lip."), _expl("Pause."), _expl("Shorter.")]
+    )
+    h = make_harness(coach=coach)
+    session_id = _daily_with_misses(h, capsys)
+
+    assert main(["daily", "feedback", session_id, "--generate"], client=_api(h)) == 0
+
+    lines = capsys.readouterr().out.splitlines()
+    cards = [line for line in lines if not line.startswith("  ")]
+    assert [line.split(":")[0] for line in cards] == ["sounds", "on_the_spot", "articulate"]
+    assert cards[0] == "sounds: sound.sub.v.w"
+    assert "  Put your teeth on your lip." in lines
+    assert "  say: rewrite" in lines
+
+
+def test_daily_feedback_shows_degraded_reason(
+    make_harness: Callable[..., Harness], capsys: pytest.CaptureFixture[str]
+) -> None:
+    h = make_harness(coach=_CappedCoach())
+    session_id = _daily_with_misses(h, capsys)
+
+    assert main(["daily", "feedback", session_id, "--generate"], client=_api(h)) == 0
+
+    out = capsys.readouterr().out
+    assert "[template: cap_exceeded]" in out
+
+
+def test_daily_feedback_without_generate_reports_not_generated(
+    make_harness: Callable[..., Harness], capsys: pytest.CaptureFixture[str]
+) -> None:
+    h = make_harness(coach=FakeCoach(explain_results=[_expl("unused")]))
+    session_id = _daily_with_misses(h, capsys)
+
+    assert main(["daily", "feedback", session_id], client=_api(h)) == 2
+
+    captured = capsys.readouterr()
+    assert "No feedback has been generated" in captured.err
+    assert captured.out == ""
