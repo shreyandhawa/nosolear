@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
-import httpx
+import httpx2
 import pytest
 from factories import FixedClock, loopback_client, make_settings
 from fakes import FakeStep
@@ -60,7 +60,7 @@ def _attempt(
 
 def _wav_post(
     client: TestClient, attempt_id: str, body: bytes | Iterator[bytes], **headers: str
-) -> httpx.Response:
+) -> httpx2.Response:
     merged = {"Content-Type": "audio/wav", **headers}
     return client.post(URL.format(attempt_id), content=body, headers=merged)
 

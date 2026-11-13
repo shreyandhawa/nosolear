@@ -2,7 +2,7 @@
 
 import sqlite3
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Annotated, cast
@@ -11,30 +11,65 @@ from urllib.parse import quote
 from fastapi import Depends, Request
 from sqlalchemy import Engine
 
+from nosolear.adapters.azure_pa import AzurePronunciationScorer
+from nosolear.adapters.azure_pa_probe import AzureCapabilityProbe
+from nosolear.adapters.azure_speech import AzureSpeech
+from nosolear.adapters.azure_stt import AzureTranscriber
+from nosolear.adapters.azure_tts import AzureTts
+from nosolear.adapters.claude_coach import ClaudeCoach
 from nosolear.adapters.content_files import load_pack
+from nosolear.adapters.crisper_whisper import CrisperWhisperTranscriber
 from nosolear.adapters.environment import SystemEnvironment
+from nosolear.adapters.faster_whisper import FasterWhisperTranscriber
 from nosolear.adapters.filesystem_audio_store import FilesystemAudioStore
+from nosolear.adapters.local_env import (
+    current_platform,
+    espeak_ng_path,
+    installed_transcribers,
+    phone_probe_installed,
+)
+from nosolear.adapters.mlx_whisper import MlxWhisperTranscriber
+from nosolear.adapters.model_specs import (
+    FASTER_WHISPER_MODELS,
+    MLX_WHISPER_MODELS,
+    model_spec_for,
+)
 from nosolear.adapters.retry import (
+    RetryingCoach,
     RetryingPronunciationScorer,
     RetryingSpeechSynthesizer,
     RetryingTranscriber,
 )
 from nosolear.adapters.system_clock import SystemClock
 from nosolear.adapters.thread_pool_runner import ThreadPoolJobRunner
+from nosolear.adapters.transcriber_speed_check import TranscriberSpeedCheck
+from nosolear.adapters.tts_cache import CachedSynthesizer
+from nosolear.adapters.wav2vec2_espeak import Wav2Vec2EspeakProbe
+from nosolear.app.analysis_steps import provider_steps
 from nosolear.app.check_readiness import check_readiness
 from nosolear.app.run_job import run_job
-from nosolear.app.steps import StepRegistry
-from nosolear.budget.compose import compose_paid_port
+from nosolear.app.steps import StepRegistry, current_job_id
+from nosolear.budget.compose import compose_paid_port, layers_of
 from nosolear.budget.meter import Meter
 from nosolear.budget.metered_ports import (
+    MeteredCoach,
     MeteredPronunciationScorer,
     MeteredSpeechSynthesizer,
     MeteredTranscriber,
 )
 from nosolear.domain.budget import Caps, Provider, Unit, period_for
+from nosolear.domain.jobs import JobKind
 from nosolear.domain.packs import LanguagePack
 from nosolear.domain.readiness import ReadinessReport, UsageSnapshot
-from nosolear.domain.taxonomy import DEFAULT_TAXONOMY
+from nosolear.domain.speech import ProviderCapabilities
+from nosolear.domain.taxonomy import DEFAULT_TAXONOMY, Taxonomy
+from nosolear.domain.transcriber_choice import (
+    Platform,
+    TranscriberChoice,
+    TranscriberName,
+    choose_transcriber,
+)
+from nosolear.persistence.capabilities import read_capability_records
 from nosolear.persistence.job_queue import SqliteJobQueue
 from nosolear.persistence.ledger import SqliteUsageLedger
 from nosolear.persistence.repositories import (
@@ -44,16 +79,61 @@ from nosolear.persistence.repositories import (
     ProfileRepository,
     RecordingRepository,
 )
+from nosolear.persistence.tts_cache import TtsCacheRepository
 from nosolear.ports.analyses import AnalysisStore
 from nosolear.ports.audio import AttemptReader, AudioStore, RecordingStore
 from nosolear.ports.clock import Clock
 from nosolear.ports.environment import EnvironmentProbe
 from nosolear.ports.jobs import JobQueue
 from nosolear.ports.ledger import UsageLedger
-from nosolear.ports.providers import PronunciationScorer, SpeechSynthesizer, Transcriber
+from nosolear.ports.providers import (
+    CapabilityProbe,
+    Coach,
+    PhoneProbe,
+    PronunciationScorer,
+    SpeechSynthesizer,
+    Synthesizer,
+    Transcriber,
+)
 from nosolear.settings import Settings
 
 DATABASE_NAME = "nosolear.sqlite"
+
+
+@dataclass(frozen=True, slots=True)
+class RawPorts:
+    """A port given here replaces the real raw adapter and is still wrapped as the real one
+    would be. `None` builds the real adapter. This is the seam for the eval harness and tests."""
+
+    scorer: PronunciationScorer | None = None
+    transcriber: Transcriber | None = None
+    speech_synthesizer: SpeechSynthesizer | None = None
+    phone_probe: PhoneProbe | None = None
+    coach: Coach | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Providers:
+    """Every port a job step calls, each wrapped by its composition layers (ARCHITECTURE.md
+    section 11). Building them imports no provider SDK and needs no key."""
+
+    scorer: PronunciationScorer
+    transcriber: Transcriber
+    transcriber_choice: TranscriberChoice
+    phone_probe: PhoneProbe | None
+    synthesizer: Synthesizer
+    coach: Coach
+
+    def paid_ports(self) -> dict[str, object]:
+        """The ports that spend quota. The Azure transcriber is listed only when it is metered."""
+        ports: dict[str, object] = {
+            "pronunciation_scorer": self.scorer,
+            "synthesizer": self.synthesizer,
+            "coach": self.coach,
+        }
+        if "metered" in layers_of(self.transcriber):
+            ports["transcriber_azure"] = self.transcriber
+        return ports
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,13 +146,12 @@ class Services:
     analyses: AnalysisStore
     registry: StepRegistry
     runner: ThreadPoolJobRunner
-    paid_ports: dict[str, object]
+    providers: Providers
     clock: Clock
     observations: ObservationRepository
     profiles: ProfileRepository
     recordings: RecordingStore
     attempts: AttemptReader
-    # 0d replaces paid_ports with providers: Providers.
 
 
 def get_profile_repository(request: Request) -> ProfileRepository:
@@ -93,6 +172,10 @@ def get_services(request: Request) -> Services:
     return cast(Services, request.app.state.services)
 
 
+def get_providers(request: Request) -> Providers:
+    return get_services(request).providers
+
+
 def get_job_queue(request: Request) -> JobQueue:
     return get_services(request).jobs
 
@@ -111,7 +194,12 @@ def get_readiness_report(
     env: Annotated[EnvironmentProbe, Depends(get_environment)],
 ) -> ReadinessReport:
     """The route's only dependency; tests override it."""
-    return check_readiness(settings, env, usage=read_usage(settings))
+    return check_readiness(
+        settings,
+        env,
+        usage=read_usage(settings),
+        capability_records=read_capabilities(settings),
+    )
 
 
 def paid_scorer(
@@ -151,9 +239,149 @@ def paid_speech_synthesizer(
     )
 
 
-def build_paid_ports(settings: Settings, *, ledger: UsageLedger, clock: Clock) -> dict[str, object]:
-    """Every paid port, each built through `compose_paid_port`. Empty until Phase 0d adds them."""
-    return {}
+def paid_coach(
+    raw: Coach, meter: Meter, *, taxonomy: Taxonomy, sleep: Callable[[float], None] = time.sleep
+) -> Coach:
+    """Retry -> metered -> raw: every attempt reserves its own upper bound."""
+    return compose_paid_port(
+        raw,
+        metered=lambda port: MeteredCoach(port, meter, taxonomy=taxonomy),
+        retry=lambda port: RetryingCoach(port, sleep=sleep),
+    )
+
+
+def _given_or[T](given: T | None, build: Callable[[], T]) -> T:
+    return given if given is not None else build()
+
+
+def _local_transcriber(name: TranscriberName, settings: Settings) -> Transcriber:
+    """Local transcribers are neither metered nor retried; their model specs are pinned."""
+    if name is TranscriberName.FASTER_WHISPER:
+        spec = model_spec_for(FASTER_WHISPER_MODELS, settings.faster_whisper_model)
+        return FasterWhisperTranscriber(spec=spec)
+    if name is TranscriberName.MLX_WHISPER:
+        spec_mlx = model_spec_for(MLX_WHISPER_MODELS, settings.mlx_whisper_model)
+        return MlxWhisperTranscriber(spec=spec_mlx)
+    return CrisperWhisperTranscriber()
+
+
+def build_capability_probes(
+    settings: Settings, providers: Providers, *, engine: Engine, clock: Clock
+) -> tuple[CapabilityProbe, ...]:
+    """The live probes `doctor --probe` runs. Azure probes go through the wrapped ports, so a
+    probe spends quota like a real attempt. Speed checks run only for transcribers that are
+    installed, and `crisper_whisper` only when it is the configured choice (its weights are
+    fetched on first use)."""
+    probes: list[CapabilityProbe] = [
+        AzureCapabilityProbe(
+            synthesizer=providers.synthesizer,
+            scorer=providers.scorer,
+            data_dir=settings.data_dir,
+            region=settings.azure_speech_region,
+            locale=settings.azure_locale,
+            clock=clock,
+        )
+    ]
+    installed = installed_transcribers()
+    for name in (
+        TranscriberName.MLX_WHISPER,
+        TranscriberName.FASTER_WHISPER,
+        TranscriberName.CRISPER_WHISPER,
+    ):
+        if name not in installed:
+            continue
+        if name is TranscriberName.MLX_WHISPER and current_platform() is not Platform.MACOS_ARM64:
+            continue
+        if name is TranscriberName.CRISPER_WHISPER and settings.transcriber != name:
+            continue
+        probes.append(
+            TranscriberSpeedCheck(
+                name=name,
+                synthesizer=providers.synthesizer,
+                transcriber=_local_transcriber(name, settings),
+                data_dir=settings.data_dir,
+                clock=clock,
+            )
+        )
+    return tuple(probes)
+
+
+def build_providers(
+    settings: Settings,
+    *,
+    engine: Engine,
+    ledger: UsageLedger,
+    clock: Clock,
+    real_time_factors: Mapping[TranscriberName, float] | None = None,
+    raw: RawPorts | None = None,
+) -> Providers:
+    """Every port, composed once. One `Meter` serves every paid port and reads the running job
+    id, so each ledger row names its job."""
+    ports = raw if raw is not None else RawPorts()
+    meter = Meter(ledger, job_id=current_job_id)
+    taxonomy = DEFAULT_TAXONOMY
+    locale = settings.azure_locale
+    speech = AzureSpeech(key=settings.azure_speech_key, region=settings.azure_speech_region)
+
+    scorer = paid_scorer(
+        _given_or(ports.scorer, lambda: AzurePronunciationScorer(speech, locale=locale)), meter
+    )
+
+    choice = choose_transcriber(
+        settings.transcriber,
+        platform=current_platform(),
+        installed=installed_transcribers(),
+        real_time_factors=real_time_factors or {},
+    )
+    transcriber: Transcriber
+    if ports.transcriber is not None:
+        transcriber = paid_transcriber(ports.transcriber, meter)
+    elif choice.name is TranscriberName.AZURE_STT:
+        transcriber = paid_transcriber(AzureTranscriber(speech, locale=locale), meter)
+    else:
+        transcriber = _local_transcriber(choice.name, settings)
+
+    probe: PhoneProbe | None
+    if ports.phone_probe is not None:
+        probe = ports.phone_probe
+    elif phone_probe_installed() and (espeak := espeak_ng_path()) is not None:
+        probe = Wav2Vec2EspeakProbe(espeak=espeak)
+    else:
+        probe = None
+
+    voice = settings.tts_voice
+    raw_tts = _given_or(
+        ports.speech_synthesizer, lambda: AzureTts(speech, voice=voice, locale=locale)
+    )
+    paid_tts = paid_speech_synthesizer(raw_tts, meter, voice=voice, locale=locale)
+    synthesizer = CachedSynthesizer(
+        paid_tts,
+        store=TtsCacheRepository(engine),
+        data_dir=settings.data_dir,
+        voice=voice,
+        clock=clock,
+    )
+
+    coach = paid_coach(
+        _given_or(
+            ports.coach,
+            lambda: ClaudeCoach(
+                api_key=settings.anthropic_api_key,
+                model=settings.coach_model,
+                taxonomy=taxonomy,
+            ),
+        ),
+        meter,
+        taxonomy=taxonomy,
+    )
+    return Providers(
+        scorer=scorer,
+        transcriber=transcriber,
+        transcriber_choice=choice,
+        phone_probe=probe,
+        synthesizer=synthesizer,
+        coach=coach,
+    )
 
 
 def _caps(settings: Settings) -> Caps:
@@ -175,38 +403,67 @@ def build_services(
     registry: StepRegistry | None = None,
     clock: Clock | None = None,
     ledger: UsageLedger | None = None,
+    raw_ports: RawPorts | None = None,
 ) -> Services:
-    """Wires every adapter. Nothing here touches the database; the caller migrates first."""
+    """Wires every adapter and registers the analysis steps. Nothing here touches the database;
+    the caller migrates first. A step the caller already registered is kept as it is."""
     clock = clock or SystemClock()
     ledger = ledger if ledger is not None else build_ledger(settings, engine, clock=clock)
     registry = registry if registry is not None else StepRegistry()
     jobs = SqliteJobQueue(engine, clock=clock)
+    providers = build_providers(settings, engine=engine, ledger=ledger, clock=clock, raw=raw_ports)
+    analyses = AnalysisRepository(engine, clock)
+    recordings = RecordingRepository(engine, clock)
+    attempts = AttemptRepository(engine)
+    audio = FilesystemAudioStore(settings.data_dir)
+    for step in provider_steps(
+        scorer=providers.scorer,
+        transcriber=providers.transcriber,
+        phone_probe=providers.phone_probe,
+        coach=providers.coach,
+        taxonomy=DEFAULT_TAXONOMY,
+        analyses=analyses,
+        recordings=recordings,
+        attempts=attempts,
+        audio=audio,
+    ):
+        if registry.get(JobKind.ANALYZE, step.name) is None:
+            registry.register(JobKind.ANALYZE, step)
 
     def run(job_id: str) -> object:
         return run_job(job_id=job_id, jobs=jobs, registry=registry)
 
     return Services(
-        audio_store=FilesystemAudioStore(settings.data_dir),
+        audio_store=audio,
         jobs=jobs,
         ledger=ledger,
-        analyses=AnalysisRepository(engine, clock),
+        analyses=analyses,
         registry=registry,
         runner=ThreadPoolJobRunner(jobs, run, workers=settings.job_workers),
-        paid_ports=build_paid_ports(settings, ledger=ledger, clock=clock),
+        providers=providers,
         clock=clock,
         observations=ObservationRepository(engine),
         profiles=ProfileRepository(engine, DEFAULT_TAXONOMY),
-        recordings=RecordingRepository(engine, clock),
-        attempts=AttemptRepository(engine),
+        recordings=recordings,
+        attempts=attempts,
     )
 
 
-def read_usage(settings: Settings) -> UsageSnapshot | None:
-    """This period's figures from the ledger, opened read-only.
+def read_capabilities(settings: Settings) -> tuple[ProviderCapabilities, ...]:
+    """The newest capability record per adapter, read without creating or migrating anything.
+    Empty when the database file or its table does not exist, or cannot be read."""
+    conn = _open_read_only(settings)
+    if conn is None:
+        return ()
+    try:
+        return tuple(read_capability_records(conn))
+    except sqlite3.Error:
+        return ()
+    finally:
+        conn.close()
 
-    None when the database file or its `usage_ledger` table does not exist, or when SQLite
-    cannot read the file. Never creates, migrates or writes the database (`doctor` stays offline).
-    """
+
+def _open_read_only(settings: Settings) -> sqlite3.Connection | None:
     database = settings.data_dir / DATABASE_NAME
     if not database.is_file():
         return None
@@ -215,8 +472,19 @@ def read_usage(settings: Settings) -> UsageSnapshot | None:
     wal_present = database.with_name(database.name + "-wal").exists()
     mode = "mode=ro" if wal_present else "mode=ro&immutable=1"
     try:
-        conn = sqlite3.connect(f"file:{quote(str(database))}?{mode}", uri=True)
+        return sqlite3.connect(f"file:{quote(str(database))}?{mode}", uri=True)
     except sqlite3.Error:
+        return None
+
+
+def read_usage(settings: Settings) -> UsageSnapshot | None:
+    """This period's figures from the ledger, opened read-only.
+
+    None when the database file or its `usage_ledger` table does not exist, or when SQLite
+    cannot read the file. Never creates, migrates or writes the database (`doctor` stays offline).
+    """
+    conn = _open_read_only(settings)
+    if conn is None:
         return None
     try:
         return _usage_from(conn)

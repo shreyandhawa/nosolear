@@ -218,14 +218,18 @@ class FakeCapabilityProbe:
     calls: int
 
     def __init__(
-        self, results: Sequence[ProviderCapabilities] = (), errors: Sequence[Exception] = ()
+        self,
+        results: Sequence[ProviderCapabilities] = (),
+        errors: Sequence[Exception] = (),
+        adapter: str = "fake",
     ) -> None:
         self._script: _Script[ProviderCapabilities] = _Script(results, errors)
         self.calls = 0
+        self._adapter = adapter
 
     @property
     def adapter(self) -> str:
-        return "fake"
+        return self._adapter
 
     def probe(self) -> ProviderCapabilities:
         self.calls += 1

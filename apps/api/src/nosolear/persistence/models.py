@@ -265,3 +265,19 @@ analyses = Table(
         sqlite_where=text(_ANALYSES_TTS_KEY),
     ),
 )
+
+
+# ARCHITECTURE.md section 7. What a live probe measured: never a key, nor anything derived from one.
+provider_capabilities = Table(
+    "provider_capabilities",
+    metadata,
+    C("id", Integer, primary_key=True, autoincrement=True),
+    C("provider", String, nullable=False),
+    C("adapter", String, nullable=False),
+    C("adapter_version", Integer, nullable=False),
+    C("provider_version", String, nullable=False),
+    C("region", String, nullable=True),
+    C("locale", String, nullable=True),
+    C("capabilities_json", Text, nullable=False),
+    C("probed_at", UTCDateTime, nullable=False),
+)
