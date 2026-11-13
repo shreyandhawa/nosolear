@@ -484,6 +484,16 @@ class AttemptRepository:
             row = conn.execute(select(attempts.c.id).where(attempts.c.id == attempt_id)).first()
         return row is not None
 
+    def session_completed(self, attempt_id: str) -> bool:
+        stmt = (
+            select(sessions.c.completed_at)
+            .select_from(attempts.join(sessions, attempts.c.session_id == sessions.c.id))
+            .where(attempts.c.id == attempt_id)
+        )
+        with self._engine.connect() as conn:
+            row = conn.execute(stmt).first()
+        return row is not None and row.completed_at is not None
+
     def count_sessions(self, kind: str) -> int:
         stmt = select(func.count()).select_from(sessions).where(sessions.c.kind == kind)
         with self._engine.connect() as conn:

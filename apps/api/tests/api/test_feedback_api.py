@@ -54,9 +54,10 @@ def seed(
     harness: Harness,
     *,
     kind: str = "daily",
-    job_status: str | None = None,
+    job_status: str | None = "done",
 ) -> str:
-    """A session of `kind` with one attempt, three misses (one per skill) and an optional job."""
+    """A session of `kind` with one attempt, three misses (one per skill) and its analyze job in
+    `job_status`. `None` is a session with no upload, which is not analysed."""
     attempt_id = harness.attempt(
         step="speak", scripted=False, reference_text=None, session_kind=kind
     )
@@ -240,3 +241,17 @@ def test_hostile_coach_text_is_returned_as_plain_text_without_control_chars(
     assert message == "fix it now"
     assert "\x00" not in message
     assert "‮" not in message
+
+
+def test_feedback_with_no_upload_is_409_and_calls_no_coach(
+    make_harness: Callable[..., Harness],
+) -> None:
+    """A session that was never uploaded has no analysis. It must not read as 'not scored today'."""
+    coach = _coach_three()
+    harness = make_harness(coach=coach)
+    session_id = seed(harness, job_status=None)
+    response = harness.client.post(f"/api/sessions/{session_id}/feedback")
+    assert response.status_code == 409
+    assert response.json()["code"] == "session_not_analyzed"
+    assert coach.explain_calls == []
+    assert harness.client.get(f"/api/sessions/{session_id}/feedback").status_code == 404

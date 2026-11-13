@@ -115,8 +115,8 @@ def generate_feedback(
         raise SessionNotFound("No such session.")
     if kind != "daily":
         raise SessionNotDaily("Feedback is only made for a daily session.")
-    if jobs.unfinished(session_id) > 0:
-        raise SessionNotAnalyzed("The session is still being analyzed.")
+    if not jobs.analyzed(session_id):
+        raise SessionNotAnalyzed("The session has no finished analysis yet.")
 
     profile = profiles.latest() or _no_profile(taxonomy)
     outcomes = choose_fixes(

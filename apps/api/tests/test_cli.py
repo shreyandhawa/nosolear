@@ -7,6 +7,7 @@ import pytest
 from factories import NOW, count, make_settings, mk
 from harness import Harness
 from provider_fakes import FakeCoach
+from sqlalchemy import text
 
 from nosolear.adapters.system_clock import SystemClock
 from nosolear.cli import main
@@ -19,6 +20,7 @@ from nosolear.domain.speech import RawResult
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY, Detector
 from nosolear.persistence.db import create_engine_for
 from nosolear.persistence.ledger import SqliteUsageLedger
+from nosolear.persistence.models import format_utc
 from nosolear.persistence.repositories import ObservationRepository, ProfileRepository
 from nosolear.settings import Settings
 
@@ -555,6 +557,16 @@ def _daily_with_misses(h: Harness, capsys: pytest.CaptureFixture[str]) -> str:
             ),
         ]
     )
+    # The recording was uploaded and analysed: feedback and completion need a finished job.
+    with h.engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO jobs (id, kind, attempt_id, status, progress, steps_json, tries, "
+                "created_at, updated_at) VALUES ('job-cli', 'analyze', :attempt, 'done', 1.0, "
+                "'[]', 1, :stamp, :stamp)"
+            ),
+            {"attempt": attempt_id, "stamp": format_utc(NOW)},
+        )
     return session_id
 
 

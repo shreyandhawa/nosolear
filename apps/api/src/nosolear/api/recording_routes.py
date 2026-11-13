@@ -11,7 +11,12 @@ from nosolear.api.schemas import ErrorOut, UploadAcceptedOut
 from nosolear.app.upload_recording import UploadResult, upload_recording
 from nosolear.domain.audio import check_declared_length
 from nosolear.domain.errors import InvalidAudio
-from nosolear.ports.audio import PendingUpload, RecordingExists, UnknownAttempt
+from nosolear.ports.audio import (
+    PendingUpload,
+    RecordingExists,
+    SessionAlreadyCompleted,
+    UnknownAttempt,
+)
 
 router = APIRouter()
 
@@ -49,6 +54,10 @@ def _commit(
         raise ApiError(404, "unknown_attempt", UNKNOWN_ATTEMPT) from None
     except RecordingExists:
         raise ApiError(409, "recording_exists", RECORDING_EXISTS) from None
+    except SessionAlreadyCompleted:
+        raise ApiError(
+            409, "session_completed", "This session is already completed; it takes no recording."
+        ) from None
 
 
 @router.post(

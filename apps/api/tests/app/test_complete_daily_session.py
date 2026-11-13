@@ -71,11 +71,15 @@ class World:
     rechecks: FakeRecheckStore
 
 
-def world(*, kind: str = "daily", unfinished: int = 0, log: Log | None = None) -> World:
+def world(
+    *, kind: str = "daily", unfinished: int = 0, unanalysed: bool = False, log: Log | None = None
+) -> World:
     return World(
         sessions=FakeSessionReader({SESSION: kind}),
         completer=FakeSessionCompleter(),
-        jobs=FakeSessionJobStatus({SESSION: unfinished}),
+        jobs=FakeSessionJobStatus(
+            {SESSION: unfinished}, unanalyzed={SESSION} if unanalysed else ()
+        ),
         log=log or _log(),
         profiles=FakeProfileStore(),
         rechecks=FakeRecheckStore(),
@@ -138,6 +142,14 @@ def test_unfinished_job_refuses() -> None:
         call(w)
     assert w.completer.calls == []
     assert w.profiles.saved == []
+
+
+def test_session_with_no_upload_refuses_and_closes_nothing() -> None:
+    w = world(unanalysed=True, log=_log(ok_count=40))
+    with pytest.raises(SessionNotAnalyzed):
+        call(w)
+    assert w.completer.calls == []
+    assert w.rechecks.states == {}
 
 
 @pytest.mark.parametrize(

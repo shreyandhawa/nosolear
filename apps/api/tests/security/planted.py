@@ -65,7 +65,7 @@ from nosolear.persistence.content_repository import ContentRepository
 from nosolear.persistence.db import create_engine_for, upgrade_to_head
 from nosolear.persistence.job_queue import SqliteJobQueue
 from nosolear.persistence.ledger import SqliteUsageLedger
-from nosolear.persistence.models import recordings
+from nosolear.persistence.models import format_utc, recordings
 from nosolear.persistence.repositories import AttemptRepository, ObservationRepository
 from nosolear.ports.providers import Coach, PronunciationScorer, Synthesizer
 from nosolear.settings import REPO_ROOT, Settings, settings_error_summary
@@ -1078,7 +1078,15 @@ def _seed_daily_feedback(engine: Engine) -> str:
             ),
         ]
     )
-    with engine.connect() as conn:
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO jobs (id, kind, attempt_id, status, progress, steps_json, tries, "
+                "created_at, updated_at) VALUES ('job-feedback', 'analyze', :attempt, 'done', "
+                "1.0, '[]', 1, :stamp, :stamp)"
+            ),
+            {"attempt": attempt_id, "stamp": format_utc(_SURFACE_NOW)},
+        )
         return str(
             conn.execute(
                 text("SELECT session_id FROM attempts WHERE id = :id"), {"id": attempt_id}

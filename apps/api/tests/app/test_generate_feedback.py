@@ -124,10 +124,13 @@ def world(
     observations: Sequence[StoredObservation] | None = None,
     unfinished: int = 0,
     kind: str = "daily",
+    unanalysed: bool = False,
 ) -> World:
     return World(
         sessions=FakeSessionReader({SESSION: kind, "base": "baseline"}),
-        jobs=FakeSessionJobStatus({SESSION: unfinished}),
+        jobs=FakeSessionJobStatus(
+            {SESSION: unfinished}, unanalyzed={SESSION} if unanalysed else ()
+        ),
         observations=FakeSessionObservations(
             {SESSION: list(session_observations() if observations is None else observations)}
         ),
@@ -171,6 +174,15 @@ def test_one_item_per_skill_with_misses_and_coach_text() -> None:
 
 def test_unfinished_job_refuses_without_calling_coach() -> None:
     w = world([reply("unused")], unfinished=1)
+    with pytest.raises(SessionNotAnalyzed):
+        call(w)
+    assert w.coach.explain_calls == []
+    assert w.feedback.for_session(SESSION) == []
+
+
+def test_session_with_no_finished_analysis_refuses_without_calling_coach() -> None:
+    """No upload means no analysis. The coach is never reached, and no card is stored."""
+    w = world([reply("unused")], unanalysed=True)
     with pytest.raises(SessionNotAnalyzed):
         call(w)
     assert w.coach.explain_calls == []
