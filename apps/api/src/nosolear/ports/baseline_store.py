@@ -35,7 +35,11 @@ class BaselineProfileStore(ProfileWriter, ProfileSnapshotReader, Protocol):
 
 
 class BaselineStore(Protocol):
-    def create(self, *, session_id: str, protocol: BaselineProtocol, now: datetime) -> None: ...
+    def create(
+        self, *, session_id: str, protocol: BaselineProtocol, now: datetime
+    ) -> BaselineSessionRecord:
+        """Opens a session, or returns the one already open. Never opens a second."""
+        ...
 
     def open_session(self) -> BaselineSessionRecord | None: ...
 
@@ -45,7 +49,13 @@ class BaselineStore(Protocol):
 
     def items(self, session_id: str) -> list[BaselineItemRecord]: ...
 
-    def complete(self, session_id: str, *, completed_at: datetime) -> None: ...
+    def complete(self, session_id: str, *, completed_at: datetime) -> bool:
+        """Closes an open session. False when it was already closed."""
+        ...
+
+    def reopen(self, session_id: str) -> bool:
+        """Undoes a `complete` when no other session is open. False when it did not reopen."""
+        ...
 
     def save_scores(self, session_id: str, scores: Sequence[SkillScore]) -> None: ...
 

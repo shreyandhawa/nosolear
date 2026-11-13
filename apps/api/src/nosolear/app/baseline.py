@@ -139,13 +139,9 @@ def _view(
 
 
 def start_baseline(*, store: BaselineStore, content: SeedContent, clock: Clock) -> BaselineView:
-    """Starts a baseline, or returns the one already open."""
-    session = store.open_session()
-    if session is None:
-        store.create(session_id=uuid4().hex, protocol=content.protocol, now=clock.now())
-        session = store.open_session()
-        if session is None:
-            raise RuntimeError("the baseline session was not written")
+    """Starts a baseline, or returns the one already open. The store decides atomically, so two
+    concurrent starts get the same session."""
+    session = store.create(session_id=uuid4().hex, protocol=content.protocol, now=clock.now())
     return _view(store, session, content)
 
 
@@ -172,7 +168,12 @@ def _flags(items: Sequence[BaselineItemRecord], inputs: ExtractionInputs) -> tup
             if stored.kind is AnalysisKind.COACH:
                 coach_scored = True
             if stored.kind is AnalysisKind.TRANSCRIPT:
-                transcript = parse_transcript(raw_result_of(stored))
+                try:
+                    transcript = parse_transcript(raw_result_of(stored))
+                except ValueError:
+                    # Skipped, as `collect_results` skips it: an unreadable kind never fails
+                    # the report.
+                    continue
                 fillers_undercounted = fillers_undercounted or not transcript.fillers_kept
     return fillers_undercounted, coach_scored
 
@@ -301,29 +302,36 @@ def complete_baseline(
     if not _settled(store.items(session.id)):
         raise BaselinePending()
     now = clock.now()
-    rebuild_profile(
-        observations=observations,
-        profiles=profiles,
-        taxonomy=taxonomy,
-        pack=pack,
-        clock=clock,
-        session_id=session.id,
-        reason=BASELINE_REASON,
-    )
-    _save_scores(store, session.id, inputs=inputs, observations=observations, taxonomy=taxonomy)
-    store.complete(session.id, completed_at=now)
-    report = _report(
-        session.id,
-        now,
-        store=store,
-        observations=observations,
-        profiles=profiles,
-        configs=configs,
-        calibration=calibration,
-        inputs=inputs,
-    )
-    if report is None:
-        raise RuntimeError("the baseline snapshot was not written")
+    # The session is claimed before any write, so a concurrent complete is refused here and
+    # never snapshots twice. If the snapshot or the report fails, the claim is undone.
+    if not store.complete(session.id, completed_at=now):
+        raise BaselineNotOpen()
+    try:
+        rebuild_profile(
+            observations=observations,
+            profiles=profiles,
+            taxonomy=taxonomy,
+            pack=pack,
+            clock=clock,
+            session_id=session.id,
+            reason=BASELINE_REASON,
+        )
+        _save_scores(store, session.id, inputs=inputs, observations=observations, taxonomy=taxonomy)
+        report = _report(
+            session.id,
+            now,
+            store=store,
+            observations=observations,
+            profiles=profiles,
+            configs=configs,
+            calibration=calibration,
+            inputs=inputs,
+        )
+        if report is None:
+            raise RuntimeError("the baseline snapshot was not written")
+    except BaseException:
+        store.reopen(session.id)
+        raise
     return report
 
 

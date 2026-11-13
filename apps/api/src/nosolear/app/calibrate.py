@@ -16,7 +16,7 @@ from nosolear.domain.content import SeedContent, calibration_word, stand_in_text
 from nosolear.domain.jobs import JobKind
 from nosolear.domain.packs import LanguagePack
 from nosolear.domain.taxonomy import Detector, Taxonomy
-from nosolear.ports.calibration_store import CalibrationRunRecord, CalibrationStore
+from nosolear.ports.calibration_store import CalibrationRunRecord, CalibrationStore, RunAlreadyOpen
 from nosolear.ports.clock import Clock
 from nosolear.ports.jobs import JobQueue
 
@@ -137,12 +137,20 @@ def start_calibration(
     )
     if not plan.tokens:
         raise NothingToCalibrate()
-    run = store.start(
-        run_id=uuid4().hex,
-        session_id=uuid4().hex,
-        plan=plan,
-        now=clock.now(),
-    )
+    try:
+        run = store.start(
+            run_id=uuid4().hex,
+            session_id=uuid4().hex,
+            plan=plan,
+            now=clock.now(),
+        )
+    except RunAlreadyOpen:
+        # A concurrent start won the race between the check above and the insert. Return the
+        # run it opened, as a start with a run already open always does.
+        raced = store.running()
+        if raced is None:
+            raise
+        return _view(store, raced, content)
     return _view(store, run, content)
 
 
@@ -167,7 +175,8 @@ def finish_calibration(*, store: CalibrationStore, queue: JobQueue) -> str:
         raise NothingRecorded()
     if any(item.job_status in ("queued", "running") for item in recorded):
         raise TokensPending()
-    return queue.enqueue(JobKind.CALIBRATE, None).id
+    # The job names one of this run's attempts, so its steps act on this run and no other.
+    return queue.enqueue(JobKind.CALIBRATE, recorded[0].attempt_id).id
 
 
 def calibration_view(
