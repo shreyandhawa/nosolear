@@ -745,3 +745,57 @@ def calibration_route_bodies(tmp: Path) -> tuple[str, str]:
         refused = client.post("/api/calibration/finish")
     assert read.status_code == 404 and refused.status_code == 409
     return "calibration route bodies", "\n".join([read.text, refused.text])
+
+
+@leak_surface
+def baseline_route_bodies(tmp: Path) -> tuple[str, str]:
+    """The baseline routes' bodies with no session open: the 404 read and the 409 refusal."""
+    settings = planted_settings(tmp / "data")
+    app = create_app(settings, start_runner=False)
+    with loopback_client(app) as client:
+        read = client.get("/api/baseline")
+        refused = client.post("/api/baseline/complete")
+    assert read.status_code == 404 and refused.status_code == 409
+    return "baseline route bodies", "\n".join([read.text, refused.text])
+
+
+@leak_surface
+def baseline_cli_output(tmp: Path) -> tuple[str, str]:
+    """The baseline command's stderr when no session is open, and its stdout for the status line,
+    through the real CLI against a loopback API that holds planted keys in its settings."""
+    from nosolear.cli_client import ApiClient
+
+    settings = planted_settings(tmp / "data")
+    app = create_app(settings, start_runner=False)
+    with loopback_client(app) as client, pytest.MonkeyPatch.context() as mp:
+        _planted_env(mp, tmp / "data")
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            main(["baseline", "complete"], client=ApiClient(client))  # pyright: ignore[reportArgumentType]
+    return "baseline CLI output", out.getvalue() + err.getvalue()
+
+
+@leak_surface
+def onboarding_route_body(tmp: Path) -> tuple[str, str]:
+    """`GET /api/onboarding` with planted keys in the settings: the readiness blockers and fixes."""
+    settings = planted_settings(tmp / "data")
+    app = create_app(settings, start_runner=False)
+    with loopback_client(app) as client:
+        body = client.get("/api/onboarding")
+    assert body.status_code == 200
+    return "onboarding route body", body.text
+
+
+@leak_surface
+def onboarding_cli_output(tmp: Path) -> tuple[str, str]:
+    """`nosolear onboarding` through the real CLI against a loopback API with planted keys."""
+    from nosolear.cli_client import ApiClient
+
+    settings = planted_settings(tmp / "data")
+    app = create_app(settings, start_runner=False)
+    with loopback_client(app) as client, pytest.MonkeyPatch.context() as mp:
+        _planted_env(mp, tmp / "data")
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            main(["onboarding"], client=ApiClient(client))  # pyright: ignore[reportArgumentType]
+    return "onboarding CLI output", out.getvalue() + err.getvalue()

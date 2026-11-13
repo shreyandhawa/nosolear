@@ -76,8 +76,10 @@ from nosolear.domain.transcriber_choice import (
     TranscriberName,
     choose_transcriber,
 )
+from nosolear.persistence.baseline_repository import BaselineRepository
 from nosolear.persistence.calibration_repository import CalibrationRepository
 from nosolear.persistence.capabilities import CapabilityRepository, read_capability_records
+from nosolear.persistence.db import create_engine_for, upgrade_to_head
 from nosolear.persistence.job_queue import SqliteJobQueue
 from nosolear.persistence.ledger import SqliteUsageLedger
 from nosolear.persistence.repositories import (
@@ -95,6 +97,7 @@ from nosolear.persistence.scoring_repository import (
 from nosolear.persistence.tts_cache import TtsCacheRepository
 from nosolear.ports.analyses import AnalysisStore
 from nosolear.ports.audio import AttemptReader, AudioStore, RecordingStore
+from nosolear.ports.baseline_store import BaselineStore
 from nosolear.ports.calibration_store import CalibrationStore
 from nosolear.ports.clock import Clock
 from nosolear.ports.environment import EnvironmentProbe
@@ -109,6 +112,7 @@ from nosolear.ports.providers import (
     Synthesizer,
     Transcriber,
 )
+from nosolear.ports.scoring_stores import ExtractionInputs, ScoringConfigReader
 from nosolear.settings import Settings
 
 DATABASE_NAME = "nosolear.sqlite"
@@ -184,6 +188,31 @@ def get_settings(request: Request) -> Settings:
 
 def get_services(request: Request) -> Services:
     return cast(Services, request.app.state.services)
+
+
+def get_baseline_store(request: Request) -> BaselineStore:
+    engine = cast(Engine, request.app.state.engine)
+    return BaselineRepository(engine)
+
+
+def get_extraction_inputs(request: Request) -> ExtractionInputs:
+    engine = cast(Engine, request.app.state.engine)
+    return ExtractionInputsRepository(engine)
+
+
+def get_scoring_configs(request: Request) -> ScoringConfigReader:
+    engine = cast(Engine, request.app.state.engine)
+    return ScoringConfigRepository(engine, DEFAULT_TAXONOMY)
+
+
+def get_observation_repository(request: Request) -> ObservationRepository:
+    engine = cast(Engine, request.app.state.engine)
+    return ObservationRepository(engine)
+
+
+def get_attempt_repository(request: Request) -> AttemptRepository:
+    engine = cast(Engine, request.app.state.engine)
+    return AttemptRepository(engine)
 
 
 def get_seed_content(request: Request) -> SeedContent | None:
@@ -403,6 +432,16 @@ def build_providers(
     )
 
 
+def build_stand_in_synthesizer(settings: Settings) -> Synthesizer:
+    """The metered, cached synthesizer the `stand-in` command uses, on the configured database.
+    It is built only for that command, so every other command stays free of provider setup."""
+    clock = SystemClock()
+    engine = create_engine_for(settings.database_url)
+    upgrade_to_head(engine)
+    ledger = build_ledger(settings, engine, clock=clock)
+    return build_providers(settings, engine=engine, ledger=ledger, clock=clock).synthesizer
+
+
 def _caps(settings: Settings) -> Caps:
     return Caps.from_hours_chars_tokens(
         azure_audio_hours=settings.cap_azure_audio_hours,
@@ -456,6 +495,7 @@ def build_services(
         pack=lambda: load_active_pack(settings),
         taxonomy=DEFAULT_TAXONOMY,
         clock=clock,
+        baselines=BaselineRepository(engine),
     )
     for step in provider_steps(
         scorer=providers.scorer,

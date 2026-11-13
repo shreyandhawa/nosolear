@@ -103,6 +103,25 @@ make web    # the web app on http://localhost:5173
 
 To try the profile page with synthetic data, run `make seed`, which writes under `data/dev`, then start the API with `make api-dev`. `make test`, `make lint` and `make test-live` run the tests, the linters and the live-provider tests (these last need your keys and are metered).
 
+## First run
+
+The first run calibrates the detectors on your voice, then records a baseline. Start the API (`make api`), then in another terminal:
+
+```bash
+nosolear onboarding                       # the next step, and what it needs
+nosolear calibrate start                  # list the calibration takes to record
+nosolear upload FILE --attempt-id ID      # one WAV per take, from the list
+nosolear calibrate finish                 # score the takes; detectors that pass are enabled
+nosolear baseline start                   # list the baseline items to record
+nosolear upload FILE --attempt-id ID      # one WAV per item
+nosolear baseline complete                # build the ranked report
+nosolear baseline report                  # print it again later
+```
+
+`nosolear calibrate skip` leaves the detectors off. Scores then stay provisional until you calibrate, and calibrating later re-scores your stored baseline with no provider calls.
+
+`nosolear stand-in calibration|baseline` is a testing aid, not part of a real first run: it synthesizes each unrecorded item's stand-in text with Azure TTS and uploads it in place of your voice. It spends TTS characters and Azure audio like any recording, and counts against the same caps.
+
 ## Optional extras
 
 - **Local speech models**: `uv sync --extra local` installs torch, transformers, faster-whisper and the other packages the wav2vec2 phone probe and faster-whisper need. `uv sync --extra apple` adds mlx-whisper on Apple Silicon. Neither is in the base install, and the API imports them only when a local model is first used.

@@ -1,6 +1,193 @@
 {
   "components": {
     "schemas": {
+      "BaselineItemOut": {
+        "properties": {
+          "attempt_id": {
+            "title": "Attempt Id",
+            "type": "string"
+          },
+          "job_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Status"
+          },
+          "max_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Seconds"
+          },
+          "order": {
+            "title": "Order",
+            "type": "integer"
+          },
+          "recorded": {
+            "title": "Recorded",
+            "type": "boolean"
+          },
+          "scripted": {
+            "title": "Scripted",
+            "type": "boolean"
+          },
+          "section": {
+            "title": "Section",
+            "type": "string"
+          },
+          "stand_in_text": {
+            "title": "Stand In Text",
+            "type": "string"
+          },
+          "start_limit_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Limit Seconds"
+          },
+          "step": {
+            "title": "Step",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "attempt_id",
+          "order",
+          "section",
+          "step",
+          "text",
+          "scripted",
+          "max_seconds",
+          "start_limit_seconds",
+          "stand_in_text",
+          "recorded",
+          "job_status"
+        ],
+        "title": "BaselineItemOut",
+        "type": "object"
+      },
+      "BaselineReportOut": {
+        "properties": {
+          "calibration": {
+            "title": "Calibration",
+            "type": "string"
+          },
+          "completed_at": {
+            "format": "date-time",
+            "title": "Completed At",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReportItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "scoring_config_id": {
+            "title": "Scoring Config Id",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "skill_scores": {
+            "items": {
+              "$ref": "#/components/schemas/SkillScoreOut"
+            },
+            "title": "Skill Scores",
+            "type": "array"
+          },
+          "snapshot_id": {
+            "title": "Snapshot Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "completed_at",
+          "calibration",
+          "scoring_config_id",
+          "snapshot_id",
+          "items",
+          "skill_scores",
+          "notes"
+        ],
+        "title": "BaselineReportOut",
+        "type": "object"
+      },
+      "BaselineSessionOut": {
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BaselineItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "protocol_version": {
+            "title": "Protocol Version",
+            "type": "integer"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "protocol_version",
+          "started_at",
+          "completed_at",
+          "items"
+        ],
+        "title": "BaselineSessionOut",
+        "type": "object"
+      },
       "CalibrationItemOut": {
         "properties": {
           "attempt_id": {
@@ -254,6 +441,65 @@
         "title": "CalibrationRunOut",
         "type": "object"
       },
+      "ClipOut": {
+        "properties": {
+          "attempt_id": {
+            "title": "Attempt Id",
+            "type": "string"
+          },
+          "end_ms": {
+            "title": "End Ms",
+            "type": "integer"
+          },
+          "expected": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected"
+          },
+          "produced": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Produced"
+          },
+          "start_ms": {
+            "title": "Start Ms",
+            "type": "integer"
+          },
+          "word": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Word"
+          }
+        },
+        "required": [
+          "attempt_id",
+          "start_ms",
+          "end_ms",
+          "word",
+          "expected",
+          "produced"
+        ],
+        "title": "ClipOut",
+        "type": "object"
+      },
       "ErrorOut": {
         "properties": {
           "code": {
@@ -386,6 +632,79 @@
           "steps"
         ],
         "title": "JobOut",
+        "type": "object"
+      },
+      "OnboardingBlockerOut": {
+        "properties": {
+          "component": {
+            "title": "Component",
+            "type": "string"
+          },
+          "fix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fix"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "component",
+          "status",
+          "fix"
+        ],
+        "title": "OnboardingBlockerOut",
+        "type": "object"
+      },
+      "OnboardingOut": {
+        "properties": {
+          "baseline": {
+            "title": "Baseline",
+            "type": "string"
+          },
+          "baseline_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline Session Id"
+          },
+          "blockers": {
+            "items": {
+              "$ref": "#/components/schemas/OnboardingBlockerOut"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "calibration": {
+            "title": "Calibration",
+            "type": "string"
+          },
+          "step": {
+            "title": "Step",
+            "type": "string"
+          }
+        },
+        "required": [
+          "step",
+          "blockers",
+          "calibration",
+          "baseline",
+          "baseline_session_id"
+        ],
+        "title": "OnboardingOut",
         "type": "object"
       },
       "ProfileEntryOut": {
@@ -589,6 +908,111 @@
           "fix"
         ],
         "title": "ReadinessRowOut",
+        "type": "object"
+      },
+      "ReportItemOut": {
+        "properties": {
+          "ci_high": {
+            "title": "Ci High",
+            "type": "number"
+          },
+          "ci_low": {
+            "title": "Ci Low",
+            "type": "number"
+          },
+          "clips": {
+            "items": {
+              "$ref": "#/components/schemas/ClipOut"
+            },
+            "title": "Clips",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "error_key": {
+            "title": "Error Key",
+            "type": "string"
+          },
+          "impact": {
+            "title": "Impact",
+            "type": "integer"
+          },
+          "n_eff": {
+            "title": "N Eff",
+            "type": "number"
+          },
+          "p_hat": {
+            "title": "P Hat",
+            "type": "number"
+          },
+          "priority": {
+            "title": "Priority",
+            "type": "number"
+          },
+          "provisional": {
+            "title": "Provisional",
+            "type": "boolean"
+          },
+          "skill": {
+            "title": "Skill",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error_key",
+          "description",
+          "skill",
+          "impact",
+          "p_hat",
+          "ci_low",
+          "ci_high",
+          "n_eff",
+          "status",
+          "priority",
+          "provisional",
+          "clips"
+        ],
+        "title": "ReportItemOut",
+        "type": "object"
+      },
+      "SkillScoreOut": {
+        "properties": {
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "scores": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Scores",
+            "type": "object"
+          },
+          "skill": {
+            "title": "Skill",
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "skill",
+          "score",
+          "values",
+          "scores"
+        ],
+        "title": "SkillScoreOut",
         "type": "object"
       },
       "StepOut": {
@@ -812,6 +1236,76 @@
         "summary": "Upload Attempt Recording"
       }
     },
+    "/api/baseline": {
+      "get": {
+        "operationId": "getBaseline",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BaselineSessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Route"
+      },
+      "post": {
+        "operationId": "startBaseline",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BaselineSessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Start Route"
+      }
+    },
+    "/api/baseline/complete": {
+      "post": {
+        "operationId": "completeBaseline",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BaselineReportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Complete Route"
+      }
+    },
+    "/api/baseline/report": {
+      "get": {
+        "operationId": "getBaselineReport",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BaselineReportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Report Route"
+      }
+    },
     "/api/calibration": {
       "get": {
         "operationId": "getCalibration",
@@ -1006,6 +1500,24 @@
           }
         },
         "summary": "Resume Job"
+      }
+    },
+    "/api/onboarding": {
+      "get": {
+        "operationId": "getOnboarding",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Onboarding"
       }
     },
     "/api/profile": {

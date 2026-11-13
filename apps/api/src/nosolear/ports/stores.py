@@ -19,6 +19,14 @@ class ProfileWriter(Protocol):
         """Replace the current entries with no snapshot."""
         ...
 
+    def snapshot(self, profile: Profile, *, session_id: str | None, reason: str) -> str:
+        """Append a snapshot and leave the current entries as they are."""
+        ...
+
+
+class ProfileSnapshotReader(Protocol):
+    def latest_snapshot(self, session_id: str, reason: str) -> tuple[str, Profile] | None: ...
+
 
 class ProfilePackReader(Protocol):
     def latest_pack_id(self) -> str | None: ...
