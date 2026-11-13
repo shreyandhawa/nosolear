@@ -143,6 +143,7 @@ def make_harness(tmp_path: Path) -> Iterator[Callable[..., Harness]]:
         content: SeedContent | None = None,
         rubric: Rubric | None = None,
         readiness: ReadinessReport | None = None,
+        coach: FakeCoach | None = None,
     ) -> Harness:
         data_dir = tmp_path / f"h{next(_next_id)}"
         voice = OracleVoice()
@@ -152,7 +153,7 @@ def make_harness(tmp_path: Path) -> Iterator[Callable[..., Harness]]:
             transcriber=voice.transcriber,
             speech_synthesizer=voice.speech_synthesizer,
             phone_probe=voice.probe if probe else None,
-            coach=FakeCoach([_empty_coach(rubric)]),
+            coach=coach if coach is not None else FakeCoach([_empty_coach(rubric)]),
         )
         app = create_app(
             make_settings(data_dir=data_dir),

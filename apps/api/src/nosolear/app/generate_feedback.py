@@ -199,6 +199,28 @@ def _ask_coach(
     return None, None
 
 
+def read_feedback(
+    *,
+    session_id: str,
+    observations: SessionObservationReader,
+    feedback: FeedbackStore,
+    taxonomy: Taxonomy,
+) -> FeedbackReport | None:
+    """The stored feedback with each skill's state, or None when none was ever generated.
+
+    No coach and no profile: the states come from the session's own observations, and the items
+    are the stored ones. A later profile rebuild therefore cannot change what was shown.
+    """
+    if not feedback.for_session(session_id):
+        return None
+    outcomes = choose_fixes(
+        session_observations=observations.for_session(session_id),
+        profile=_no_profile(taxonomy),
+        taxonomy=taxonomy,
+    )
+    return _report(session_id, outcomes, feedback)
+
+
 def _report(
     session_id: str, outcomes: Sequence[SkillOutcome], feedback: FeedbackStore
 ) -> FeedbackReport:

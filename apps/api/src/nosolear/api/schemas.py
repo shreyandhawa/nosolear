@@ -145,3 +145,41 @@ class DailySessionOut(BaseModel):
     session_id: str
     plan_id: str
     attempts: list[AttemptOut]
+
+
+FeedbackSourceName = Literal["coach", "template"]
+FeedbackStateName = Literal["fix", "clean", "not_scored"]
+FallbackReasonName = Literal[
+    "cap_exceeded", "provider_unavailable", "capability_missing", "invalid_output"
+]
+
+
+class FeedbackItemOut(BaseModel):
+    """One card's text. `source` says whether the coach wrote it or a template did, and a template
+    carries the reason the coach was not used."""
+
+    id: str
+    error_key: str
+    message: str
+    model_text: str | None
+    source: FeedbackSourceName
+    fallback_reason: FallbackReasonName | None
+    attempt_id: str | None
+    start_ms: int | None
+    end_ms: int | None
+    word: str | None
+
+
+class SkillFeedbackOut(BaseModel):
+    """`clean` means the skill was scored with no miss; `not_scored` means it was not scored today.
+    Neither has a card."""
+
+    skill: SkillName
+    state: FeedbackStateName
+    item: FeedbackItemOut | None
+
+
+class FeedbackOut(BaseModel):
+    session_id: str
+    degraded: bool
+    skills: list[SkillFeedbackOut]

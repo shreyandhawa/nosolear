@@ -30,7 +30,7 @@ from uuid import uuid4
 import httpx
 import pytest
 from calibration_fixtures import SMALL_SET, small_content
-from factories import FixedClock, loopback_client, make_settings
+from factories import FixedClock, loopback_client, make_settings, mk
 from fakes import FakeStep
 from pydantic import ValidationError
 from sqlalchemy import Engine, insert, text
@@ -38,7 +38,7 @@ from sqlalchemy import Engine, insert, text
 from nosolear import first_run_cli
 from nosolear.adapters.retry import retry_call
 from nosolear.api.app import create_app
-from nosolear.api.deps import Services
+from nosolear.api.deps import RawPorts, Services
 from nosolear.app.calibrate_job import ControlsStep
 from nosolear.app.run_job import run_job
 from nosolear.app.steps import StepRegistry
@@ -55,6 +55,7 @@ from nosolear.domain.errors import (
     RetryableProviderError,
 )
 from nosolear.domain.jobs import JobKind, JobStatus
+from nosolear.domain.observations import Outcome
 from nosolear.domain.redaction import REDACTED
 from nosolear.domain.speech import SynthesizedClip
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY, Detector
@@ -65,8 +66,8 @@ from nosolear.persistence.db import create_engine_for, upgrade_to_head
 from nosolear.persistence.job_queue import SqliteJobQueue
 from nosolear.persistence.ledger import SqliteUsageLedger
 from nosolear.persistence.models import recordings
-from nosolear.persistence.repositories import AttemptRepository
-from nosolear.ports.providers import PronunciationScorer, Synthesizer
+from nosolear.persistence.repositories import AttemptRepository, ObservationRepository
+from nosolear.ports.providers import Coach, PronunciationScorer, Synthesizer
 from nosolear.settings import REPO_ROOT, Settings, settings_error_summary
 
 PLANTED_AZURE_KEY = "FAKEAZUREKEY" + "0123456789ABCDEFGHIJ"  # 32 chars
@@ -1024,4 +1025,83 @@ def calibrate_job_steps_and_ledger(tmp: Path) -> tuple[str, str]:
     assert finished.status is JobStatus.FAILED, "the planted failure must fail the job"
     return "calibrate job steps_json, ledger, analyses and run_job log", "\n".join(
         [steps_json, repr(ledger), repr(analyses_rows), _marked(cap.text, "step failed")]
+    )
+
+
+class _LeakingExplainCoach:
+    """A raw coach whose explain fails with a planted key in the error text. The feedback step
+    must keep that text out of every body, log and schema."""
+
+    layer = "raw"
+
+    def analyze(self, **_: object) -> object:
+        raise RuntimeError("the analysis is not used by feedback")
+
+    def explain(self, *, error_key: str, quote: str, context: str) -> object:
+        raise ProviderUnavailable(f"the provider rejected {PLANTED_ANTHROPIC_KEY}")
+
+
+def _seed_daily_feedback(engine: Engine) -> str:
+    """A daily session with one miss per skill, so feedback has something to explain."""
+    attempt_id = AttemptRepository(engine).create_attempt(
+        session_kind="daily",
+        step="speak",
+        reference_text=None,
+        scripted=False,
+        now=_SURFACE_NOW,
+    )
+    ObservationRepository(engine).add_many(
+        [
+            mk(
+                "sound.sub.v.w",
+                Outcome.MISS,
+                _SURFACE_NOW,
+                detector=Detector.AZURE_PA,
+                attempt_id=attempt_id,
+                evidence={"word": "very", "start_ms": 100, "end_ms": 300},
+            ),
+            mk(
+                "fluency.filler",
+                Outcome.MISS,
+                _SURFACE_NOW,
+                detector=Detector.ASR_METRICS,
+                attempt_id=attempt_id,
+                evidence={"text": "um I think", "start_ms": 400, "end_ms": 900},
+            ),
+            mk(
+                "clarity.vague",
+                Outcome.MISS,
+                _SURFACE_NOW,
+                detector=Detector.COACH,
+                attempt_id=attempt_id,
+                evidence={"quote": "a lot of things"},
+            ),
+        ]
+    )
+    with engine.connect() as conn:
+        return str(
+            conn.execute(
+                text("SELECT session_id FROM attempts WHERE id = :id"), {"id": attempt_id}
+            ).scalar_one()
+        )
+
+
+@leak_surface
+def feedback_routes_openapi_and_logs(tmp: Path) -> tuple[str, str]:
+    """POST and GET feedback through the real app, with a coach whose error carries a planted key:
+    the two bodies, the OpenAPI schema and the logs the requests wrote."""
+    settings = planted_settings(tmp / "data")
+    app = create_app(
+        settings,
+        start_runner=False,
+        clock=FixedClock(_SURFACE_NOW),
+        raw_ports=RawPorts(coach=cast(Coach, _LeakingExplainCoach())),
+    )
+    with LogCapture(logging.Formatter(FORMAT), "nosolear") as cap, loopback_client(app) as client:
+        session_id = _seed_daily_feedback(cast(Engine, app.state.engine))
+        posted = client.post(f"/api/sessions/{session_id}/feedback")
+        fetched = client.get(f"/api/sessions/{session_id}/feedback")
+    assert posted.status_code == 200, "the planted coach failure must still give a 200 template"
+    return "feedback bodies, openapi and logs", "\n".join(
+        [posted.text, fetched.text, json.dumps(app.openapi()), cap.text]
     )
