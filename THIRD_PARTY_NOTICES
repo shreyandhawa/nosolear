@@ -76,7 +76,10 @@ Generated from `apps/api/uv.lock` and the project environment by
 | annotated-doc | 0.0.6 | MIT |
 | annotated-types | 0.8.0 | MIT |
 | anyio | 4.16.0 | MIT |
+| azure-cognitiveservices-speech | 1.53.0 | Other/Proprietary License |
+| azure-core | 1.41.0 | MIT |
 | certifi | 2026.10.23 | MPL-2.0 |
+| charset-normalizer | 3.5.2 | MIT |
 | click | 8.5.1 | BSD-3-Clause |
 | colorama | 0.4.6 | BSD-3-Clause |
 | fastapi | 0.162.4 | MIT |
@@ -102,6 +105,7 @@ Generated from `apps/api/uv.lock` and the project environment by
 | pyright | 1.1.414 | MIT |
 | pytest | 9.2.0 | MIT |
 | python-dotenv | 1.2.4 | BSD-3-Clause |
+| requests | 2.34.2 | Apache-2.0 |
 | ruff | 0.17.4 | MIT |
 | scipy | 1.18.1 | BSD License |
 | scipy-stubs | 1.18.1.1 | BSD-3-Clause |
@@ -110,6 +114,7 @@ Generated from `apps/api/uv.lock` and the project environment by
 | starlette | 1.10.0 | BSD-3-Clause |
 | typing-extensions | 4.16.0 | PSF-2.0 |
 | typing-inspection | 0.4.5 | MIT |
+| urllib3 | 2.8.0 | MIT |
 | uvicorn | 0.54.0 | BSD-3-Clause |
 <!-- python-dependencies:end -->
 

@@ -1,9 +1,11 @@
 """Storage ports the application layer depends on. Adapters live in `persistence`."""
 
+from datetime import datetime
 from typing import Protocol
 
 from nosolear.domain.observations import Observation
 from nosolear.domain.profile import Profile
+from nosolear.domain.speech import SynthesizedClip
 
 
 class ObservationReader(Protocol):
@@ -20,3 +22,11 @@ class ProfilePackReader(Protocol):
 
 class ProfileStore(ProfileWriter, ProfilePackReader, Protocol):
     """A profile store that can be written and asked which pack its profile was built under."""
+
+
+class TtsCacheStore(Protocol):
+    """One row per clip; the file itself lives at `tts/<hash>.wav` under the data directory."""
+
+    def get(self, hash: str) -> SynthesizedClip | None: ...
+
+    def put(self, clip: SynthesizedClip, *, text: str, created_at: datetime) -> None: ...
