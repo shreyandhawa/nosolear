@@ -8,6 +8,8 @@ in `.calls` as a tuple in signature order, so tests can assert what was sent.
 from __future__ import annotations
 
 import hashlib
+import threading
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -16,6 +18,12 @@ from typing import Any
 
 from wavs import make_wav
 
+from nosolear.adapters.azure_speech import (
+    Cancellation,
+    RecognitionOutcome,
+    RecognitionRequest,
+    SynthesisOutcome,
+)
 from nosolear.domain.budget import Provider
 from nosolear.domain.coach import CoachAnalysis, CoachExplanation, CoachTask
 from nosolear.domain.speech import (
@@ -237,3 +245,69 @@ def wrapper_chain(port: object) -> list[type]:
         if not hasattr(current, "inner"):
             return chain
         current = current.inner
+
+
+def _next[R](queue: list[R]) -> R:
+    return queue.pop(0) if len(queue) > 1 else queue[0]
+
+
+class FakeSpeechBackend:
+    """A `SpeechBackend` without the SDK. Queued outcomes answer in order, the last one repeats;
+    `cancel` answers every call with that cancellation. `calls` keeps what was sent: the SSML
+    string for synthesis, the `RecognitionRequest` for recognition. `max_concurrent` records the
+    most calls in flight at once, so tests can check the one-request-at-a-time rule."""
+
+    version = "fake-sdk"
+
+    def __init__(
+        self,
+        *,
+        synthesis: Sequence[SynthesisOutcome] = (),
+        recognition: Sequence[RecognitionOutcome] = (),
+        cancel: Cancellation | None = None,
+        delay_s: float = 0.0,
+    ) -> None:
+        self._synthesis = list(synthesis)
+        self._recognition = list(recognition)
+        self._cancel = cancel
+        self._delay_s = delay_s
+        self._guard = threading.Lock()
+        self._in_flight = 0
+        self.max_concurrent = 0
+        self.calls: list[Any] = []
+
+    def _enter(self, call: Any) -> None:
+        with self._guard:
+            self.calls.append(call)
+            self._in_flight += 1
+            self.max_concurrent = max(self.max_concurrent, self._in_flight)
+        if self._delay_s:
+            time.sleep(self._delay_s)
+
+    def _leave(self) -> None:
+        with self._guard:
+            self._in_flight -= 1
+
+    def synthesize(self, ssml: str) -> SynthesisOutcome:
+        self._enter(ssml)
+        try:
+            if self._cancel is not None:
+                return SynthesisOutcome(audio=b"", word_boundaries=(), cancellation=self._cancel)
+            if not self._synthesis:
+                return SynthesisOutcome(
+                    audio=make_wav(0.5, freq=None), word_boundaries=(), cancellation=None
+                )
+            return _next(self._synthesis)
+        finally:
+            self._leave()
+
+    def recognize(self, request: RecognitionRequest) -> RecognitionOutcome:
+        self._enter(request)
+        try:
+            if self._cancel is not None:
+                return RecognitionOutcome(results=(), cancellation=self._cancel)
+            if not self._recognition:
+                raise RuntimeError("the fake has no recognition result queued")
+            return _next(self._recognition)
+        finally:
+            self._leave()
