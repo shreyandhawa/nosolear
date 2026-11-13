@@ -25,11 +25,13 @@ from nosolear.persistence.job_queue import SqliteJobQueue
 from nosolear.persistence.ledger import SqliteUsageLedger
 from nosolear.persistence.repositories import (
     AnalysisRepository,
+    AttemptRepository,
     ObservationRepository,
     ProfileRepository,
+    RecordingRepository,
 )
 from nosolear.ports.analyses import AnalysisStore
-from nosolear.ports.audio import AudioStore
+from nosolear.ports.audio import AttemptReader, AudioStore, RecordingStore
 from nosolear.ports.clock import Clock
 from nosolear.ports.environment import EnvironmentProbe
 from nosolear.ports.jobs import JobQueue
@@ -53,8 +55,9 @@ class Services:
     clock: Clock
     observations: ObservationRepository
     profiles: ProfileRepository
-    # Task 9 adds: recordings: RecordingStore; attempts: AttemptReader. 0d replaces paid_ports
-    # with providers: Providers.
+    recordings: RecordingStore
+    attempts: AttemptReader
+    # 0d replaces paid_ports with providers: Providers.
 
 
 def get_profile_repository(request: Request) -> ProfileRepository:
@@ -141,6 +144,8 @@ def build_services(
         clock=clock,
         observations=ObservationRepository(engine),
         profiles=ProfileRepository(engine, DEFAULT_TAXONOMY),
+        recordings=RecordingRepository(engine, clock),
+        attempts=AttemptRepository(engine),
     )
 
 
