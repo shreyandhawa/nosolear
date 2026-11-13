@@ -183,3 +183,9 @@ class FeedbackOut(BaseModel):
     session_id: str
     degraded: bool
     skills: list[SkillFeedbackOut]
+
+
+class CompleteOut(BaseModel):
+    session_id: str
+    completed_at: datetime
+    already_completed: bool

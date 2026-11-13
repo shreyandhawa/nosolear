@@ -279,6 +279,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sessions/{session_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete Session */
+        post: operations["completeDailySession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sessions/{session_id}/feedback": {
         parameters: {
             query?: never;
@@ -466,6 +483,18 @@ export interface components {
             start_ms: number;
             /** Word */
             word: string | null;
+        };
+        /** CompleteOut */
+        CompleteOut: {
+            /** Already Completed */
+            already_completed: boolean;
+            /**
+             * Completed At
+             * Format: date-time
+             */
+            completed_at: string;
+            /** Session Id */
+            session_id: string;
         };
         /** DailySessionOut */
         DailySessionOut: {
@@ -1370,6 +1399,51 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobAcceptedOut"];
+                };
+            };
+        };
+    };
+    completeDailySession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompleteOut"];
+                };
+            };
+            /** @description no such session */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not a daily session, its analysis has not finished, or no pack */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

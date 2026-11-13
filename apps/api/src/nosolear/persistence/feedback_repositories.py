@@ -5,16 +5,22 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from sqlalchemy import Engine, func, select
+from sqlalchemy import Engine, func, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from nosolear.domain.taxonomy import Skill
-from nosolear.persistence.models import attempts, feedback_items, jobs, observations, sessions
+from nosolear.persistence.models import (
+    attempts,
+    feedback_items,
+    jobs,
+    observations,
+    sessions,
+)
 from nosolear.ports.feedback import FallbackReason, FeedbackItem, FeedbackSource
 
 
 class SessionRepository:
-    """`SessionReader`: the kind of a session, or None when there is none."""
+    """`SessionReader` and `SessionCompleter`: a session's kind and its completion."""
 
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
@@ -23,6 +29,17 @@ class SessionRepository:
         stmt = select(sessions.c.kind).where(sessions.c.id == session_id)
         with self._engine.connect() as conn:
             return cast(str | None, conn.execute(stmt).scalar_one_or_none())
+
+    def completed_at(self, session_id: str) -> datetime | None:
+        stmt = select(sessions.c.completed_at).where(sessions.c.id == session_id)
+        with self._engine.connect() as conn:
+            return cast(datetime | None, conn.execute(stmt).scalar_one_or_none())
+
+    def complete(self, session_id: str, at: datetime) -> None:
+        with self._engine.begin() as conn:
+            conn.execute(
+                update(sessions).where(sessions.c.id == session_id).values(completed_at=at)
+            )
 
 
 class SessionJobRepository:

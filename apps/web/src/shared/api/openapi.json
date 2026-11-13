@@ -530,6 +530,30 @@
         "title": "ClipOut",
         "type": "object"
       },
+      "CompleteOut": {
+        "properties": {
+          "already_completed": {
+            "title": "Already Completed",
+            "type": "boolean"
+          },
+          "completed_at": {
+            "format": "date-time",
+            "title": "Completed At",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "completed_at",
+          "already_completed"
+        ],
+        "title": "CompleteOut",
+        "type": "object"
+      },
       "DailySessionOut": {
         "properties": {
           "attempts": {
@@ -2128,6 +2152,51 @@
           }
         },
         "summary": "Start Rescore"
+      }
+    },
+    "/api/sessions/{session_id}/complete": {
+      "post": {
+        "operationId": "completeDailySession",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompleteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "no such session"
+          },
+          "409": {
+            "description": "not a daily session, its analysis has not finished, or no pack"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Session"
       }
     },
     "/api/sessions/{session_id}/feedback": {

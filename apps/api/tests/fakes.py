@@ -606,3 +606,18 @@ class FakeFeedbackStore:
         for item in items:
             held = bucket.get(item.skill)
             bucket[item.skill] = item if held is None else replace(item, id=held.id)
+
+
+class FakeSessionCompleter:
+    """`SessionCompleter` in memory: the completion time of each session, once set."""
+
+    def __init__(self) -> None:
+        self.done: dict[str, datetime] = {}
+        self.calls: list[str] = []
+
+    def completed_at(self, session_id: str) -> datetime | None:
+        return self.done.get(session_id)
+
+    def complete(self, session_id: str, at: datetime) -> None:
+        self.calls.append(session_id)
+        self.done[session_id] = at

@@ -133,6 +133,7 @@ from nosolear.ports.providers import (
     Transcriber,
 )
 from nosolear.ports.scoring_stores import ExtractionInputs, ScoringConfigReader
+from nosolear.ports.stores import SessionCompleter
 from nosolear.settings import Settings
 
 DATABASE_NAME = "nosolear.sqlite"
@@ -251,6 +252,11 @@ def get_recheck_store(request: Request) -> RecheckStore:
 
 
 def get_session_reader(request: Request) -> SessionReader:
+    engine = cast(Engine, request.app.state.engine)
+    return SessionRepository(engine)
+
+
+def get_session_completer(request: Request) -> SessionCompleter:
     engine = cast(Engine, request.app.state.engine)
     return SessionRepository(engine)
 
