@@ -55,12 +55,24 @@ def test_daily_run_through_cli(
     plan_lines = plan_out.splitlines()
     assert plan_lines[0].startswith("sounds: sound.sub.v.w (")
 
+    # A no-miss control on the same calendar day: its sounds focus is the prior's pick, which
+    # must not be the key the misses promoted. Otherwise the check above proves nothing.
+    control = make_harness(start_runner=True, clock=MovableClock(T0 + timedelta(days=1)))
+    capsys.readouterr()
+    assert main(["plan"], client=_api(control)) == 0
+    control_sounds = capsys.readouterr().out.splitlines()[0]
+    assert control_sounds.startswith("sounds: ")
+    assert not control_sounds.startswith("sounds: sound.sub.v.w ("), control_sounds
 
-def test_daily_run_stops_with_the_job_error_when_the_scorer_is_missing(
+
+def test_daily_run_with_a_failed_scorer_still_finishes_the_day(
     make_harness: Callable[..., Harness],
     tmp_path: Path,
     capsys: Any,
 ) -> None:
+    """A failed analysis is not the end of the day: the job error is printed, the sounds card
+    says not scored, the other two cards are given, and the session completes. The exit code
+    still reports the failure."""
     h = make_harness(start_runner=True, coach=_coach(), scorer=NoScorer())  # pyright: ignore[reportArgumentType]
     _speaker(h)
     wav = _record_wav(h, tmp_path)
@@ -68,6 +80,8 @@ def test_daily_run_stops_with_the_job_error_when_the_scorer_is_missing(
 
     assert main(["daily", "run", str(wav)], client=_api(h)) == 1
 
-    out = capsys.readouterr().out
-    assert "failed: score" in out
-    assert not any(line.startswith(CARD_PREFIXES) for line in out.splitlines())
+    lines = capsys.readouterr().out.splitlines()
+    assert any("failed: score" in line for line in lines)
+    assert "sounds: not scored today" in lines
+    assert sum(line.startswith(("on_the_spot:", "articulate:")) for line in lines) == 2
+    assert any(line.startswith("session ") and " completed at " in line for line in lines)

@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 import pytest
-from factories import NOW, mk
+from factories import NOW, entry, mk, profile_of
 from fakes import (
     FakeFeedbackStore,
     FakeProfileReader,
@@ -29,7 +29,9 @@ from nosolear.domain.feedback import (
     SkillState,
 )
 from nosolear.domain.observations import Outcome
+from nosolear.domain.profile import Profile
 from nosolear.domain.speech import RawResult
+from nosolear.domain.status import Status
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY, Detector, Skill
 from nosolear.ports.feedback import FeedbackReport, StoredObservation
 
@@ -124,10 +126,13 @@ def world(
     observations: Sequence[StoredObservation] | None = None,
     unfinished: int = 0,
     kind: str = "daily",
+    unanalysed: bool = False,
 ) -> World:
     return World(
         sessions=FakeSessionReader({SESSION: kind, "base": "baseline"}),
-        jobs=FakeSessionJobStatus({SESSION: unfinished}),
+        jobs=FakeSessionJobStatus(
+            {SESSION: unfinished}, unanalyzed={SESSION} if unanalysed else ()
+        ),
         observations=FakeSessionObservations(
             {SESSION: list(session_observations() if observations is None else observations)}
         ),
@@ -136,13 +141,13 @@ def world(
     )
 
 
-def call(w: World, session_id: str = SESSION) -> FeedbackReport:
+def call(w: World, session_id: str = SESSION, *, profile: Profile | None = None) -> FeedbackReport:
     return generate_feedback(
         session_id=session_id,
         sessions=w.sessions,
         jobs=w.jobs,
         observations=w.observations,
-        profiles=FakeProfileReader(None),
+        profiles=FakeProfileReader(profile),
         feedback=w.feedback,
         coach=w.coach,
         taxonomy=DEFAULT_TAXONOMY,
@@ -171,6 +176,15 @@ def test_one_item_per_skill_with_misses_and_coach_text() -> None:
 
 def test_unfinished_job_refuses_without_calling_coach() -> None:
     w = world([reply("unused")], unfinished=1)
+    with pytest.raises(SessionNotAnalyzed):
+        call(w)
+    assert w.coach.explain_calls == []
+    assert w.feedback.for_session(SESSION) == []
+
+
+def test_session_with_no_finished_analysis_refuses_without_calling_coach() -> None:
+    """No upload means no analysis. The coach is never reached, and no card is stored."""
+    w = world([reply("unused")], unanalysed=True)
     with pytest.raises(SessionNotAnalyzed):
         call(w)
     assert w.coach.explain_calls == []
@@ -250,6 +264,71 @@ def test_second_request_does_not_call_coach_when_all_items_are_coach() -> None:
     second = call(w)
     assert len(w.coach.explain_calls) == 3
     assert second == first
+
+
+WORDY = "clarity.wordy"
+
+
+def _articulate_observations() -> list[StoredObservation]:
+    """Two articulate misses, so the articulate fix is a choice between them."""
+    return [
+        *session_observations(),
+        _stored(4, WORDY, {"quote": "a lot of things"}, detector=Detector.COACH),
+    ]
+
+
+def _articulate_profile(*, favour: str) -> Profile:
+    """The profile ranks `favour` above the other articulate key."""
+    other = CLARITY if favour == WORDY else WORDY
+    return profile_of(
+        [
+            entry(favour, a=9, b=1, status=Status.ACTIVE),
+            entry(other, a=1, b=9, status=Status.ACTIVE),
+        ]
+    )
+
+
+def test_repeat_after_profile_change_keeps_the_stored_fix_and_does_not_recall_coach() -> None:
+    """The fix is chosen once. A newer profile that would rank the other key first changes nothing
+    shown, and the coach item already written is not asked again."""
+    w = world(
+        [reply("Use an article."), reply("Shorter."), reply("Pause.")],
+        observations=_articulate_observations(),
+    )
+    first = call(w, profile=_articulate_profile(favour=WORDY))
+    shown = first.skills[2].item
+    assert shown is not None and shown.error_key == WORDY
+    calls = list(w.coach.explain_calls)
+
+    second = call(w, profile=_articulate_profile(favour=CLARITY))
+
+    assert second.skills[2].item == shown
+    assert w.coach.explain_calls == calls
+
+
+def test_template_upgrade_keeps_its_stored_key_after_a_profile_change() -> None:
+    """A template written while the coach was capped is upgraded for the key it was written
+    for, not the key a newer profile now ranks first. The upgrade happens once."""
+    w = world(
+        [CapExceeded()],
+        observations=_articulate_observations(),
+    )
+    first = call(w, profile=_articulate_profile(favour=WORDY))
+    assert first.skills[2].item is not None
+    assert first.skills[2].item.source == "template"
+    assert first.skills[2].item.error_key == WORDY
+
+    w.coach.outcomes.extend([reply("Pause."), reply("Shorter."), reply("Use an article.")])
+    second = call(w, profile=_articulate_profile(favour=CLARITY))
+
+    assert [key for key, _, _ in w.coach.explain_calls][1:] == [SOUND, FILLER, WORDY]
+    upgraded = second.skills[2].item
+    assert upgraded is not None
+    assert upgraded.source == "coach"
+    assert upgraded.error_key == WORDY
+    third = call(w, profile=_articulate_profile(favour=WORDY))
+    assert third.skills[2].item == upgraded
+    assert len(w.coach.explain_calls) == 4
 
 
 def test_second_request_upgrades_template_items_only() -> None:

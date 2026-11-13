@@ -34,6 +34,8 @@ from factories import FixedClock, loopback_client, make_settings, mk
 from fakes import FakeStep
 from pydantic import ValidationError
 from sqlalchemy import Engine, insert, text
+from starlette.testclient import TestClient
+from wavs import make_wav
 
 from nosolear import first_run_cli
 from nosolear.adapters.retry import retry_call
@@ -65,9 +67,9 @@ from nosolear.persistence.content_repository import ContentRepository
 from nosolear.persistence.db import create_engine_for, upgrade_to_head
 from nosolear.persistence.job_queue import SqliteJobQueue
 from nosolear.persistence.ledger import SqliteUsageLedger
-from nosolear.persistence.models import recordings
+from nosolear.persistence.models import format_utc, recordings
 from nosolear.persistence.repositories import AttemptRepository, ObservationRepository
-from nosolear.ports.providers import Coach, PronunciationScorer, Synthesizer
+from nosolear.ports.providers import Coach, PronunciationScorer, Synthesizer, Transcriber
 from nosolear.settings import REPO_ROOT, Settings, settings_error_summary
 
 PLANTED_AZURE_KEY = "FAKEAZUREKEY" + "0123456789ABCDEFGHIJ"  # 32 chars
@@ -1078,7 +1080,15 @@ def _seed_daily_feedback(engine: Engine) -> str:
             ),
         ]
     )
-    with engine.connect() as conn:
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO jobs (id, kind, attempt_id, status, progress, steps_json, tries, "
+                "created_at, updated_at) VALUES ('job-feedback', 'analyze', :attempt, 'done', "
+                "1.0, '[]', 1, :stamp, :stamp)"
+            ),
+            {"attempt": attempt_id, "stamp": format_utc(_SURFACE_NOW)},
+        )
         return str(
             conn.execute(
                 text("SELECT session_id FROM attempts WHERE id = :id"), {"id": attempt_id}
@@ -1107,3 +1117,97 @@ def feedback_routes_openapi_and_logs(tmp: Path) -> tuple[str, str]:
     return "feedback and completion bodies, openapi and logs", "\n".join(
         [posted.text, fetched.text, completed.text, json.dumps(app.openapi()), cap.text]
     )
+
+
+class _RaisingTranscriber:
+    """A transcriber whose raw error carries a planted key. The analyze job's transcribe step
+    stores only the generic message, so the key must not reach the CLI or the database."""
+
+    def transcribe(self, wav: Path) -> Any:
+        raise RuntimeError(f"transcriber echoed {PLANTED_AZURE_KEY} for {wav.name}")
+
+
+def _api(client: TestClient) -> ApiClient:
+    return ApiClient(client)  # pyright: ignore[reportArgumentType]
+
+
+def _feedback_rows(engine: Engine) -> str:
+    with engine.connect() as conn:
+        return repr(conn.execute(text("SELECT * FROM feedback_items")).all())
+
+
+def _cli(argv: list[str], client: ApiClient) -> str:
+    """Runs `main` against the API client; returns its exit code and everything it printed."""
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        code = main(argv, client=client)
+    return f"exit {code}\n" + out.getvalue() + err.getvalue()
+
+
+@leak_surface
+def daily_feedback_cli_output(tmp: Path) -> tuple[str, str]:
+    """`nosolear daily feedback <session> --generate` through the real CLI. The coach fails with a
+    planted key, so the card is a template. The output and the feedback rows must be clean."""
+    app = create_app(
+        planted_settings(tmp / "data"),
+        start_runner=False,
+        clock=FixedClock(_SURFACE_NOW),
+        raw_ports=RawPorts(coach=cast(Coach, _LeakingExplainCoach())),
+    )
+    with loopback_client(app) as client, pytest.MonkeyPatch.context() as mp:
+        engine = cast(Engine, app.state.engine)
+        _planted_env(mp, tmp / "data")
+        session_id = _seed_daily_feedback(engine)
+        out = _cli(["daily", "feedback", session_id, "--generate"], _api(client))
+        rows = _feedback_rows(engine)
+    assert "[template: provider_unavailable]" in out, out
+    return "daily feedback CLI output and feedback_items rows", out + rows
+
+
+@leak_surface
+def daily_complete_cli_output(tmp: Path) -> tuple[str, str]:
+    """`nosolear daily complete <session>` after feedback was stored from a failing coach. The
+    completion output and the feedback rows it leaves in place must be clean."""
+    app = create_app(
+        planted_settings(tmp / "data"),
+        start_runner=False,
+        clock=FixedClock(_SURFACE_NOW),
+        raw_ports=RawPorts(coach=cast(Coach, _LeakingExplainCoach())),
+    )
+    with loopback_client(app) as client, pytest.MonkeyPatch.context() as mp:
+        engine = cast(Engine, app.state.engine)
+        _planted_env(mp, tmp / "data")
+        session_id = _seed_daily_feedback(engine)
+        assert client.post(f"/api/sessions/{session_id}/feedback").status_code == 200
+        out = _cli(["daily", "complete", session_id], _api(client))
+        rows = _feedback_rows(engine)
+    assert "completed at" in out, out
+    return "daily complete CLI output and feedback_items rows", out + rows
+
+
+@leak_surface
+def daily_run_cli_output(tmp: Path) -> tuple[str, str]:
+    """`nosolear daily run <wav>` through the real CLI and the threaded runner. The transcriber and
+    the scorer fail with planted keys and the coach does too. The job error, the cards, the
+    completion and the feedback rows must all be clean, and the failed analysis must not stop
+    the day (M7)."""
+    wav = tmp / "speech.wav"
+    wav.write_bytes(make_wav(1.0, rate=48000))
+    app = create_app(
+        planted_settings(tmp / "data"),
+        start_runner=True,
+        clock=FixedClock(_SURFACE_NOW),
+        raw_ports=RawPorts(
+            scorer=cast(PronunciationScorer, _RaisingScorer()),
+            transcriber=cast(Transcriber, _RaisingTranscriber()),
+            coach=cast(Coach, _LeakingExplainCoach()),
+        ),
+    )
+    with loopback_client(app) as client, pytest.MonkeyPatch.context() as mp:
+        engine = cast(Engine, app.state.engine)
+        _planted_env(mp, tmp / "data")
+        out = _cli(["daily", "run", str(wav)], _api(client))
+        rows = _feedback_rows(engine)
+    assert "failed: score" in out, out
+    assert "sounds: not scored today" in out, out
+    return "daily run CLI output and feedback_items rows", out + rows

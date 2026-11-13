@@ -15,6 +15,7 @@ from nosolear.ports.audio import (
     NewRecording,
     Recording,
     RecordingExists,
+    SessionAlreadyCompleted,
     UnknownAttempt,
 )
 
@@ -148,3 +149,20 @@ def test_failed_cleanup_does_not_hide_the_original_error() -> None:
             recordings=_FailingRecordings(),
             audio=audio,
         )
+
+
+def test_upload_to_a_completed_session_is_refused_before_anything_is_stored() -> None:
+    setup = _Setup()
+    setup.attempts.close("session-1")
+    upload = _upload(setup.audio, make_wav(1.0, rate=48000))
+
+    with pytest.raises(SessionAlreadyCompleted):
+        upload_recording(
+            attempt_id="attempt-1",
+            upload=upload,
+            attempts=setup.attempts,
+            recordings=setup.recordings,
+            audio=setup.audio,
+        )
+    assert setup.recordings.for_attempt("attempt-1") is None
+    assert setup.jobs.claim_next() is None

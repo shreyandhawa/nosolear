@@ -1,4 +1,4 @@
-"""SQLAlchemy adapters for feedback: the session kind, its unfinished jobs and the stored items."""
+"""SQLAlchemy adapters for feedback: the session kind, whether it is analysed, and stored items."""
 
 import json
 from collections.abc import Sequence
@@ -8,6 +8,7 @@ from typing import Any, cast
 from sqlalchemy import Engine, func, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+from nosolear.domain.jobs import JobKind, JobStatus
 from nosolear.domain.taxonomy import Skill
 from nosolear.persistence.models import (
     attempts,
@@ -35,26 +36,57 @@ class SessionRepository:
         with self._engine.connect() as conn:
             return cast(datetime | None, conn.execute(stmt).scalar_one_or_none())
 
-    def complete(self, session_id: str, at: datetime) -> None:
+    def claim(self, session_id: str, at: datetime) -> bool:
+        """A guarded UPDATE: only the call that finds the session open gets rowcount 1."""
         with self._engine.begin() as conn:
-            conn.execute(
-                update(sessions).where(sessions.c.id == session_id).values(completed_at=at)
+            result = conn.execute(
+                update(sessions)
+                .where(sessions.c.id == session_id, sessions.c.completed_at.is_(None))
+                .values(completed_at=at)
             )
+        return result.rowcount == 1
+
+    def reopen(self, session_id: str, at: datetime) -> bool:
+        """Only the claim made at `at` is undone, so a later completion is never reopened."""
+        with self._engine.begin() as conn:
+            result = conn.execute(
+                update(sessions)
+                .where(sessions.c.id == session_id, sessions.c.completed_at == at)
+                .values(completed_at=None)
+            )
+        return result.rowcount == 1
 
 
 class SessionJobRepository:
-    """`SessionJobStatus`: jobs still queued or running for the session's attempts."""
+    """`SessionJobStatus`: whether the session's recording has been analysed."""
 
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
 
-    def unfinished(self, session_id: str) -> int:
+    def analyzed(self, session_id: str) -> bool:
+        """An analyze job that ended, and nothing still running for the session. Zero jobs, or
+        only a rescore, is not an analysis, so feedback cannot be made from an empty session."""
+        if self._unfinished(session_id) > 0:
+            return False
         stmt = (
             select(func.count())
             .select_from(jobs.join(attempts, jobs.c.attempt_id == attempts.c.id))
             .where(
                 attempts.c.session_id == session_id,
-                jobs.c.status.in_(("queued", "running")),
+                jobs.c.kind == JobKind.ANALYZE.value,
+                jobs.c.status.in_((JobStatus.DONE.value, JobStatus.FAILED.value)),
+            )
+        )
+        with self._engine.connect() as conn:
+            return int(conn.execute(stmt).scalar_one()) > 0
+
+    def _unfinished(self, session_id: str) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(jobs.join(attempts, jobs.c.attempt_id == attempts.c.id))
+            .where(
+                attempts.c.session_id == session_id,
+                jobs.c.status.in_((JobStatus.QUEUED.value, JobStatus.RUNNING.value)),
             )
         )
         with self._engine.connect() as conn:

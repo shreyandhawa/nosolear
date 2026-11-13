@@ -87,8 +87,16 @@ class UnknownAttempt(ValueError):
     """No attempt has this id (HTTP 404)."""
 
 
+class SessionAlreadyCompleted(ValueError):
+    """The attempt's session is closed, so it takes no recording (HTTP 409)."""
+
+
 class AttemptReader(Protocol):
     def exists(self, attempt_id: str) -> bool: ...
+
+    def session_completed(self, attempt_id: str) -> bool:
+        """True when the attempt's session is closed. An unknown attempt is not completed."""
+        ...
 
     def get(self, attempt_id: str) -> AttemptInfo | None:
         """The attempt's step, reference text and scripted flag (read by the analysis steps)."""

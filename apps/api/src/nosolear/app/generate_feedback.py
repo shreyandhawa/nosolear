@@ -3,7 +3,8 @@
 The coach is the only paid call here, so it is reached only after the typed session checks pass
 and only for fixes that have no coach-written item yet. A failed call stores a template with its
 reason instead of nothing. A later request therefore upgrades template items, and it never asks
-the coach again for an item the coach already wrote.
+the coach again for an item the coach already wrote. A skill's stored fix keeps its key, so the
+upgrade explains what was shown and a newer profile cannot change it.
 """
 
 from collections.abc import Sequence
@@ -115,16 +116,19 @@ def generate_feedback(
         raise SessionNotFound("No such session.")
     if kind != "daily":
         raise SessionNotDaily("Feedback is only made for a daily session.")
-    if jobs.unfinished(session_id) > 0:
-        raise SessionNotAnalyzed("The session is still being analyzed.")
+    if not jobs.analyzed(session_id):
+        raise SessionNotAnalyzed("The session has no finished analysis yet.")
 
     profile = profiles.latest() or _no_profile(taxonomy)
+    held = {item.skill: item for item in feedback.for_session(session_id)}
+    # A stored fix keeps its key: a newer profile may rank another key first, but what was shown
+    # stays as it was.
     outcomes = choose_fixes(
         session_observations=observations.for_session(session_id),
         profile=profile,
         taxonomy=taxonomy,
+        pinned={skill: item.error_key for skill, item in held.items()},
     )
-    held = {item.skill: item for item in feedback.for_session(session_id)}
     written: list[FeedbackItem] = []
     # Set once the provider cannot serve this request; every later fix then gets a template with it.
     down: FallbackReason | None = None
@@ -133,11 +137,7 @@ def generate_feedback(
             continue
         fix = outcome.fix
         existing = held.get(outcome.skill)
-        if (
-            existing is not None
-            and existing.source == "coach"
-            and existing.error_key == fix.error_key
-        ):
+        if existing is not None and existing.source == "coach":
             continue
         if down is None:
             reason, down = _ask_coach(session_id, fix, coach, taxonomy, written)

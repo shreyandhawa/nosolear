@@ -9,6 +9,7 @@ from nosolear.ports.audio import (
     NewRecording,
     PendingUpload,
     RecordingStore,
+    SessionAlreadyCompleted,
     UnknownAttempt,
 )
 
@@ -32,6 +33,10 @@ def upload_recording(
     every failure after it was written."""
     if not attempts.exists(attempt_id):
         raise UnknownAttempt("No attempt has this id.")
+    # A closed session is final: its snapshot and re-checks are already taken, so a late recording
+    # would be analysed but never seen by them.
+    if attempts.session_completed(attempt_id):
+        raise SessionAlreadyCompleted("This session is already completed.")
     stored = upload.commit()
     try:
         recording, job = recordings.add_and_enqueue(

@@ -43,15 +43,21 @@ def _attempt(engine: Engine, attempt_id: str, session_id: str) -> None:
         )
 
 
-def _job(engine: Engine, job_id: str, attempt_id: str, status: str) -> None:
+def _job(engine: Engine, job_id: str, attempt_id: str, status: str, kind: str = "analyze") -> None:
     with engine.begin() as conn:
         conn.execute(
             text(
                 "INSERT INTO jobs (id, kind, attempt_id, status, progress, steps_json, tries, "
-                "created_at, updated_at) VALUES (:id, 'analyze', :attempt, :status, 0.0, "
+                "created_at, updated_at) VALUES (:id, :kind, :attempt, :status, 0.0, "
                 "'[]', 0, :stamp, :stamp)"
             ),
-            {"id": job_id, "attempt": attempt_id, "status": status, "stamp": STAMP},
+            {
+                "id": job_id,
+                "kind": kind,
+                "attempt": attempt_id,
+                "status": status,
+                "stamp": STAMP,
+            },
         )
 
 
@@ -141,24 +147,40 @@ def test_check_constraints_reject_bad_source_and_reason(db_engine: Engine) -> No
         raise AssertionError(f"accepted {bad}")
 
 
-def test_unfinished_counts_queued_and_running_jobs_only(db_engine: Engine) -> None:
-    _session(db_engine, "s1")
-    _session(db_engine, "s2")
-    _attempt(db_engine, "a1", "s1")
-    _attempt(db_engine, "a2", "s2")
-    _job(db_engine, "j-queued", "a1", "queued")
-    _job(db_engine, "j-running", "a1", "running")
-    _job(db_engine, "j-done", "a1", "done")
-    _job(db_engine, "j-failed", "a1", "failed")
-    _job(db_engine, "j-other", "a2", "queued")
-    jobs = SessionJobRepository(db_engine)
-    assert jobs.unfinished("s1") == 2
-    assert jobs.unfinished("s2") == 1
-    assert jobs.unfinished("nobody") == 0
-
-
 def test_kind_is_none_for_an_unknown_session(db_engine: Engine) -> None:
     _session(db_engine, "s1", kind="baseline")
     sessions = SessionRepository(db_engine)
     assert sessions.kind("s1") == "baseline"
     assert sessions.kind("missing") is None
+
+
+def test_analyzed_needs_a_finished_analyze_job_and_nothing_running(db_engine: Engine) -> None:
+    """A session is analysed only when its recording's analyze job has ended (done or failed).
+    No attempt, no upload, a queued job, or only a rescore is not an analysis."""
+    cases = {
+        "no-upload": ([], []),
+        "queued": (["a-q"], [("j-q", "a-q", "queued", "analyze")]),
+        "rescore-only": (["a-r"], [("j-r", "a-r", "done", "rescore")]),
+        "done": (["a-d"], [("j-d", "a-d", "done", "analyze")]),
+        "failed": (["a-f"], [("j-f", "a-f", "failed", "analyze")]),
+        "one-still-queued": (
+            ["a-x1", "a-x2"],
+            [("j-x1", "a-x1", "done", "analyze"), ("j-x2", "a-x2", "queued", "analyze")],
+        ),
+    }
+    for session_id, (attempt_ids, jobs_rows) in cases.items():
+        _session(db_engine, session_id)
+        for attempt_id in attempt_ids:
+            _attempt(db_engine, attempt_id, session_id)
+        for job_id, attempt_id, status, kind in jobs_rows:
+            _job(db_engine, job_id, attempt_id, status, kind=kind)
+    jobs = SessionJobRepository(db_engine)
+    got = {session_id: jobs.analyzed(session_id) for session_id in cases}
+    assert got == {
+        "no-upload": False,
+        "queued": False,
+        "rescore-only": False,
+        "done": True,
+        "failed": True,
+        "one-still-queued": False,
+    }

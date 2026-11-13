@@ -204,6 +204,48 @@ def _probe(
     return RecheckProbe(skill=definition.skill, error_key=definition.key, due_at=due_at)
 
 
+def _tiers(
+    *,
+    entries: Sequence[ProfileEntry],
+    skill: Skill,
+    taxonomy: Taxonomy,
+    pack: LanguagePack,
+    owned: frozenset[str],
+    is_scored: Callable[[str], bool],
+    config: SelectionConfig,
+) -> tuple[list[_Candidate], ...]:
+    """The skill's candidate pools, most preferred first (ARCHITECTURE 6.6):
+
+    1. profiled keys in a focus status (active, improving, unknown), scored;
+    2. defined keys the profile does not hold, from the pack's prior;
+    3. the other profiled keys that are not mastered (watching), scored;
+    4. mastered keys, scored.
+
+    Tiers 3 and 4 only matter when the skill has nothing better, so a skill with any scored key
+    always gets a focus, and a mastered key is practised rather than left without a drill.
+    """
+    scored = [e for e in entries if e.definition.skill is skill and is_scored(e.definition.key)]
+    focus = [_from_entry(e) for e in scored if e.status in config.focus_statuses]
+    fallback = _fallback_pool(
+        taxonomy=taxonomy, pack=pack, skill=skill, owned=owned, is_scored=is_scored
+    )
+    watching = [
+        _from_entry(e)
+        for e in scored
+        if e.status not in config.focus_statuses and e.status is not Status.MASTERED
+    ]
+    mastered = [_from_entry(e) for e in scored if e.status is Status.MASTERED]
+    return (focus, fallback, watching, mastered)
+
+
+def _first_pool(tiers: Sequence[Sequence[_Candidate]], avoid: frozenset[str]) -> list[_Candidate]:
+    for tier in tiers:
+        found = [c for c in tier if c.definition.key not in avoid]
+        if found:
+            return found
+    return []
+
+
 def select(
     *,
     profile: Profile | None,
@@ -218,14 +260,16 @@ def select(
 ) -> Selection:
     """The day's focus per skill and its probe.
 
-    Each skill's focus is drawn from its profile candidates (statuses in `focus_statuses`, scored).
-    A skill with none draws from its defined keys the profile does not hold, sampled from the
-    pack's prior, so a fresh or skipped baseline still gets a focus. `history[skill]` holds the
-    previous plans' focus keys, most recent first; the variety rule stops one key winning more
-    than `max_streak` days in a row unless it leads by `streak_ratio`.
+    Each skill's focus is drawn from the first non-empty tier of `_tiers`: profiled keys in a
+    focus status, then the defined keys the profile does not hold (a fresh or skipped baseline),
+    then watching and mastered keys. So a skill with any scored key has exactly one focus.
+    `history[skill]` holds the previous plans' focus keys, most recent first; the variety rule
+    stops one key winning more than `max_streak` days in a row unless it leads by `streak_ratio`.
 
     Unscored keys (drilled but not measured, §6.8) are never focus or probe, so the plan never
-    asks for a change the app cannot see. The probe is taken first and is never also a focus.
+    asks for a change the app cannot see. The probe is taken first and is not a focus while the
+    skill has another candidate; only when the probe is its skill's sole scored key is it the
+    focus, since a skill is never left without one.
     """
     _require_aware(now)
     probe = _probe(profile=profile, rechecks=rechecks, is_scored=is_scored, now=now)
@@ -234,22 +278,16 @@ def select(
     owned = frozenset(e.definition.key for e in entries)
     foci: list[Focus] = []
     for skill in SKILL_ORDER:
-        candidates = [
-            _from_entry(e)
-            for e in entries
-            if e.definition.skill is skill
-            and e.status in config.focus_statuses
-            and e.definition.key not in excluded
-            and is_scored(e.definition.key)
-        ]
-        if not candidates:
-            candidates = [
-                c
-                for c in _fallback_pool(
-                    taxonomy=taxonomy, pack=pack, skill=skill, owned=owned, is_scored=is_scored
-                )
-                if c.definition.key not in excluded
-            ]
+        tiers = _tiers(
+            entries=entries,
+            skill=skill,
+            taxonomy=taxonomy,
+            pack=pack,
+            owned=owned,
+            is_scored=is_scored,
+            config=config,
+        )
+        candidates = _first_pool(tiers, excluded) or _first_pool(tiers, frozenset())
         focus = _focus_for(
             seed=seed,
             candidates=candidates,

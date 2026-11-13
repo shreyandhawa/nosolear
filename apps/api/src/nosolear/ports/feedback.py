@@ -39,8 +39,10 @@ class SessionReader(Protocol):
 
 
 class SessionJobStatus(Protocol):
-    def unfinished(self, session_id: str) -> int:
-        """Queued or running jobs of the session's attempts. A failed job counts as finished."""
+    def analyzed(self, session_id: str) -> bool:
+        """True once the session's recording has been analysed: an analyze job of its attempts has
+        ended (done or failed), and no job of its attempts is still queued or running. A session
+        with no upload, or only a queued job, is not analysed."""
         ...
 
 

@@ -309,7 +309,10 @@ def _complete(api: ApiClient, session_id: str) -> int:
 
 def _daily_run(args: argparse.Namespace, api: ApiClient) -> int:
     """The whole day in one command. Only the feedback step can reach the coach, and only without
-    `--no-generate`. A failed job stops the run with its safe error."""
+    `--no-generate`. A failed analysis prints its safe error and the day still goes on: feedback
+    marks the skill it could not score, and the session completes. The exit code stays 1 so a
+    script sees the failure. A job that did not finish in time stops the run (feedback would be
+    refused anyway)."""
     if not Path(args.wav).is_file():
         print(
             "cannot read the recording: the file does not exist or is not a file", file=sys.stderr
@@ -321,14 +324,15 @@ def _daily_run(args: argparse.Namespace, api: ApiClient) -> int:
     session = _record(body, "session_id", "attempts")
     first = _record(cast(list[object], session["attempts"])[0], "id")
     code = _follow(api, api.upload_wav(str(first["id"]), Path(args.wav)))
-    if code != 0:
+    if code not in (0, 1):
         return code
     session_id = str(session["session_id"])
     path = _session_path(session_id, "feedback")
     body = api.get_json(path) if args.no_generate else api.post_json(path)
     for line in _feedback_lines(body):
         print(line)
-    return _complete(api, session_id)
+    completed = _complete(api, session_id)
+    return code or completed
 
 
 def _plan(args: argparse.Namespace, api: ApiClient) -> int:

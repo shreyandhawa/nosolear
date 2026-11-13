@@ -417,16 +417,25 @@ class FakeProfileStore:
 
 
 class FakeAttemptReader:
-    """Attempts in memory. Tests register the ones they need with `add`."""
+    """Attempts in memory. Tests register the ones they need with `add`, and close a session with
+    `close` to make its attempts refuse new recordings."""
 
     def __init__(self, attempts: Sequence[AttemptInfo] = ()) -> None:
         self._attempts = {a.id: a for a in attempts}
+        self._closed: set[str] = set()
 
     def add(self, attempt: AttemptInfo) -> None:
         self._attempts[attempt.id] = attempt
 
+    def close(self, session_id: str) -> None:
+        self._closed.add(session_id)
+
     def exists(self, attempt_id: str) -> bool:
         return attempt_id in self._attempts
+
+    def session_completed(self, attempt_id: str) -> bool:
+        attempt = self._attempts.get(attempt_id)
+        return attempt is not None and attempt.session_id in self._closed
 
     def get(self, attempt_id: str) -> AttemptInfo | None:
         return self._attempts.get(attempt_id)
@@ -571,13 +580,24 @@ class FakeSessionReader:
 
 
 class FakeSessionJobStatus:
-    """`SessionJobStatus`: the unfinished job count per session, zero when unnamed."""
+    """`SessionJobStatus`: the unfinished job count per session (zero when unnamed). A session is
+    analysed unless it is listed in `unanalyzed`, so a test names only the sessions with no
+    upload."""
 
-    def __init__(self, unfinished: Mapping[str, int] | None = None) -> None:
+    def __init__(
+        self,
+        unfinished: Mapping[str, int] | None = None,
+        *,
+        unanalyzed: Iterable[str] = (),
+    ) -> None:
         self.counts: dict[str, int] = dict(unfinished or {})
+        self.unanalyzed: frozenset[str] = frozenset(unanalyzed)
 
     def unfinished(self, session_id: str) -> int:
         return self.counts.get(session_id, 0)
+
+    def analyzed(self, session_id: str) -> bool:
+        return session_id not in self.unanalyzed and self.unfinished(session_id) == 0
 
 
 class FakeSessionObservations:
@@ -609,7 +629,7 @@ class FakeFeedbackStore:
 
 
 class FakeSessionCompleter:
-    """`SessionCompleter` in memory: the completion time of each session, once set."""
+    """`SessionCompleter` in memory: the completion time of each session, once claimed."""
 
     def __init__(self) -> None:
         self.done: dict[str, datetime] = {}
@@ -618,6 +638,15 @@ class FakeSessionCompleter:
     def completed_at(self, session_id: str) -> datetime | None:
         return self.done.get(session_id)
 
-    def complete(self, session_id: str, at: datetime) -> None:
+    def claim(self, session_id: str, at: datetime) -> bool:
+        if session_id in self.done:
+            return False
         self.calls.append(session_id)
         self.done[session_id] = at
+        return True
+
+    def reopen(self, session_id: str, at: datetime) -> bool:
+        if self.done.get(session_id) != at:
+            return False
+        del self.done[session_id]
+        return True
