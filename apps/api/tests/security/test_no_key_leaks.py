@@ -105,7 +105,7 @@ def test_log_surfaces_fail_when_scrubbing_is_disabled(name, tmp_path, monkeypatc
     monkeypatch.setattr(planted, "_marked", lambda text, *needles: text)
     surface = next(fn for fn in LEAK_SURFACES if fn.__name__ == name)
     where, text = surface(tmp_path)
-    with pytest.raises(AssertionError, match="a planted key .* leaked through"):
+    with pytest.raises(AssertionError, match=r"a planted key .* leaked through"):
         assert_no_planted_key(text, where=where)
 
 

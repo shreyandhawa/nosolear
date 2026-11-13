@@ -18,9 +18,8 @@ describe("vite config", () => {
   });
 
   it("keeps the loopback-only plugin installed", () => {
-    const names = (config.plugins ?? [])
-      .flat(Infinity)
-      .map((plugin) => (plugin as { name?: string } | null | false)?.name);
+    const plugins = (config.plugins ?? []) as unknown[];
+    const names = plugins.flat(Infinity).map((plugin) => (plugin as { name?: string } | null)?.name);
     expect(names).toContain("nosolear:loopback-only");
   });
 

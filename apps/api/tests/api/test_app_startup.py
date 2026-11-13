@@ -34,7 +34,9 @@ def test_lifespan_prepares_data_dir_and_scrubbing(tmp_path: Path) -> None:
     assert stat.S_IMODE((data / "old.txt").stat().st_mode) == 0o600
 
 
-def test_lifespan_logs_a_pack_change_rebuild(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+def test_lifespan_logs_a_pack_change_rebuild(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     data = tmp_path / "data"
     seed = make_settings(data_dir=data, pack="nepali")
     data.mkdir()
@@ -49,9 +51,11 @@ def test_lifespan_logs_a_pack_change_rebuild(tmp_path: Path, caplog: pytest.LogC
         clock=FixedClock(NOW),
     )
     engine.dispose()
-    with caplog.at_level(logging.INFO, logger="nosolear.api.app"):
-        with loopback_client(create_app(make_settings(data_dir=data, pack="neutral"))):
-            pass
+    with (
+        caplog.at_level(logging.INFO, logger="nosolear.api.app"),
+        loopback_client(create_app(make_settings(data_dir=data, pack="neutral"))),
+    ):
+        pass
     messages = [r.getMessage() for r in caplog.records if r.name == "nosolear.api.app"]
     assert any("nepali" in m and "neutral" in m and "rebuilt" in m for m in messages), messages
     assert not any(str(tmp_path) in m for m in messages)
