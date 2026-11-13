@@ -15,6 +15,7 @@ from nosolear.api.guards import RequestGuardMiddleware
 from nosolear.api.job_routes import router as job_router
 from nosolear.api.profile_routes import router as profile_router
 from nosolear.api.readiness_routes import router as readiness_router
+from nosolear.api.recording_routes import router as recording_router
 from nosolear.app.ensure_profile_pack import ensure_profile_pack
 from nosolear.app.steps import StepRegistry
 from nosolear.domain.packs import PackError
@@ -106,6 +107,7 @@ def create_app(
     app.include_router(profile_router)
     app.include_router(readiness_router)
     app.include_router(job_router)
+    app.include_router(recording_router)
     install_error_handlers(app)
 
     @app.get("/api/health")

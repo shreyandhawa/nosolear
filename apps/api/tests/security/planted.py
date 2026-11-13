@@ -25,11 +25,12 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import quote, quote_plus
 
+import httpx
 import pytest
 from factories import FixedClock, loopback_client, make_settings
 from fakes import FakeStep
 from pydantic import ValidationError
-from sqlalchemy import text
+from sqlalchemy import Engine, text
 
 from nosolear.api.app import create_app
 from nosolear.api.deps import Services
@@ -37,6 +38,7 @@ from nosolear.app.run_job import run_job
 from nosolear.app.steps import StepRegistry
 from nosolear.budget.meter import Meter
 from nosolear.cli import main
+from nosolear.cli_client import ApiClient
 from nosolear.domain.budget import Caps, Provider, Unit
 from nosolear.domain.errors import CapExceeded
 from nosolear.domain.jobs import JobKind, JobStatus
@@ -45,6 +47,7 @@ from nosolear.logging_setup import install_secret_scrubbing
 from nosolear.persistence.db import create_engine_for, upgrade_to_head
 from nosolear.persistence.job_queue import SqliteJobQueue
 from nosolear.persistence.ledger import SqliteUsageLedger
+from nosolear.persistence.repositories import AttemptRepository
 from nosolear.settings import REPO_ROOT, Settings, settings_error_summary
 
 PLANTED_AZURE_KEY = "FAKEAZUREKEY" + "0123456789ABCDEFGHIJ"  # 32 chars
@@ -558,3 +561,86 @@ def _import_surface_modules() -> None:
 
 
 _import_surface_modules()
+
+
+@leak_surface
+def upload_error_bodies_and_logs(tmp: Path) -> tuple[str, str]:
+    """The upload's error bodies, and the log lines around them, with the planted keys set.
+
+    Each request carries a planted key in its body where the route could echo it back."""
+    settings = planted_settings(tmp / "data")
+    install_secret_scrubbing(settings.secret_values())
+    app = create_app(settings, start_runner=False)
+    key = PLANTED_AZURE_KEY.encode()
+    url = "/api/attempts/{}/recording"
+    with loopback_client(app) as client, LogCapture(logging.Formatter(FORMAT), "nosolear") as cap:
+        attempt_id = AttemptRepository(cast(Engine, app.state.engine)).create_attempt(
+            session_kind="daily",
+            step="speak",
+            reference_text=None,
+            scripted=False,
+            now=datetime(2026, 11, 13, 9, 0, tzinfo=UTC),
+        )
+        responses = {
+            "bad content type": client.post(
+                url.format(attempt_id), content=key, headers={"Content-Type": "text/plain"}
+            ),
+            "too large": client.post(
+                url.format(attempt_id),
+                content=b"RIFF" + key,
+                headers={
+                    "Content-Type": "audio/wav",
+                    "Content-Length": str(10 * 1024 * 1024 + 1),
+                },
+            ),
+            "bad wav": client.post(
+                url.format(attempt_id),
+                content=b"not a wav " + key,
+                headers={"Content-Type": "audio/wav"},
+            ),
+            "unknown attempt": client.post(
+                url.format("nope"), content=key, headers={"Content-Type": "audio/wav"}
+            ),
+        }
+    parts = [f"{label}: {r.status_code} {r.text}" for label, r in responses.items()]
+    assert [r.status_code for r in responses.values()] == [415, 413, 400, 404]
+    return "upload error bodies and their log lines", "\n".join(parts) + cap.text
+
+
+def _run_cli_with(argv: list[str], handler: Callable[[httpx.Request], httpx.Response]) -> str:
+    """Runs `main` against a fake API; returns its exit code and everything it printed."""
+    api = ApiClient(
+        httpx.Client(base_url="http://127.0.0.1:8000", transport=httpx.MockTransport(handler))
+    )
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        code = main(argv, client=api)
+    return f"exit {code}\n{out.getvalue()}{err.getvalue()}"
+
+
+@leak_surface
+def cli_upload_and_job_output(tmp: Path) -> tuple[str, str]:
+    """`nosolear upload` and `nosolear job` output when the API answers an ErrorOut, and when it
+    answers a 500 whose text holds both planted keys."""
+    wav = tmp / "take.wav"
+    wav.write_bytes(b"RIFF" + PLANTED_AZURE_KEY.encode())
+    error_out = {"code": "unknown_attempt", "message": "No attempt has this id."}
+    leaky_500 = f"traceback with {PLANTED_AZURE_KEY} and {PLANTED_ANTHROPIC_KEY}"
+    with pytest.MonkeyPatch.context() as mp:
+        _planted_env(mp, tmp / "data")
+        parts = [
+            _run_cli_with(
+                ["upload", str(wav), "--attempt-id", "nope"],
+                lambda request: httpx.Response(404, json=error_out),
+            ),
+            _run_cli_with(
+                ["job", "job-1", "--follow"],
+                lambda request: httpx.Response(500, text=leaky_500),
+            ),
+            _run_cli_with(
+                ["upload", str(wav), "--attempt-id", "nope"],
+                lambda request: httpx.Response(500, text=leaky_500),
+            ),
+        ]
+    assert "No attempt has this id." in parts[0], "the ErrorOut message was not printed"
+    return "nosolear upload and job stdout and stderr", "\n".join(parts)

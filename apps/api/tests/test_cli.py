@@ -408,5 +408,5 @@ def test_doctor_without_a_database_keeps_the_caps_only_row(
     monkeypatch.setenv("NOSOLEAR_DATA_DIR", str(data))
     main(["doctor"])
     out = capsys.readouterr().out
-    assert "usage tracking arrives with the ledger" in out
+    assert "no usage recorded yet" in out
     assert not data.exists()

@@ -10,10 +10,13 @@ import threading
 import time
 from collections.abc import Callable
 
-from nosolear.domain.jobs import Job
+from nosolear.domain.jobs import Job, JobStatus, StepRecord, StepState, progress_of
 from nosolear.ports.jobs import JobQueue
 
 logger = logging.getLogger(__name__)
+
+INTERNAL_ERROR = "internal_error"
+INTERNAL_MESSAGE = "The step failed unexpectedly."
 
 THREAD_NAME_PREFIX = "nosolear-job-"
 
@@ -108,7 +111,35 @@ class ThreadPoolJobRunner:
         except Exception as error:
             # Only the exception type: its message may carry input bytes or a key.
             logger.error("job run failed: %s", type(error).__name__)
+            self._fail(job)
         finally:
             with self._cond:
                 self._busy -= 1
                 self._cond.notify_all()
+
+    def _fail(self, job: Job) -> None:
+        """Best effort: leave the job FAILED, so it is resumable, rather than RUNNING forever."""
+        try:
+            current = self._jobs.get(job.id) or job
+            steps = list(current.steps)
+            target = next((i for i, s in enumerate(steps) if s.state is StepState.RUNNING), None)
+            if target is None:
+                target = next(
+                    (i for i, s in enumerate(steps) if s.state is StepState.PENDING), None
+                )
+            if target is not None:
+                steps[target] = StepRecord(
+                    steps[target].name,
+                    StepState.FAILED,
+                    error_code=INTERNAL_ERROR,
+                    message=INTERNAL_MESSAGE,
+                )
+            self._jobs.update(
+                job.id,
+                steps=steps,
+                step=None,
+                progress=progress_of(steps),
+                status=JobStatus.FAILED,
+            )
+        except Exception as error:
+            logger.error("marking the job failed also failed: %s", type(error).__name__)

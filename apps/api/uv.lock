@@ -280,6 +280,7 @@ source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "numpy" },
     { name = "pydantic-settings" },
     { name = "scipy" },
@@ -289,7 +290,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "hypothesis" },
     { name = "pyright" },
     { name = "pytest" },
@@ -301,6 +301,7 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = "==1.20.1" },
     { name = "fastapi", specifier = "==0.162.4" },
+    { name = "httpx", specifier = "==0.28.1" },
     { name = "numpy", specifier = "==2.5.4" },
     { name = "pydantic-settings", specifier = "==2.16.2" },
     { name = "scipy", specifier = "==1.18.1" },
@@ -310,7 +311,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "httpx", specifier = "==0.28.1" },
     { name = "hypothesis", specifier = "==6.170.15" },
     { name = "pyright", specifier = "==1.1.414" },
     { name = "pytest", specifier = "==9.2.0" },

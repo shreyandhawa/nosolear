@@ -21,6 +21,8 @@ jobs:
   api-matrix:
     name: api (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # A hang fails in minutes instead of running until GitHub cancels it.
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -35,7 +37,7 @@ jobs:
       - run: uv run ruff check
       - run: uv run ruff format --check
       - run: uv run pyright
-      - run: uv run pytest -q
+      - run: uv run pytest -q -o faulthandler_timeout=120
 
   # Keeps the required check name `api` stable for branch protection across the matrix legs.
   api:

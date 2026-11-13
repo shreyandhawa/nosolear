@@ -33,7 +33,15 @@ from nosolear.domain.jobs import (
     resume_plan,
 )
 from nosolear.domain.profile import Profile
-from nosolear.ports.audio import PendingUpload, StoredRecording, is_recording_path
+from nosolear.ports.audio import (
+    AttemptInfo,
+    NewRecording,
+    PendingUpload,
+    Recording,
+    RecordingExists,
+    StoredRecording,
+    is_recording_path,
+)
 from nosolear.ports.clock import Clock
 from nosolear.ports.jobs import JobNotResumable, UnknownJob
 from nosolear.ports.ledger import LedgerError, Reservation
@@ -392,3 +400,45 @@ class FakeProfileStore:
 
     def latest_pack_id(self) -> str | None:
         return self.saved[-1][0].pack_id if self.saved else self._seed_pack_id
+
+
+class FakeAttemptReader:
+    """Attempts in memory. Tests register the ones they need with `add`."""
+
+    def __init__(self, attempts: Sequence[AttemptInfo] = ()) -> None:
+        self._attempts = {a.id: a for a in attempts}
+
+    def add(self, attempt: AttemptInfo) -> None:
+        self._attempts[attempt.id] = attempt
+
+    def exists(self, attempt_id: str) -> bool:
+        return attempt_id in self._attempts
+
+    def get(self, attempt_id: str) -> AttemptInfo | None:
+        return self._attempts.get(attempt_id)
+
+
+class FakeRecordingStore:
+    """Recordings in memory, enqueuing into a `FakeJobQueue` like the SQLite transaction does."""
+
+    def __init__(self, jobs: FakeJobQueue) -> None:
+        self._jobs = jobs
+        self._rows: dict[str, Recording] = {}
+
+    def add_and_enqueue(self, new: NewRecording) -> tuple[Recording, Job]:
+        if new.attempt_id in self._rows:
+            raise RecordingExists("This attempt already has a recording.")
+        recording = Recording(
+            id=uuid.uuid4().hex,
+            attempt_id=new.attempt_id,
+            path=new.stored.path,
+            duration_ms=new.stored.duration_ms,
+            sample_rate=new.stored.sample_rate,
+            sha256=new.stored.sha256,
+        )
+        job = self._jobs.enqueue(JobKind.ANALYZE, new.attempt_id)
+        self._rows[new.attempt_id] = recording
+        return recording, job
+
+    def for_attempt(self, attempt_id: str) -> Recording | None:
+        return self._rows.get(attempt_id)

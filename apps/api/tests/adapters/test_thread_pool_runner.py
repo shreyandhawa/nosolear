@@ -5,7 +5,7 @@ from factories import FixedClock
 from fakes import FakeJobQueue
 
 from nosolear.adapters.thread_pool_runner import ThreadPoolJobRunner
-from nosolear.domain.jobs import JobKind
+from nosolear.domain.jobs import JobKind, JobStatus, StepRecord, StepState
 
 T0 = datetime(2026, 11, 13, 9, 0, tzinfo=UTC)
 WAIT = 10.0  # every event wait in this module has a timeout, so a bug fails instead of hanging
@@ -130,3 +130,55 @@ def test_wait_idle_is_false_while_a_job_is_still_running() -> None:
     finally:
         release.set()
         runner.stop(timeout=WAIT)
+
+
+class UpdateFailsOnce(FakeJobQueue):
+    """The first `update` raises, like a database that stayed busy past its timeout."""
+
+    def __init__(self, clock: FixedClock) -> None:
+        super().__init__(clock)
+        self.failures_left = 1
+
+    def update(self, job_id, *, steps, step, progress, status=None):  # type: ignore[no-untyped-def]
+        if self.failures_left:
+            self.failures_left -= 1
+            raise RuntimeError("database is locked")
+        super().update(job_id, steps=steps, step=step, progress=progress, status=status)
+
+
+def test_a_run_that_raises_leaves_the_job_failed_and_resumable() -> None:
+    queue = UpdateFailsOnce(FixedClock(T0))
+    (job_id,) = _enqueue(queue, 1)
+
+    def run(jid: str) -> None:
+        job = queue.get(jid)
+        assert job is not None
+        running = (StepRecord(job.steps[0].name, StepState.RUNNING), *job.steps[1:])
+        queue.failures_left = 0
+        queue.update(jid, steps=running, step=running[0].name, progress=0.0)
+        queue.failures_left = 1
+        queue.update(jid, steps=running, step=None, progress=0.2)  # raises
+
+    runner = ThreadPoolJobRunner(queue, run, workers=1)
+    assert runner.run_pending() == 1
+
+    job = queue.get(job_id)
+    assert job is not None
+    assert job.status is JobStatus.FAILED
+    first = job.steps[0]
+    assert first.state is StepState.FAILED
+    assert first.error_code == "internal_error"
+    assert first.message == "The step failed unexpectedly."
+    assert queue.resume(job_id).status is JobStatus.QUEUED
+
+
+def test_a_failed_failure_update_is_swallowed() -> None:
+    queue = UpdateFailsOnce(FixedClock(T0))
+    queue.failures_left = 2
+    _enqueue(queue, 1)
+
+    def run(jid: str) -> None:
+        raise RuntimeError("boom")
+
+    runner = ThreadPoolJobRunner(queue, run, workers=1)
+    assert runner.run_pending() == 1
