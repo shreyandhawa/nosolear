@@ -1,5 +1,6 @@
 """The calibration session end to end: use cases, the job steps and the calibrated config."""
 
+import threading
 from collections.abc import Callable
 from typing import Any
 
@@ -7,7 +8,7 @@ import pytest
 from calibration_fixtures import small_content
 from factories import NEUTRAL, count
 from harness import Harness
-from sqlalchemy import select
+from sqlalchemy import Engine, select
 
 from nosolear.app import calibrate_job
 from nosolear.app.calibrate import (
@@ -25,8 +26,10 @@ from nosolear.domain.scoring import ConfigKind
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY as TAX
 from nosolear.domain.taxonomy import Detector
 from nosolear.persistence.calibration_repository import CalibrationRepository
-from nosolear.persistence.models import jobs
+from nosolear.persistence.models import calibration_runs, jobs
 from nosolear.persistence.scoring_repository import ScoringConfigRepository
+from nosolear.ports.calibration_store import CalibrationRunRecord
+from nosolear.ports.clock import Clock
 
 AZURE = frozenset({Detector.AZURE_PA})
 
@@ -235,3 +238,60 @@ def test_no_run_gives_no_view(make_harness: Callable[..., Harness]):
     h = make_harness(content=small_content())
     _, store = parts(h)
     assert calibration_view(store=store, content=small_content()) is None
+
+
+class _GatedStore(CalibrationRepository):
+    """Holds each thread at its first `running()` until both threads have read it, so both see
+    no open run and both reach `start`. Later reads pass straight through."""
+
+    def __init__(self, engine: Engine, clock: Clock, gate: threading.Barrier) -> None:
+        super().__init__(engine, clock)
+        self._gate = gate
+        self._local = threading.local()
+
+    def running(self) -> CalibrationRunRecord | None:
+        found = super().running()
+        if not getattr(self._local, "passed", False):
+            self._local.passed = True
+            self._gate.wait()
+        return found
+
+
+def test_concurrent_starts_both_return_the_one_open_run(make_harness: Callable[..., Harness]):
+    h = make_harness(content=small_content())
+    gate = threading.Barrier(2)
+    results: list[object] = []
+    failures: list[BaseException] = []
+    lock = threading.Lock()
+
+    def start_once() -> None:
+        store = _GatedStore(h.engine, h.clock, gate)
+        try:
+            view = start_calibration(
+                store=store,
+                content=small_content(),
+                pack=NEUTRAL,
+                available=AZURE,
+                taxonomy=TAX,
+                clock=h.clock,
+            )
+        except BaseException as exc:
+            with lock:
+                failures.append(exc)
+        else:
+            with lock:
+                results.append(view)
+
+    threads = [threading.Thread(target=start_once) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert failures == [], "a losing start must return the open run, not raise"
+    assert len(results) == 2
+    run_ids = {view.run.id for view in results}  # pyright: ignore[reportAttributeAccessIssue]
+    assert len(run_ids) == 1
+    with h.engine.connect() as conn:
+        runs = conn.execute(select(calibration_runs.c.id)).all()
+    assert len(runs) == 1, "the race must not write a second run"
