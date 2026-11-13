@@ -47,6 +47,7 @@ from nosolear.ports.audio import (
     is_recording_path,
 )
 from nosolear.ports.clock import Clock
+from nosolear.ports.feedback import FeedbackItem, StoredObservation
 from nosolear.ports.jobs import JobNotResumable, UnknownJob
 from nosolear.ports.ledger import LedgerError, Reservation
 from nosolear.ports.plan import AttemptRef, StartedSession, StoredPlan
@@ -557,3 +558,51 @@ class FakeDailySessionStore:
         self.sessions[plan_id] = started
         self.created.append(started)
         return started
+
+
+class FakeSessionReader:
+    """`SessionReader`: the kind of each known session; anything else is None."""
+
+    def __init__(self, kinds: Mapping[str, str] | None = None) -> None:
+        self.kinds: dict[str, str] = dict(kinds or {})
+
+    def kind(self, session_id: str) -> str | None:
+        return self.kinds.get(session_id)
+
+
+class FakeSessionJobStatus:
+    """`SessionJobStatus`: the unfinished job count per session, zero when unnamed."""
+
+    def __init__(self, unfinished: Mapping[str, int] | None = None) -> None:
+        self.counts: dict[str, int] = dict(unfinished or {})
+
+    def unfinished(self, session_id: str) -> int:
+        return self.counts.get(session_id, 0)
+
+
+class FakeSessionObservations:
+    """`SessionObservationReader`: the stored observations of each session."""
+
+    def __init__(self, by_session: Mapping[str, Sequence[StoredObservation]] | None = None) -> None:
+        self.by_session: dict[str, list[StoredObservation]] = {
+            key: list(value) for key, value in (by_session or {}).items()
+        }
+
+    def for_session(self, session_id: str) -> list[StoredObservation]:
+        return list(self.by_session.get(session_id, []))
+
+
+class FakeFeedbackStore:
+    """`FeedbackStore` in memory: one item per (session, skill). An upsert keeps the first id."""
+
+    def __init__(self) -> None:
+        self.items: dict[str, dict[Skill, FeedbackItem]] = {}
+
+    def for_session(self, session_id: str) -> list[FeedbackItem]:
+        return list(self.items.get(session_id, {}).values())
+
+    def upsert(self, session_id: str, items: Sequence[FeedbackItem]) -> None:
+        bucket = self.items.setdefault(session_id, {})
+        for item in items:
+            held = bucket.get(item.skill)
+            bucket[item.skill] = item if held is None else replace(item, id=held.id)
