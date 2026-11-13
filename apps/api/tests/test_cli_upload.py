@@ -278,3 +278,46 @@ def test_upload_new_attempt_creates_the_attempt_in_the_data_dir(
         attempt_id = first_line.removeprefix("attempt ")
         assert AttemptRepository(engine).exists(attempt_id)
     assert code == 0
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"status": "running"},
+        {"status": 5, "progress": 0.1, "steps": []},
+        {"status": "running", "progress": "high", "steps": []},
+        {"status": "running", "progress": 0.1, "steps": ["x"]},
+        {"status": "running", "progress": 0.1, "steps": [{"name": "score"}]},
+        {
+            "status": "failed",
+            "progress": 1.0,
+            "steps": [{"name": "a", "state": "failed", "error_code": 7, "message": "secret"}],
+        },
+        ["not", "a", "job"],
+    ],
+)
+def test_a_2xx_body_that_is_not_a_job_gives_the_generic_message(
+    body: object, capsys: pytest.CaptureFixture[str]
+) -> None:
+    client = _client(lambda request: httpx.Response(200, json=body))
+    with pytest.raises(CliError) as info:
+        client.get_job(JOB)
+    assert str(info.value) == GENERIC_ERROR
+    with pytest.raises(CliError) as info:
+        client.follow_job(JOB, sleep=lambda _: None)
+    assert str(info.value) == GENERIC_ERROR
+
+    assert main(["job", JOB], client=client) == 2
+    assert main(["job", JOB, "--follow"], client=client) == 2
+    captured = capsys.readouterr()
+    assert GENERIC_ERROR in captured.err
+    assert "secret" not in captured.out + captured.err
+
+
+def test_follow_prints_a_skipped_steps_reason() -> None:
+    body = _job("done", {name: "done" for name in STEP_NAMES}, 1.0)
+    body["steps"][2]["state"] = "skipped"
+    body["steps"][2]["message"] = "not_available"
+    out = StringIO()
+    _client(lambda request: httpx.Response(200, json=body)).follow_job(JOB, out=out)
+    assert "probe        skipped  100% (not_available)" in out.getvalue().splitlines()

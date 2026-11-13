@@ -29,9 +29,13 @@ class CliTimeout(CliError):
     """`follow_job` waited longer than its limit."""
 
 
-def progress_line(name: str, state: str, progress: float) -> str:
-    """`score        running  20%`: the step, its state, and the job's settled share."""
-    return f"{name:<12} {state:<8} {round(progress * 100):>2}%"
+def progress_line(name: str, state: str, progress: float, message: str | None = None) -> str:
+    """`score        running  20%`: the step, its state, and the job's settled share.
+
+    A skipped step also shows its reason: `probe        skipped  40% (not_available)`.
+    """
+    line = f"{name:<12} {state:<8} {round(progress * 100):>2}%"
+    return f"{line} ({message})" if state == "skipped" and message else line
 
 
 def _error_message(response: httpx.Response) -> str:
@@ -52,6 +56,32 @@ def _as_dict(body: object) -> dict[str, Any]:
     if not isinstance(body, dict):
         raise CliError(GENERIC_ERROR)
     return cast("dict[str, Any]", body)
+
+
+def _is_number(value: object) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
+def _as_job(body: object) -> dict[str, Any]:
+    """A `JobOut`-shaped body, else the generic error: a 2xx body is not trusted to be a job."""
+    job = _as_dict(body)
+    steps = job.get("steps")
+    if (
+        not isinstance(job.get("status"), str)
+        or not _is_number(job.get("progress"))
+        or not isinstance(steps, list)
+    ):
+        raise CliError(GENERIC_ERROR)
+    for step in cast("list[object]", steps):
+        if not isinstance(step, dict):
+            raise CliError(GENERIC_ERROR)
+        fields = cast("dict[str, object]", step)
+        if not isinstance(fields.get("name"), str) or not isinstance(fields.get("state"), str):
+            raise CliError(GENERIC_ERROR)
+        for optional in ("error_code", "message"):
+            if not isinstance(fields.get(optional), str | None):
+                raise CliError(GENERIC_ERROR)
+    return job
 
 
 class ApiClient:
@@ -102,13 +132,16 @@ class ApiClient:
             )
         except OSError:
             raise CliError(READ_FAILED) from None
-        return str(_as_dict(body)["job_id"])
+        job_id = _as_dict(body).get("job_id")
+        if not isinstance(job_id, str):
+            raise CliError(GENERIC_ERROR)
+        return job_id
 
     def get_job(self, job_id: str) -> dict[str, Any]:
-        return _as_dict(self.get_json(f"/api/jobs/{quote(job_id, safe='')}"))
+        return _as_job(self.get_json(f"/api/jobs/{quote(job_id, safe='')}"))
 
     def resume_job(self, job_id: str) -> dict[str, Any]:
-        return _as_dict(self.post_json(f"/api/jobs/{quote(job_id, safe='')}/resume"))
+        return _as_job(self.post_json(f"/api/jobs/{quote(job_id, safe='')}/resume"))
 
     def follow_job(
         self,
@@ -133,7 +166,10 @@ class ApiClient:
                 if state != "pending" and seen.get(name) != state:
                     seen[name] = state
                     if out is not None:
-                        print(progress_line(name, state, float(job["progress"])), file=out)
+                        print(
+                            progress_line(name, state, float(job["progress"]), step.get("message")),
+                            file=out,
+                        )
             if job["status"] in TERMINAL:
                 return job
             if waited >= timeout_s:
