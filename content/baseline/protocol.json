@@ -1,0 +1,400 @@
+{
+  "version": 1,
+  "stress_pairs": [
+    "record",
+    "present"
+  ],
+  "sections": [
+    {
+      "name": "read_aloud",
+      "step": "read_aloud",
+      "items": [
+        {
+          "id": "ba-ra-01",
+          "kind": "passage_sentence",
+          "text": "Last summer we rented a small cabin by a quiet lake.",
+          "tokens": {
+            "sound.sub.ʌ.ɑ": [
+              "summer"
+            ],
+            "sound.ins.epenthesis_sC": [
+              "small"
+            ],
+            "sound.sub.æ.ɛ": [
+              "cabin"
+            ],
+            "sound.sub.w.v": [
+              "quiet"
+            ],
+            "sound.low.ɹ": [
+              "rented"
+            ]
+          }
+        },
+        {
+          "id": "ba-ra-02",
+          "kind": "passage_sentence",
+          "text": "Every morning we walked along the water and watched the birds.",
+          "tokens": {
+            "sound.sub.w.v": [
+              "walked",
+              "water"
+            ],
+            "sound.low.ɝ": [
+              "birds"
+            ],
+            "sound.low.ɹ": [
+              "morning"
+            ]
+          }
+        },
+        {
+          "id": "ba-ra-03",
+          "kind": "passage_sentence",
+          "text": "The weather was fine, so we took a long walk by the river.",
+          "tokens": {
+            "sound.sub.ð.d": [
+              "weather"
+            ],
+            "sound.low.ð": [
+              "weather"
+            ],
+            "sound.sub.z.s": [
+              "was"
+            ],
+            "sound.sub.f.p": [
+              "fine"
+            ],
+            "sound.sub.v.w": [
+              "river"
+            ],
+            "sound.low.ɹ": [
+              "river"
+            ]
+          }
+        },
+        {
+          "id": "ba-ra-04",
+          "kind": "passage_sentence",
+          "text": "Two days later the guide said the lake was too cold to swim.",
+          "tokens": {
+            "sound.sub.z.s": [
+              "days"
+            ],
+            "sound.low.d": [
+              "days",
+              "guide"
+            ],
+            "sound.sub.s.ʃ": [
+              "said"
+            ],
+            "sound.low.t": [
+              "too"
+            ]
+          }
+        },
+        {
+          "id": "ba-ra-05",
+          "kind": "passage_sentence",
+          "text": "On Thursday we visited a village with a sunny square and a shop.",
+          "tokens": {
+            "sound.sub.θ.t": [
+              "Thursday"
+            ],
+            "sound.low.θ": [
+              "Thursday"
+            ],
+            "sound.sub.v.w": [
+              "visited",
+              "village"
+            ],
+            "sound.sub.ɪ.i": [
+              "with",
+              "visited"
+            ],
+            "sound.sub.ʃ.s": [
+              "shop"
+            ],
+            "sound.low.ð": [
+              "with"
+            ]
+          }
+        },
+        {
+          "id": "ba-ra-06",
+          "kind": "passage_sentence",
+          "text": "She said the shore was short, so she sat and had some fresh bread.",
+          "tokens": {
+            "sound.sub.ʃ.s": [
+              "she",
+              "shore",
+              "short"
+            ],
+            "sound.sub.s.ʃ": [
+              "said",
+              "so"
+            ],
+            "sound.sub.æ.ɛ": [
+              "sat"
+            ],
+            "sound.sub.f.p": [
+              "fresh"
+            ],
+            "sound.low.d": [
+              "bread"
+            ],
+            "sound.low.t": [
+              "sat",
+              "short"
+            ],
+            "sound.sub.i.ɪ": [
+              "she"
+            ]
+          }
+        },
+        {
+          "id": "ba-ra-07",
+          "kind": "passage_sentence",
+          "text": "The first afternoon was a real pleasure, and the usual sun felt like a treasure.",
+          "tokens": {
+            "sound.low.ɝ": [
+              "first"
+            ],
+            "sound.sub.ʒ.dʒ": [
+              "pleasure",
+              "usual",
+              "treasure"
+            ],
+            "sound.sub.ʌ.ɑ": [
+              "sun"
+            ],
+            "sound.sub.f.p": [
+              "afternoon"
+            ]
+          }
+        },
+        {
+          "id": "ba-ra-08",
+          "kind": "passage_sentence",
+          "text": "We sat on the beach, and a neighbor told a funny story about a sister.",
+          "tokens": {
+            "sound.sub.i.ɪ": [
+              "beach"
+            ],
+            "sound.sub.ʌ.ɑ": [
+              "funny"
+            ],
+            "sound.sub.s.ʃ": [
+              "sister"
+            ],
+            "sound.sub.æ.ɛ": [
+              "sat"
+            ],
+            "sound.low.d": [
+              "told"
+            ],
+            "sound.low.ɝ": [
+              "sister"
+            ],
+            "sound.sub.ɪ.i": [
+              "sister"
+            ]
+          }
+        },
+        {
+          "id": "ba-ra-09",
+          "kind": "passage_sentence",
+          "text": "Before dinner we walked down the street to speak about the sport.",
+          "tokens": {
+            "sound.ins.epenthesis_sC": [
+              "street",
+              "speak",
+              "sport"
+            ],
+            "sound.low.d": [
+              "dinner",
+              "down"
+            ],
+            "sound.low.t": [
+              "to"
+            ],
+            "sound.sub.w.v": [
+              "walked"
+            ]
+          }
+        },
+        {
+          "id": "ba-ra-10",
+          "kind": "passage_sentence",
+          "text": "Many people think the zoo and the zone are busy, but the zoo is easy.",
+          "tokens": {
+            "sound.sub.θ.t": [
+              "think"
+            ],
+            "sound.low.θ": [
+              "think"
+            ],
+            "sound.sub.z.dʒ": [
+              "zoo",
+              "zone",
+              "zoo"
+            ],
+            "sound.sub.z.s": [
+              "busy",
+              "is",
+              "easy"
+            ]
+          }
+        },
+        {
+          "id": "ba-ra-11",
+          "kind": "passage_sentence",
+          "text": "They said the other thing together, and the sea was calm and bright.",
+          "tokens": {
+            "sound.sub.ð.d": [
+              "they",
+              "other",
+              "together"
+            ],
+            "sound.low.ð": [
+              "they",
+              "other",
+              "together"
+            ],
+            "sound.sub.θ.t": [
+              "thing"
+            ],
+            "sound.low.θ": [
+              "thing"
+            ],
+            "sound.sub.s.ʃ": [
+              "sea"
+            ],
+            "sound.sub.w.v": [
+              "was"
+            ],
+            "sound.sub.i.ɪ": [
+              "sea"
+            ]
+          }
+        },
+        {
+          "id": "ba-ra-12",
+          "kind": "passage_sentence",
+          "text": "I keep a written record, and I present my notes at the end.",
+          "tokens": {
+            "sound.sub.ɪ.i": [
+              "written"
+            ],
+            "sound.low.ɹ": [
+              "record",
+              "present",
+              "written"
+            ]
+          }
+        },
+        {
+          "id": "ba-ra-13",
+          "kind": "passage_sentence",
+          "text": "Please record and present your answer.",
+          "tokens": {
+            "sound.low.ɹ": [
+              "record",
+              "present"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "word_list",
+      "step": "word_list",
+      "items": [
+        {
+          "id": "ba-wl-01",
+          "kind": "minimal_pair",
+          "text": "vest west vine wine fan"
+        },
+        {
+          "id": "ba-wl-02",
+          "kind": "minimal_pair",
+          "text": "pan sip ship sea she"
+        },
+        {
+          "id": "ba-wl-03",
+          "kind": "minimal_pair",
+          "text": "think thin this then zest"
+        },
+        {
+          "id": "ba-wl-04",
+          "kind": "minimal_pair",
+          "text": "jest zoo school speak street"
+        }
+      ]
+    },
+    {
+      "name": "free_talk",
+      "step": "speak",
+      "max_seconds": 90,
+      "items": [
+        {
+          "id": "ba-ft-01",
+          "kind": "prompt",
+          "text": "Describe a place you love to visit and why.",
+          "stand_in": "I love visiting the coast near my town. The sea air is fresh, and the beach is quiet in the morning. I go there to relax and to think."
+        }
+      ]
+    },
+    {
+      "name": "rapid_questions",
+      "step": "quick_answer",
+      "max_seconds": 15,
+      "start_limit_seconds": 5,
+      "items": [
+        {
+          "id": "ba-rq-01",
+          "kind": "quick_question",
+          "text": "What color is the sky on a clear day?",
+          "stand_in": "The sky is usually blue on a clear day."
+        },
+        {
+          "id": "ba-rq-02",
+          "kind": "quick_question",
+          "text": "How many days are in a normal week?",
+          "stand_in": "There are seven days in a normal week."
+        },
+        {
+          "id": "ba-rq-03",
+          "kind": "quick_question",
+          "text": "Which season comes after winter in most places?",
+          "stand_in": "Spring usually comes after winter."
+        },
+        {
+          "id": "ba-rq-04",
+          "kind": "quick_question",
+          "text": "What do you call a place where books are kept?",
+          "stand_in": "A library is where books are kept."
+        },
+        {
+          "id": "ba-rq-05",
+          "kind": "quick_question",
+          "text": "What is the capital city of France?",
+          "stand_in": "Paris is the capital city of France."
+        }
+      ]
+    },
+    {
+      "name": "articulate",
+      "step": "articulate",
+      "max_seconds": 60,
+      "items": [
+        {
+          "id": "ba-ar-01",
+          "kind": "prompt",
+          "text": "Should cities build more bike lanes? Give one point, one reason and one example.",
+          "stand_in": "Yes, cities should build more bike lanes. Safe lanes cut traffic and pollution. In Copenhagen, many people now ride to work every day."
+        }
+      ]
+    }
+  ]
+}

@@ -13,15 +13,15 @@ from nosolear.settings import CONTENT_DIR
 SPECS = load_calibration_specs(CONTENT_DIR / "calibration" / "items.toml")
 
 
-def test_shipped_specs_build_78_unique_items():
+def test_shipped_specs_build_150_unique_items():
     items = build_calibration_items(SPECS)
-    assert len(items) == 78
-    assert len({i.id for i in items}) == 78
+    assert len(items) == 150
+    assert len({i.id for i in items}) == 150
 
 
-def test_ten_specs_and_26_words():
+def test_ten_specs_and_50_words_five_per_key():
     assert len(SPECS) == 10
-    assert sum(len(s.words) for s in SPECS) == 26
+    assert [len(s.words) for s in SPECS] == [5] * 10
 
 
 def test_ids_flags_and_instructions_for_vest():
@@ -71,23 +71,115 @@ def test_parse_rejects_malformed():
 
 # The shipped table, typed out independently of items.toml so a typo there fails.
 EXPECTED_SPECS = (
-    ("sound.sub.v.w", "W instead of V", (("vest", "west"), ("very", "werry"), ("van", "wan"))),
-    ("sound.sub.w.v", "V instead of W", (("west", "vest"), ("wine", "vine"))),
-    ("sound.sub.f.p", "P instead of F", (("fan", "pan"), ("fine", "pine"), ("coffee", "coppee"))),
+    (
+        "sound.sub.v.w",
+        "W instead of V",
+        (
+            ("vest", "west"),
+            ("very", "werry"),
+            ("van", "wan"),
+            ("vine", "wine"),
+            ("veil", "wail"),
+        ),
+    ),
+    (
+        "sound.sub.w.v",
+        "V instead of W",
+        (
+            ("west", "vest"),
+            ("wine", "vine"),
+            ("wet", "vet"),
+            ("wail", "veil"),
+            ("worse", "verse"),
+        ),
+    ),
+    (
+        "sound.sub.f.p",
+        "P instead of F",
+        (
+            ("fan", "pan"),
+            ("fine", "pine"),
+            ("coffee", "coppee"),
+            ("fast", "past"),
+            ("feel", "peel"),
+        ),
+    ),
     (
         "sound.sub.θ.t",
         "T instead of TH",
-        (("think", "tink"), ("three", "tree"), ("thanks", "tanks")),
+        (
+            ("think", "tink"),
+            ("three", "tree"),
+            ("thanks", "tanks"),
+            ("thin", "tin"),
+            ("thought", "taught"),
+        ),
     ),
-    ("sound.sub.ð.d", "D instead of the voiced TH", (("this", "dis"), ("they", "day"))),
-    ("sound.sub.ʃ.s", "S instead of SH", (("ship", "sip"), ("she", "see"), ("shop", "sop"))),
-    ("sound.sub.s.ʃ", "SH instead of S", (("sip", "ship"), ("see", "she"))),
-    ("sound.sub.z.dʒ", "a J sound instead of Z", (("zoo", "joo"), ("zero", "jero"))),
-    ("sound.sub.z.s", "S instead of Z", (("zip", "sip"), ("buzz", "buss"))),
+    (
+        "sound.sub.ð.d",
+        "D instead of the voiced TH",
+        (
+            ("this", "dis"),
+            ("they", "day"),
+            ("then", "den"),
+            ("those", "doze"),
+            ("there", "dare"),
+        ),
+    ),
+    (
+        "sound.sub.ʃ.s",
+        "S instead of SH",
+        (
+            ("ship", "sip"),
+            ("she", "see"),
+            ("shop", "sop"),
+            ("shell", "sell"),
+            ("shine", "sign"),
+        ),
+    ),
+    (
+        "sound.sub.s.ʃ",
+        "SH instead of S",
+        (
+            ("sip", "ship"),
+            ("see", "she"),
+            ("sell", "shell"),
+            ("sign", "shine"),
+            ("seat", "sheet"),
+        ),
+    ),
+    (
+        "sound.sub.z.dʒ",
+        "a J sound instead of Z",
+        (
+            ("zoo", "joo"),
+            ("zero", "jero"),
+            ("zest", "jest"),
+            ("zone", "jone"),
+            ("zeal", "jeal"),
+        ),
+    ),
+    (
+        "sound.sub.z.s",
+        "S instead of Z",
+        (
+            ("zip", "sip"),
+            ("buzz", "buss"),
+            ("prize", "price"),
+            ("eyes", "ice"),
+            ("rise", "rice"),
+        ),
+    ),
     (
         "sound.ins.epenthesis_sC",
         "a vowel before it",
-        (("school", "ischool"), ("speak", "ispeak"), ("street", "istreet"), ("sport", "isport")),
+        (
+            ("school", "ischool"),
+            ("speak", "ispeak"),
+            ("street", "istreet"),
+            ("sport", "isport"),
+            ("smile", "ismile"),
+        ),
     ),
 )
 
@@ -114,7 +206,7 @@ def test_shipped_specs_match_the_pinned_table():
     assert tuple((s.error_key, s.description, s.words) for s in SPECS) == EXPECTED_SPECS
 
 
-def test_shipped_items_match_the_pinned_78_id_instruction_pairs():
+def test_shipped_items_match_the_pinned_150_id_instruction_pairs():
     pairs = [(i.id, i.instruction) for i in build_calibration_items(SPECS)]
-    assert len(pairs) == 78
+    assert len(pairs) == 150
     assert pairs == _expected_pairs()

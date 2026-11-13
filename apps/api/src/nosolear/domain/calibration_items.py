@@ -2,12 +2,50 @@
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import cast
+from typing import Protocol, cast
 
 from nosolear.domain.taxonomy import Taxonomy
 
 EPENTHESIS_KEY = "sound.ins.epenthesis_sC"
 DELIBERATE_TAKES = (1, 2)
+
+
+class CalibrationWordLike(Protocol):
+    """One calibration word and its copy: what `calibration_instruction` reads."""
+
+    @property
+    def error_key(self) -> str: ...
+
+    @property
+    def word(self) -> str: ...
+
+    @property
+    def respelling(self) -> str: ...
+
+    @property
+    def description(self) -> str: ...
+
+
+@dataclass(frozen=True, slots=True)
+class _Pair:
+    error_key: str
+    word: str
+    respelling: str
+    description: str
+
+
+def calibration_instruction(
+    item: CalibrationWordLike, *, deliberate: bool, take: int, takes: int
+) -> str:
+    """The on-screen copy for one take. The shipped and seeded calibration words share it."""
+    word = item.word
+    if not deliberate:
+        return f'Say "{word}" as correctly as possible, in General American.'
+    if item.error_key == EPENTHESIS_KEY:
+        text = f'Say "{word}" with {item.description}: "{item.respelling}"'
+    else:
+        text = f'Say "{word}" with {item.description}: sounds like "{item.respelling}"'
+    return f"{text} (take {take} of {takes})"
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,27 +121,26 @@ def build_calibration_items(specs: Sequence[CalibrationSpec]) -> tuple[Calibrati
     items: list[CalibrationItem] = []
     for spec in specs:
         for word, respelling in spec.words:
+            pair = _Pair(spec.error_key, word, respelling, spec.description)
             items.append(
                 CalibrationItem(
                     f"{word}__correct",
                     word,
                     spec.error_key,
                     False,
-                    f'Say "{word}" as correctly as possible, in General American.',
+                    calibration_instruction(pair, deliberate=False, take=0, takes=0),
                 )
             )
             for take in DELIBERATE_TAKES:
-                if spec.error_key == EPENTHESIS_KEY:
-                    text = f'Say "{word}" with {spec.description}: "{respelling}"'
-                else:
-                    text = f'Say "{word}" with {spec.description}: sounds like "{respelling}"'
                 items.append(
                     CalibrationItem(
                         f"{word}__err{take}",
                         word,
                         spec.error_key,
                         True,
-                        f"{text} (take {take} of {len(DELIBERATE_TAKES)})",
+                        calibration_instruction(
+                            pair, deliberate=True, take=take, takes=len(DELIBERATE_TAKES)
+                        ),
                     )
                 )
     return tuple(items)

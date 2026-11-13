@@ -20,11 +20,14 @@ from oracle_voice import OracleVoice
 from provider_fakes import FakeCoach
 from sqlalchemy import Engine
 
+from nosolear.adapters.azure_pa import ADAPTER_VERSION as AZURE_PA_VERSION
 from nosolear.api.app import create_app
 from nosolear.api.deps import RawPorts
 from nosolear.domain.coach import CoachAnalysis, parse_coach_analysis
+from nosolear.domain.content import SeedContent
 from nosolear.domain.observations import Observation
-from nosolear.domain.speech import RawResult
+from nosolear.domain.speech import ProviderCapabilities, RawResult
+from nosolear.persistence.capabilities import CapabilityRepository
 from nosolear.persistence.repositories import AttemptRepository, ObservationRepository
 from nosolear.ports.clock import Clock
 from nosolear.ports.providers import Synthesizer
@@ -101,7 +104,11 @@ def make_harness(tmp_path: Path) -> Iterator[Callable[..., Harness]]:
     stack = ExitStack()
 
     def build(
-        *, probe: bool = False, clock: Clock | None = None, start_runner: bool = False
+        *,
+        probe: bool = False,
+        clock: Clock | None = None,
+        start_runner: bool = False,
+        content: SeedContent | None = None,
     ) -> Harness:
         data_dir = tmp_path / f"h{next(_next_id)}"
         voice = OracleVoice()
@@ -118,11 +125,26 @@ def make_harness(tmp_path: Path) -> Iterator[Callable[..., Harness]]:
             clock=clock_used,
             raw_ports=ports,
             start_runner=start_runner,
+            content=content,
         )
         if not probe:
             stack.enter_context(patch(PROBE_INSTALLED, return_value=False))
         client = stack.enter_context(loopback_client(app))
         services: Any = app.state.services  # pyright: ignore[reportAttributeAccessIssue]
+        # Azure's n-best and prosody probe, as a live `doctor --probe` would have stored it, so
+        # the `azure_pa` detector is calibratable in every harness.
+        CapabilityRepository(app.state.engine).add(  # pyright: ignore[reportAttributeAccessIssue]
+            ProviderCapabilities(
+                provider="azure",
+                adapter="azure_pa",
+                adapter_version=AZURE_PA_VERSION,
+                provider_version="harness",
+                region=None,
+                locale="en-US",
+                capabilities={"nbest_phonemes": True, "prosody": True},
+                probed_at=clock_used.now(),
+            )
+        )
         return Harness(
             client=client,
             voice=voice,

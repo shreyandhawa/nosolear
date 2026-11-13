@@ -60,6 +60,7 @@ from nosolear.budget.metered_ports import (
 )
 from nosolear.domain.budget import Caps, Provider, Unit, period_for
 from nosolear.domain.capabilities import real_time_factors
+from nosolear.domain.content import SeedContent
 from nosolear.domain.extraction.opportunities import tracked_keys
 from nosolear.domain.jobs import JobKind
 from nosolear.domain.packs import LanguagePack, PackError
@@ -178,6 +179,11 @@ def get_settings(request: Request) -> Settings:
 
 def get_services(request: Request) -> Services:
     return cast(Services, request.app.state.services)
+
+
+def get_seed_content(request: Request) -> SeedContent | None:
+    """The seed content the app synced at startup, or None when it did not load."""
+    return cast(SeedContent | None, request.app.state.seed_content)
 
 
 def get_providers(request: Request) -> Providers:

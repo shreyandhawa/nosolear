@@ -22,6 +22,7 @@ from sqlalchemy import Column as C
 from sqlalchemy.types import TypeDecorator
 
 from nosolear.domain.attempts import AttemptStep, SessionKind
+from nosolear.domain.content import ContentKind
 from nosolear.domain.jobs import JobKind
 from nosolear.domain.observations import Context, Outcome
 from nosolear.domain.scoring import ConfigKind
@@ -58,16 +59,8 @@ metadata = MetaData()
 
 # ARCHITECTURE.md section 7 (`attempts.step`).
 ATTEMPT_STEPS = tuple(AttemptStep)
-# ARCHITECTURE.md section 7 (`content_items.kind`). A plain tuple until the content types exist.
-CONTENT_KINDS = (
-    "prompt",
-    "passage_sentence",
-    "minimal_pair",
-    "drill_sentence",
-    "starter",
-    "quick_question",
-    "calibration_word",
-)
+# ARCHITECTURE.md section 7 (`content_items.kind`): the values of `ContentKind`.
+CONTENT_KINDS = tuple(ContentKind)
 
 
 def _in_list(column: str, values: Iterable[str]) -> str:
