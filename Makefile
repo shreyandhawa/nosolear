@@ -1,9 +1,9 @@
 .PHONY: setup api api-dev web seed test test-live lint gen-api
 
 setup:
+	git config core.hooksPath scripts/git-hooks
 	cd apps/api && uv sync
 	cd apps/web && pnpm install
-	git config core.hooksPath scripts/git-hooks
 
 api:
 	cd apps/api && uv run nosolear serve --reload
