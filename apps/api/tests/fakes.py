@@ -5,10 +5,11 @@ from __future__ import annotations
 import hashlib
 import threading
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from nosolear.app.steps import StepContext
 from nosolear.domain.analyses import AnalysisKind, NewAnalysis, StoredAnalysis
 from nosolear.domain.audio import (
     DEFAULT_LIMITS,
@@ -31,6 +32,7 @@ from nosolear.domain.jobs import (
     recover_running,
     resume_plan,
 )
+from nosolear.domain.profile import Profile
 from nosolear.ports.audio import PendingUpload, StoredRecording, is_recording_path
 from nosolear.ports.clock import Clock
 from nosolear.ports.jobs import JobNotResumable, UnknownJob
@@ -347,3 +349,46 @@ class FakeAnalysisStore:
 
     def for_attempt(self, attempt_id: str) -> list[StoredAnalysis]:
         return [row for (owner, _), row in self._rows.items() if owner == attempt_id]
+
+
+class FakeStep:
+    """A `Step` that records every context it runs with. `raises` and `on_run` act on each run."""
+
+    def __init__(
+        self,
+        name: str,
+        *,
+        applies: bool = True,
+        raises: Exception | None = None,
+        on_run: Callable[[StepContext], None] | None = None,
+    ) -> None:
+        self.name = name
+        self.applies_to = applies
+        self.raises = raises
+        self.on_run = on_run
+        self.runs: list[StepContext] = []
+
+    def applies(self, ctx: StepContext) -> bool:
+        return self.applies_to
+
+    def run(self, ctx: StepContext) -> None:
+        self.runs.append(ctx)
+        if self.on_run is not None:
+            self.on_run(ctx)
+        if self.raises is not None:
+            raise self.raises
+
+
+class FakeProfileStore:
+    """A `ProfileStore` in memory. `stored_pack_id` is what it reports before anything is saved."""
+
+    def __init__(self, stored_pack_id: str | None = None) -> None:
+        self._seed_pack_id = stored_pack_id
+        self.saved: list[tuple[Profile, str | None, str]] = []
+
+    def save(self, profile: Profile, *, session_id: str | None, reason: str) -> str:
+        self.saved.append((profile, session_id, reason))
+        return f"snapshot-{len(self.saved)}"
+
+    def latest_pack_id(self) -> str | None:
+        return self.saved[-1][0].pack_id if self.saved else self._seed_pack_id
