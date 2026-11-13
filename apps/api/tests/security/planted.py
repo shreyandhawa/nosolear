@@ -847,9 +847,7 @@ def _open_calibration_run(engine: Engine, *, record_first: bool) -> str:
         available=frozenset({Detector.AZURE_PA}),
         taxonomy=DEFAULT_TAXONOMY,
     )
-    run = store.start(
-        run_id=uuid4().hex, session_id=uuid4().hex, plan=plan, now=_SURFACE_NOW
-    )
+    run = store.start(run_id=uuid4().hex, session_id=uuid4().hex, plan=plan, now=_SURFACE_NOW)
     attempt_id = store.items(run.id)[0].attempt_id
     if record_first:
         with engine.begin() as conn:
@@ -890,7 +888,9 @@ def calibrate_cli_output(tmp: Path) -> tuple[str, str]:
     step raises a planted key mid-job: the progress lines and the final line."""
     settings = planted_settings(tmp / "data")
     registry = StepRegistry()
-    registry.register(JobKind.CALIBRATE, FakeStep("controls", raises=RuntimeError(PLANTED_AZURE_KEY)))
+    registry.register(
+        JobKind.CALIBRATE, FakeStep("controls", raises=RuntimeError(PLANTED_AZURE_KEY))
+    )
     app = create_app(settings, step_registry=registry, start_runner=True)
     out, err = io.StringIO(), io.StringIO()
     with loopback_client(app) as client, pytest.MonkeyPatch.context() as mp:

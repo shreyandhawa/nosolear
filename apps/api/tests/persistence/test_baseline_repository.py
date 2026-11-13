@@ -159,7 +159,9 @@ def _race(*calls: Callable[[], object]) -> tuple[list[object], list[BaseExceptio
     return results, failures
 
 
-def test_concurrent_creates_leave_one_open_session(store: BaselineRepository, db_engine: Engine) -> None:
+def test_concurrent_creates_leave_one_open_session(
+    store: BaselineRepository, db_engine: Engine
+) -> None:
     results, failures = _race(
         lambda: store.create(session_id="s1", protocol=PROTOCOL, now=NOW),
         lambda: store.create(session_id="s2", protocol=PROTOCOL, now=NOW),
