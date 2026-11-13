@@ -79,7 +79,7 @@ def test_one_focus_per_skill_in_skill_order() -> None:
     assert [f.error_key for f in foci] == [HIGH, "fluency.filler", "clarity.vague"]
 
 
-def test_mastered_and_watching_are_never_focus() -> None:
+def test_mastered_and_watching_keys_lose_to_an_unprofiled_fallback() -> None:
     profile = profile_of(
         [
             entry(HIGH, a=2, b=80, status=Status.MASTERED),
@@ -89,6 +89,19 @@ def test_mastered_and_watching_are_never_focus() -> None:
     sounds = next(f for f in run(profile).foci if f.skill is Skill.SOUNDS)
     assert sounds.error_key not in {HIGH, SECOND_SOUND}
     assert sounds.source == "fallback"
+
+
+@pytest.mark.parametrize("status", [Status.WATCHING, Status.MASTERED])
+def test_skill_whose_keys_are_all_watching_or_mastered_still_gets_one_focus(status: Status) -> None:
+    """Every scored key of the skill is profiled and not improving: the spec still wants exactly
+    one focus for it, so the fallback reaches past the focus statuses."""
+    articulate = [d.key for d in TAX.defined() if d.skill is Skill.ARTICULATE]
+    profile = profile_of([entry(key, a=3, b=40, status=status) for key in articulate])
+    foci = [f for f in run(profile).foci if f.skill is Skill.ARTICULATE]
+    assert len(foci) == 1
+    assert foci[0].error_key in articulate
+    assert foci[0].source == "profile"
+    assert foci[0].status is status
 
 
 def test_due_mastered_key_is_probe_not_focus() -> None:

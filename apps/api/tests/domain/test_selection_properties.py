@@ -44,17 +44,27 @@ histories = st.fixed_dictionaries({skill: skill_history for skill in SKILL_ORDER
 
 @st.composite
 def profiles(draw: st.DrawFn) -> Profile:
+    """Random profiles. Often one whole skill is profiled as watching or mastered, the case where
+    the focus has to fall back past the focus statuses (random draws rarely reach it)."""
     chosen = draw(st.lists(keys, max_size=12, unique=True))
-    entries = [
-        entry(
-            key,
-            a=draw(st.floats(min_value=1.0, max_value=80.0)),
-            b=draw(st.floats(min_value=1.0, max_value=80.0)),
-            status=draw(statuses),
-            provisional=draw(st.booleans()),
+    cover = draw(st.one_of(st.none(), st.sampled_from(SKILL_ORDER)))
+    if cover is not None:
+        chosen = list(dict.fromkeys([*chosen, *(d.key for d in TAX.defined() if d.skill is cover)]))
+    entries = []
+    for key in chosen:
+        if cover is not None and TAX.get(key).skill is cover:
+            status = draw(st.sampled_from((Status.WATCHING, Status.MASTERED)))
+        else:
+            status = draw(statuses)
+        entries.append(
+            entry(
+                key,
+                a=draw(st.floats(min_value=1.0, max_value=80.0)),
+                b=draw(st.floats(min_value=1.0, max_value=80.0)),
+                status=status,
+                provisional=draw(st.booleans()),
+            )
         )
-        for key in chosen
-    ]
     return profile_of(entries)
 
 
@@ -113,38 +123,22 @@ def test_determinism_and_entry_order_independence(
     rechecks=recheck_maps,
     unscored=unscored_sets,
 )
-def test_at_most_one_focus_per_skill_and_one_when_pool_nonempty(
+def test_exactly_one_focus_per_skill_with_any_scored_key(
     profile: Profile,
     seed: int,
     history: Mapping[Skill, Sequence[str]],
     rechecks: Mapping[str, RecheckState],
     unscored: frozenset[str],
 ) -> None:
+    """ARCHITECTURE 6.6: one focus per skill. A skill with any scored key gets exactly one, even
+    when every key it has is watching or mastered, so the plan never goes without a drill."""
     selection = _select(profile, seed=seed, history=history, rechecks=rechecks, unscored=unscored)
     skills = [f.skill for f in selection.foci]
     assert len(set(skills)) == len(skills)
     assert skills == sorted(skills, key=SKILL_ORDER.index)
-    probe_key = selection.probe.error_key if selection.probe is not None else None
-    owned = {e.definition.key for e in profile.entries}
     for skill in SKILL_ORDER:
-        profile_pool = [
-            e
-            for e in profile.entries
-            if e.definition.skill is skill
-            and e.status in FOCUS_STATUSES
-            and e.definition.key not in unscored
-            and e.definition.key != probe_key
-        ]
-        fallback_pool = [
-            d
-            for d in TAX.defined()
-            if d.skill is skill
-            and d.key not in owned
-            and d.key not in unscored
-            and d.key != probe_key
-        ]
-        has_focus = skill in set(skills)
-        assert has_focus == bool(profile_pool or fallback_pool)
+        scored = [d for d in TAX.defined() if d.skill is skill and d.key not in unscored]
+        assert skills.count(skill) == (1 if scored else 0)
 
 
 @given(
@@ -166,9 +160,7 @@ def test_focus_is_scored_of_its_skill_and_focusable(
     for focus in selection.foci:
         assert focus.error_key not in unscored
         assert TAX.get(focus.error_key).skill is focus.skill
-        assert focus.status not in {Status.MASTERED, Status.WATCHING}
         if focus.source == "profile":
-            assert focus.status in FOCUS_STATUSES
             assert focus.error_key in owned
         else:
             assert focus.status is Status.UNKNOWN
