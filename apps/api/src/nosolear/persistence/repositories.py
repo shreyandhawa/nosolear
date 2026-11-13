@@ -1,12 +1,12 @@
 """SQLAlchemy adapters for the storage ports."""
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import Engine, Row, delete, func, insert, select
+from sqlalchemy import Engine, Row, delete, func, insert, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
@@ -16,6 +16,7 @@ from nosolear.domain.estimates import BetaState, KeyEstimate
 from nosolear.domain.jobs import Job, JobKind, JobStatus, initial_steps
 from nosolear.domain.observations import Observation
 from nosolear.domain.profile import Profile, ProfileEntry
+from nosolear.domain.rechecks import RecheckState
 from nosolear.domain.scoring import current_observations
 from nosolear.domain.status import Status
 from nosolear.domain.taxonomy import Taxonomy
@@ -89,6 +90,8 @@ def _entry_row(profile: Profile, e: ProfileEntry) -> dict[str, Any]:
         "last_seen_at": e.last_seen_at,
         "priority": e.priority,
         "provisional": e.provisional,
+        "next_recheck_at": None,
+        "recheck_stage": None,
         "as_of": profile.as_of,
         "algo_version": profile.algo_version,
         "taxonomy_version": profile.taxonomy_version,
@@ -162,6 +165,63 @@ def _restored_entry(taxonomy: Taxonomy, raw: dict[str, Any]) -> ProfileEntry:
     )
 
 
+def _replace_entries(conn: Connection, profile: Profile) -> list[dict[str, Any]]:
+    """Delete and reinsert every current entry, keeping the schedule of keys still mastered.
+
+    Every rebuild rewrites the rows, so the schedule is read before the delete and written back
+    for each key that is mastered in the new profile. A key that is no longer mastered loses it.
+    """
+    rows = [_entry_row(profile, e) for e in profile.entries]
+    mastered = {r["error_key"] for r in rows if r["status"] == Status.MASTERED.value}
+    schedule = select(
+        profile_entries.c.error_key,
+        profile_entries.c.next_recheck_at,
+        profile_entries.c.recheck_stage,
+    ).where(profile_entries.c.next_recheck_at.is_not(None))
+    kept = {
+        r.error_key: (r.next_recheck_at, r.recheck_stage)
+        for r in conn.execute(schedule)
+        if r.error_key in mastered
+    }
+    for row in rows:
+        row["next_recheck_at"], row["recheck_stage"] = kept.get(row["error_key"], (None, None))
+    conn.execute(delete(profile_entries))
+    if rows:
+        conn.execute(insert(profile_entries), rows)
+    return rows
+
+
+class RecheckRepository:
+    """The re-check schedule, stored on the current `profile_entries` rows (`RecheckStore`)."""
+
+    def __init__(self, engine: Engine) -> None:
+        self._engine = engine
+
+    def load(self) -> dict[str, RecheckState]:
+        stmt = select(
+            profile_entries.c.error_key,
+            profile_entries.c.next_recheck_at,
+            profile_entries.c.recheck_stage,
+        ).where(profile_entries.c.next_recheck_at.is_not(None))
+        with self._engine.connect() as conn:
+            rows = conn.execute(stmt).all()
+        return {
+            r.error_key: RecheckState(stage=int(r.recheck_stage), next_at=r.next_recheck_at)
+            for r in rows
+        }
+
+    def save(self, states: Mapping[str, RecheckState]) -> None:
+        """Set the schedule to exactly `states`: unlisted keys lose theirs."""
+        with self._engine.begin() as conn:
+            conn.execute(update(profile_entries).values(next_recheck_at=None, recheck_stage=None))
+            for key, state in states.items():
+                conn.execute(
+                    update(profile_entries)
+                    .where(profile_entries.c.error_key == key)
+                    .values(next_recheck_at=state.next_at, recheck_stage=state.stage)
+                )
+
+
 class ProfileRepository:
     def __init__(self, engine: Engine, taxonomy: Taxonomy) -> None:
         self._engine = engine
@@ -169,19 +229,13 @@ class ProfileRepository:
 
     def replace(self, profile: Profile) -> None:
         """Replace every current entry without a snapshot."""
-        rows = [_entry_row(profile, e) for e in profile.entries]
         with self._engine.begin() as conn:
-            conn.execute(delete(profile_entries))
-            if rows:
-                conn.execute(insert(profile_entries), rows)
+            _replace_entries(conn, profile)
 
     def save(self, profile: Profile, *, session_id: str | None, reason: str) -> str:
         """Replace every current entry and append a snapshot, atomically."""
-        rows = [_entry_row(profile, e) for e in profile.entries]
         with self._engine.begin() as conn:
-            conn.execute(delete(profile_entries))
-            if rows:
-                conn.execute(insert(profile_entries), rows)
+            rows = _replace_entries(conn, profile)
             return _insert_snapshot(conn, profile, rows, session_id=session_id, reason=reason)
 
     def snapshot(self, profile: Profile, *, session_id: str | None, reason: str) -> str:
