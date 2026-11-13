@@ -43,7 +43,7 @@ Install these first. On macOS use [Homebrew](https://brew.sh); on Linux (and WSL
 - **[uv](https://docs.astral.sh/uv/)**: installs Python 3.14 and the API's dependencies
 - **Node** at the version in `.node-version`, and **pnpm** at the version in the `packageManager` field of `apps/web/package.json`. Distribution packages for Node are usually far older, so on Linux and WSL2 install [fnm](https://github.com/Schniz/fnm), which reads `.node-version`. On macOS, `brew install fnm` works the same way. Add `eval "$(fnm env --use-on-cd)"` to your shell profile (`~/.zshrc` or `~/.bashrc`) and open a new shell, then run `fnm use --install-if-missing` in the repo root. If you use nvm instead, run `nvm install "$(cat .node-version)"`. Node 25 and later no longer bundle Corepack, so with either nvm or fnm you then install the pinned pnpm yourself: `npm install -g pnpm@12.16.1`
 - **make**
-- **espeak-ng**: only for the `local` extra that arrives in Phase 0d; skip it for now
+- **espeak-ng**: only for the `local` extra (the phone probe and the tests that generate audio). Install it with `brew install espeak-ng` on macOS or `sudo apt-get install espeak-ng` on Linux; the base install does not need it
 
 ## Get your keys
 
@@ -105,7 +105,29 @@ To try the profile page with synthetic data, run `make seed`, which writes under
 
 ## Optional extras
 
-- **Local speech models**: `uv sync --extra local` (wav2vec2 phone probe and faster-whisper, plus `espeak-ng`) and `uv sync --extra apple` (mlx-whisper on Apple Silicon) arrive in Phase 0d. Their download sizes will be added then.
+- **Local speech models**: `uv sync --extra local` installs torch, transformers, faster-whisper and the other packages the wav2vec2 phone probe and faster-whisper need. `uv sync --extra apple` adds mlx-whisper on Apple Silicon. Neither is in the base install, and the API imports them only when a local model is first used.
+- **Model downloads**: nothing is downloaded at install time. The first use of a local model fetches its files from Hugging Face into the default Hugging Face cache (`~/.cache/huggingface`), never into `data/`, at a commit SHA pinned in the code. Sizes are the model files the loader reads:
+
+  | Model | Used by | Download |
+  |---|---|---|
+  | `Systran/faster-whisper-small.en` | faster-whisper (default) | about 490 MB |
+  | `mlx-community/whisper-large-v3-turbo` | mlx-whisper (Apple Silicon) | about 1.6 GB |
+  | `facebook/wav2vec2-lv-60-espeak-cv-ft` | phone probe | about 1.3 GB |
+  | `nyralabs/CrisperWhisper` | CrisperWhisper, opt-in only | about 3.2 GB |
+
+  CrisperWhisper is opt-in and its weights are CC BY-NC 4.0, so the MIT licence does not cover them. See [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES).
+- **Wheels for the local extras** (Python 3.14, checked on PyPI on 2026-11-13). Every package has a wheel for macOS on Apple Silicon and for Linux on x86-64:
+
+  | Package | macOS arm64 | Linux x86-64 | Notes |
+  |---|---|---|---|
+  | torch 2.15.0 | `cp314` `macosx_14_0_arm64` | `cp314` `manylinux_2_28_x86_64` | Linux also pulls NVIDIA CUDA wheels |
+  | transformers 5.22.2, huggingface-hub 2.4.0 | pure Python | pure Python | |
+  | safetensors 0.8.0 | `abi3` `macosx_11_0_arm64` | `abi3` `manylinux2014_x86_64` | |
+  | faster-whisper 1.2.1 | pure Python | pure Python | needs ctranslate2, av, onnxruntime and tokenizers below |
+  | ctranslate2 4.9.0 | `cp314` `macosx_11_0_arm64` | `cp314` `manylinux_2_27_x86_64` | |
+  | av 19.0.2 | `cp314t` `macosx_14_0_arm64` | `cp314t` `manylinux_2_28_x86_64` | |
+  | onnxruntime 1.32.0 | `cp314` `macosx_14_0_arm64` | `cp314` `manylinux_2_28_x86_64` | |
+  | mlx-whisper 0.4.3, mlx 0.32.4 | `cp314` `macosx_14_0_arm64` | not installed | the `apple` extra is restricted to macOS on Apple Silicon |
 - **Disk encryption**: your recordings and profile sit in `data/` unencrypted, so turn on full-disk encryption (FileVault on macOS, LUKS on Linux).
 
 ## What leaves your machine
