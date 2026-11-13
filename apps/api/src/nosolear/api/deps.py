@@ -84,6 +84,7 @@ from nosolear.persistence.job_queue import SqliteJobQueue
 from nosolear.persistence.ledger import SqliteUsageLedger
 from nosolear.persistence.plan_repositories import (
     DailyPlanRepository,
+    DailySessionRepository,
     PromptBankRepository,
     ScoringCoverage,
 )
@@ -109,7 +110,13 @@ from nosolear.ports.clock import Clock
 from nosolear.ports.environment import EnvironmentProbe
 from nosolear.ports.jobs import JobQueue
 from nosolear.ports.ledger import UsageLedger
-from nosolear.ports.plan import DailyPlanStore, PromptBank, RecheckStore, ScoredKeys
+from nosolear.ports.plan import (
+    DailyPlanStore,
+    DailySessionStore,
+    PromptBank,
+    RecheckStore,
+    ScoredKeys,
+)
 from nosolear.ports.providers import (
     CapabilityProbe,
     Coach,
@@ -215,6 +222,11 @@ def get_scoring_configs(request: Request) -> ScoringConfigReader:
 def get_daily_plan_store(request: Request) -> DailyPlanStore:
     engine = cast(Engine, request.app.state.engine)
     return DailyPlanRepository(engine, DEFAULT_TAXONOMY)
+
+
+def get_daily_session_store(request: Request) -> DailySessionStore:
+    engine = cast(Engine, request.app.state.engine)
+    return DailySessionRepository(engine)
 
 
 def get_prompt_bank(request: Request) -> PromptBank:

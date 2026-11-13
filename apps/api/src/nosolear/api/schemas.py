@@ -133,3 +133,15 @@ class PlanOut(BaseModel):
     prompt: PromptOut | None
     drills: list[DrillOut]
     steps: list[PlanStepOut]
+
+
+class AttemptOut(BaseModel):
+    id: str
+    step: str
+    prompt_text: str | None
+
+
+class DailySessionOut(BaseModel):
+    session_id: str
+    plan_id: str
+    attempts: list[AttemptOut]

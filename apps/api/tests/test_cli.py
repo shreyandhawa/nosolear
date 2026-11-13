@@ -469,3 +469,31 @@ def test_plan_is_idempotent_across_two_runs(
 
     assert second == first
     assert count(h.engine, "daily_plans") == 1
+
+
+def test_daily_start_prints_attempt_and_prompt(
+    make_harness: Callable[..., Harness], capsys: pytest.CaptureFixture[str]
+) -> None:
+    h = make_harness()
+
+    assert main(["daily", "start"], client=_api(h)) == 0
+
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].startswith("session ")
+    assert lines[1].startswith("attempt ")
+    assert lines[2].startswith("prompt: ")
+    assert lines[2] != "prompt: none"
+
+
+def test_daily_start_twice_prints_same_ids(
+    make_harness: Callable[..., Harness], capsys: pytest.CaptureFixture[str]
+) -> None:
+    h = make_harness()
+    api = _api(h)
+
+    assert main(["daily", "start"], client=api) == 0
+    first = capsys.readouterr().out
+    assert main(["daily", "start"], client=api) == 0
+    second = capsys.readouterr().out
+
+    assert second == first

@@ -7,11 +7,14 @@ from datetime import date, datetime
 from typing import Any, Literal, cast
 from uuid import uuid4
 
-from sqlalchemy import Engine, Row, select
+from sqlalchemy import Engine, Row, insert, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.exc import IntegrityError
 
+from nosolear.domain.attempts import AttemptStep, SessionKind
 from nosolear.domain.content import ContentKind
 from nosolear.domain.daily_plan import (
+    PLAN_PROTOCOL_VERSION,
     PLAN_STEPS,
     DailyPlan,
     DrillSpec,
@@ -20,8 +23,8 @@ from nosolear.domain.daily_plan import (
 from nosolear.domain.selection import Focus, RecheckProbe
 from nosolear.domain.status import Status
 from nosolear.domain.taxonomy import Skill, Taxonomy
-from nosolear.persistence.models import content_items, daily_plans
-from nosolear.ports.plan import StoredPlan
+from nosolear.persistence.models import attempts, content_items, daily_plans, sessions
+from nosolear.ports.plan import AttemptRef, StartedSession, StoredPlan
 from nosolear.ports.scoring_stores import ScoringConfigReader
 
 _UNSIGNED_64 = 2**64
@@ -238,3 +241,85 @@ class ScoringCoverage:
         definition = self._taxonomy.get(error_key)
         config = self._configs.newest()
         return any(config.rule_for(d, definition) is not None for d in definition.detectors)
+
+
+class DailySessionRepository:
+    """`DailySessionStore`: a daily session and its single speak attempt, created together."""
+
+    def __init__(self, engine: Engine) -> None:
+        self._engine = engine
+
+    def for_plan(self, plan_id: str) -> StartedSession | None:
+        with self._engine.connect() as conn:
+            session = conn.execute(
+                select(sessions.c.id).where(sessions.c.plan_id == plan_id)
+            ).first()
+            if session is None:
+                return None
+            rows = conn.execute(
+                select(attempts)
+                .where(attempts.c.session_id == session.id)
+                .order_by(attempts.c.created_at)
+            ).all()
+        return StartedSession(
+            session_id=session.id,
+            plan_id=plan_id,
+            created=False,
+            attempts=tuple(
+                AttemptRef(
+                    id=row.id,
+                    step=row.step,
+                    reference_text=row.reference_text,
+                    content_item_id=row.content_item_id,
+                )
+                for row in rows
+            ),
+        )
+
+    def create(
+        self, *, plan_id: str, prompt_item_id: str | None, started_at: datetime
+    ) -> StartedSession:
+        session_id = uuid4().hex
+        attempt_id = uuid4().hex
+        try:
+            with self._engine.begin() as conn:
+                conn.execute(
+                    insert(sessions).values(
+                        id=session_id,
+                        kind=SessionKind.DAILY.value,
+                        protocol_version=PLAN_PROTOCOL_VERSION,
+                        plan_id=plan_id,
+                        started_at=started_at,
+                        completed_at=None,
+                    )
+                )
+                conn.execute(
+                    insert(attempts).values(
+                        id=attempt_id,
+                        session_id=session_id,
+                        step=AttemptStep.SPEAK.value,
+                        reference_text=None,
+                        scripted=False,
+                        created_at=started_at,
+                        content_item_id=prompt_item_id,
+                    )
+                )
+        except IntegrityError:
+            # A concurrent start won the unique plan_id: its session is the answer.
+            existing = self.for_plan(plan_id)
+            if existing is None:
+                raise
+            return existing
+        return StartedSession(
+            session_id=session_id,
+            plan_id=plan_id,
+            created=True,
+            attempts=(
+                AttemptRef(
+                    id=attempt_id,
+                    step=AttemptStep.SPEAK.value,
+                    reference_text=None,
+                    content_item_id=prompt_item_id,
+                ),
+            ),
+        )

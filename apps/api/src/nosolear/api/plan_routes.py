@@ -1,7 +1,8 @@
-"""`/api/plan/today`: today's daily plan, in the configured zone's local date.
+"""`/api/plan/today`: today's daily plan and its daily session, in the configured zone's local date.
 
 `POST` builds the plan once per local day (201) and returns the stored one afterwards (200). `GET`
-only reads: it never builds a plan, so it has no side effect and is safe to poll (§15)."""
+only reads: it never builds a plan, so it has no side effect and is safe to poll (§15). `POST
+/api/plan/today/session` starts the day's one session, whose speak attempt carries the prompt."""
 
 from typing import Annotated
 
@@ -10,6 +11,7 @@ from fastapi import APIRouter, Depends, Response
 from nosolear.api.deps import (
     get_clock,
     get_daily_plan_store,
+    get_daily_session_store,
     get_profile_repository,
     get_prompt_bank,
     get_recheck_store,
@@ -19,6 +21,8 @@ from nosolear.api.deps import (
 )
 from nosolear.api.errors import ApiError
 from nosolear.api.schemas import (
+    AttemptOut,
+    DailySessionOut,
     DrillOut,
     FocusOut,
     PlanOut,
@@ -27,11 +31,13 @@ from nosolear.api.schemas import (
     PromptOut,
 )
 from nosolear.app.build_daily_plan import build_daily_plan, plan_date
-from nosolear.domain.packs import PackError
+from nosolear.app.start_daily_session import start_daily_session
+from nosolear.domain.packs import LanguagePack, PackError
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY
 from nosolear.ports.clock import Clock
 from nosolear.ports.plan import (
     DailyPlanStore,
+    DailySessionStore,
     ProfileReader,
     PromptBank,
     RecheckStore,
@@ -41,6 +47,13 @@ from nosolear.ports.plan import (
 from nosolear.settings import Settings
 
 router = APIRouter()
+
+
+def _pack(settings: Settings) -> LanguagePack:
+    try:
+        return load_active_pack(settings)
+    except PackError:
+        raise ApiError(409, "pack_unavailable", "The language pack could not be loaded.") from None
 
 
 def _plan_out(stored: StoredPlan) -> PlanOut:
@@ -96,6 +109,28 @@ def _plan_out(stored: StoredPlan) -> PlanOut:
     )
 
 
+def _build(
+    settings: Settings,
+    clock: Clock,
+    plans: DailyPlanStore,
+    profiles: ProfileReader,
+    rechecks: RecheckStore,
+    prompts: PromptBank,
+    scoring: ScoredKeys,
+) -> StoredPlan:
+    return build_daily_plan(
+        plans=plans,
+        profiles=profiles,
+        rechecks=rechecks,
+        prompts=prompts,
+        scoring=scoring,
+        taxonomy=DEFAULT_TAXONOMY,
+        pack=_pack(settings),
+        clock=clock,
+        tz=settings.tzinfo,
+    )
+
+
 @router.post(
     "/api/plan/today",
     operation_id="buildTodayPlan",
@@ -112,23 +147,9 @@ def build_today_plan(
     prompts: Annotated[PromptBank, Depends(get_prompt_bank)],
     scoring: Annotated[ScoredKeys, Depends(get_scored_keys)],
 ) -> PlanOut:
-    try:
-        pack = load_active_pack(settings)
-    except PackError:
-        raise ApiError(409, "pack_unavailable", "The language pack could not be loaded.") from None
     today = plan_date(clock.now(), settings.tzinfo)
     existed = plans.get(today) is not None
-    stored = build_daily_plan(
-        plans=plans,
-        profiles=profiles,
-        rechecks=rechecks,
-        prompts=prompts,
-        scoring=scoring,
-        taxonomy=DEFAULT_TAXONOMY,
-        pack=pack,
-        clock=clock,
-        tz=settings.tzinfo,
-    )
+    stored = _build(settings, clock, plans, profiles, rechecks, prompts, scoring)
     if existed:
         response.status_code = 200
     return _plan_out(stored)
@@ -144,3 +165,41 @@ def get_today_plan(
     if stored is None:
         raise ApiError(404, "no_plan_for_today", "No plan has been built for today yet.")
     return _plan_out(stored)
+
+
+@router.post(
+    "/api/plan/today/session",
+    operation_id="startDailySession",
+    status_code=201,
+    responses={200: {"description": "today's session was already started"}},
+)
+def start_today_session(
+    response: Response,
+    settings: Annotated[Settings, Depends(get_settings)],
+    clock: Annotated[Clock, Depends(get_clock)],
+    plans: Annotated[DailyPlanStore, Depends(get_daily_plan_store)],
+    profiles: Annotated[ProfileReader, Depends(get_profile_repository)],
+    rechecks: Annotated[RecheckStore, Depends(get_recheck_store)],
+    prompts: Annotated[PromptBank, Depends(get_prompt_bank)],
+    scoring: Annotated[ScoredKeys, Depends(get_scored_keys)],
+    sessions: Annotated[DailySessionStore, Depends(get_daily_session_store)],
+) -> DailySessionOut:
+    stored = _build(settings, clock, plans, profiles, rechecks, prompts, scoring)
+    started = start_daily_session(build_plan=lambda: stored, sessions=sessions, clock=clock)
+    if not started.created:
+        response.status_code = 200
+    prompt = stored.plan.prompt
+    return DailySessionOut(
+        session_id=started.session_id,
+        plan_id=started.plan_id,
+        attempts=[
+            AttemptOut(
+                id=attempt.id,
+                step=attempt.step,
+                prompt_text=None
+                if prompt is None or attempt.content_item_id != prompt.id
+                else prompt.text,
+            )
+            for attempt in started.attempts
+        ],
+    )

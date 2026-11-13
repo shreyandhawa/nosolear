@@ -7,7 +7,7 @@ import threading
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from nosolear.app.steps import StepContext
@@ -49,7 +49,7 @@ from nosolear.ports.audio import (
 from nosolear.ports.clock import Clock
 from nosolear.ports.jobs import JobNotResumable, UnknownJob
 from nosolear.ports.ledger import LedgerError, Reservation
-from nosolear.ports.plan import StoredPlan
+from nosolear.ports.plan import AttemptRef, StartedSession, StoredPlan
 
 
 class _FakeUpload:
@@ -525,3 +525,35 @@ class FakeScoredKeys:
 
     def is_scored(self, error_key: str) -> bool:
         return error_key not in self.unscored
+
+
+class FakeDailySessionStore:
+    """`DailySessionStore` in memory: one session per plan, as the unique `plan_id` index does."""
+
+    def __init__(self) -> None:
+        self.sessions: dict[str, StartedSession] = {}
+        self.created: list[StartedSession] = []
+
+    def for_plan(self, plan_id: str) -> StartedSession | None:
+        found = self.sessions.get(plan_id)
+        return None if found is None else replace(found, created=False)
+
+    def create(
+        self, *, plan_id: str, prompt_item_id: str | None, started_at: datetime
+    ) -> StartedSession:
+        started = StartedSession(
+            session_id=uuid.uuid4().hex,
+            plan_id=plan_id,
+            created=True,
+            attempts=(
+                AttemptRef(
+                    id=uuid.uuid4().hex,
+                    step="speak",
+                    reference_text=None,
+                    content_item_id=prompt_item_id,
+                ),
+            ),
+        )
+        self.sessions[plan_id] = started
+        self.created.append(started)
+        return started

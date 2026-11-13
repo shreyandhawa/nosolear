@@ -5,7 +5,7 @@ Adapters: `persistence`.
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Protocol
 
 from nosolear.domain.daily_plan import DailyPlan, PromptCandidate
@@ -36,6 +36,32 @@ class ScoredKeys(Protocol):
 class StoredPlan:
     id: str
     plan: DailyPlan
+
+
+@dataclass(frozen=True, slots=True)
+class AttemptRef:
+    id: str
+    step: str
+    reference_text: str | None
+    content_item_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class StartedSession:
+    session_id: str
+    plan_id: str
+    created: bool
+    attempts: tuple[AttemptRef, ...]
+
+
+class DailySessionStore(Protocol):
+    def for_plan(self, plan_id: str) -> StartedSession | None: ...
+
+    def create(
+        self, *, plan_id: str, prompt_item_id: str | None, started_at: datetime
+    ) -> StartedSession:
+        """Creates the session and its attempt, or returns the one already stored for the plan."""
+        ...
 
 
 class DailyPlanStore(Protocol):

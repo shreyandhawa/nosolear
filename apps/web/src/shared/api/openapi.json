@@ -1,6 +1,36 @@
 {
   "components": {
     "schemas": {
+      "AttemptOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "prompt_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Text"
+          },
+          "step": {
+            "title": "Step",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "step",
+          "prompt_text"
+        ],
+        "title": "AttemptOut",
+        "type": "object"
+      },
       "BaselineItemOut": {
         "properties": {
           "attempt_id": {
@@ -498,6 +528,32 @@
           "produced"
         ],
         "title": "ClipOut",
+        "type": "object"
+      },
+      "DailySessionOut": {
+        "properties": {
+          "attempts": {
+            "items": {
+              "$ref": "#/components/schemas/AttemptOut"
+            },
+            "title": "Attempts",
+            "type": "array"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "plan_id",
+          "attempts"
+        ],
+        "title": "DailySessionOut",
         "type": "object"
       },
       "DrillOut": {
@@ -1820,6 +1876,27 @@
           }
         },
         "summary": "Build Today Plan"
+      }
+    },
+    "/api/plan/today/session": {
+      "post": {
+        "operationId": "startDailySession",
+        "responses": {
+          "200": {
+            "description": "today's session was already started"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DailySessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Start Today Session"
       }
     },
     "/api/profile": {

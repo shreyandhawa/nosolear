@@ -211,6 +211,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/plan/today/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Today Session */
+        post: operations["startDailySession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/profile": {
         parameters: {
             query?: never;
@@ -266,6 +283,15 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AttemptOut */
+        AttemptOut: {
+            /** Id */
+            id: string;
+            /** Prompt Text */
+            prompt_text: string | null;
+            /** Step */
+            step: string;
+        };
         /** BaselineItemOut */
         BaselineItemOut: {
             /** Attempt Id */
@@ -422,6 +448,15 @@ export interface components {
             start_ms: number;
             /** Word */
             word: string | null;
+        };
+        /** DailySessionOut */
+        DailySessionOut: {
+            /** Attempts */
+            attempts: components["schemas"]["AttemptOut"][];
+            /** Plan Id */
+            plan_id: string;
+            /** Session Id */
+            session_id: string;
         };
         /** DrillOut */
         DrillOut: {
@@ -1173,6 +1208,33 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlanOut"];
+                };
+            };
+        };
+    };
+    startDailySession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description today's session was already started */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DailySessionOut"];
                 };
             };
         };

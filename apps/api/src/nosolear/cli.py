@@ -91,6 +91,10 @@ def _parser() -> argparse.ArgumentParser:
     plan = commands.add_parser("plan", help="today's daily plan, built once per local day")
     plan.add_argument("--json", action="store_true", help="print the response body")
     plan.add_argument("--base-url", help="the API address (default: from the settings)")
+    daily = commands.add_parser("daily", help="today's daily session")
+    daily_commands = daily.add_subparsers(dest="daily_command", required=True)
+    daily_start = daily_commands.add_parser("start", help="start today's session and its attempt")
+    daily_start.add_argument("--base-url", help="the API address (default: from the settings)")
     return parser
 
 
@@ -209,6 +213,23 @@ def _plan_lines(body: object) -> list[str]:
     return lines
 
 
+def _daily_start_lines(body: object) -> list[str]:
+    session = _record(body, "session_id", "attempts")
+    attempts: object = session["attempts"]
+    if not isinstance(attempts, list) or not attempts:
+        raise CliError(GENERIC_ERROR)
+    first = _record(cast(list[object], attempts)[0], "id", "prompt_text")
+    prompt = first["prompt_text"]
+    prompt_line = "prompt: none" if prompt is None else f"prompt: {_printable(str(prompt))}"
+    return [f"session {session['session_id']}", f"attempt {first['id']}", prompt_line]
+
+
+def _daily_start(api: ApiClient) -> int:
+    for line in _daily_start_lines(api.post_json("/api/plan/today/session")):
+        print(line)
+    return 0
+
+
 def _plan(args: argparse.Namespace, api: ApiClient) -> int:
     body = api.post_json("/api/plan/today")
     if args.json:
@@ -277,6 +298,8 @@ def _api_command(
             return _upload(args, api, attempt_id)
         if args.command == "plan":
             return _plan(args, api)
+        if args.command == "daily":
+            return _daily_start(api)
         if args.command == first_run_cli.STAND_IN and synthesizer is None:
             synthesizer = build_stand_in_synthesizer(settings)
         handled = first_run_cli.run(args, api, synthesizer=synthesizer, data_dir=settings.data_dir)
@@ -390,6 +413,7 @@ def main(
         "upload",
         "job",
         "plan",
+        "daily",
         first_run_cli.RESCORE,
         first_run_cli.CALIBRATE,
         first_run_cli.BASELINE,

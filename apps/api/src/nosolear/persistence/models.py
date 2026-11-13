@@ -76,8 +76,11 @@ sessions = Table(
     C("protocol_version", Integer, nullable=False),
     C("started_at", UTCDateTime, nullable=False),
     C("completed_at", UTCDateTime, nullable=True),
+    C("plan_id", String, ForeignKey("daily_plans.id"), nullable=True),
     CheckConstraint(_in_list("kind", SessionKind), name="ck_sessions_kind"),
 )
+# One daily session per plan.
+Index("ux_sessions_plan_id", sessions.c.plan_id, unique=True)
 
 attempts = Table(
     "attempts",
