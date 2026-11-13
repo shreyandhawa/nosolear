@@ -1,17 +1,51 @@
-"""Every paid port the composition root builds is ordered cache -> retry -> metered -> raw."""
+"""Every paid port the composition root builds is ordered retry -> metered -> raw, and the
+synthesizer adds the clip cache outside that. Local transcribers and the phone probe are
+unwrapped."""
 
-from collections.abc import Mapping
 from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
 
 import pytest
-from factories import FixedClock, make_settings
-from fakes import FakePaidPort, FakeUsageLedger
+from factories import FixedClock, insert_job, make_settings
+from provider_fakes import FakeScorer, FakeTranscriber, assessment, wrapper_chain
+from sqlalchemy import Engine, text
+from wavs import write_wav
 
-from nosolear.api.deps import build_paid_ports
+from nosolear.adapters.azure_pa import AzurePronunciationScorer
+from nosolear.adapters.azure_speech import AzureSpeech
+from nosolear.adapters.azure_stt import AzureTranscriber
+from nosolear.adapters.azure_tts import AzureTts
+from nosolear.adapters.claude_coach import ClaudeCoach
+from nosolear.adapters.faster_whisper import FasterWhisperTranscriber
+from nosolear.adapters.retry import (
+    RetryingCoach,
+    RetryingPronunciationScorer,
+    RetryingSpeechSynthesizer,
+    RetryingTranscriber,
+)
+from nosolear.adapters.tts_cache import CachedSynthesizer
+from nosolear.api.app import create_app
+from nosolear.api.deps import (
+    Providers,
+    RawPorts,
+    build_ledger,
+    build_providers,
+    build_services,
+)
+from nosolear.app.steps import StepRegistry, running_job
 from nosolear.budget.compose import layers_of
-from nosolear.domain.budget import DEFAULT_CAPS
+from nosolear.budget.metered_ports import (
+    MeteredCoach,
+    MeteredPronunciationScorer,
+    MeteredSpeechSynthesizer,
+    MeteredTranscriber,
+)
+from nosolear.domain.errors import RequestNotSent
+from nosolear.domain.jobs import JobKind
+from nosolear.persistence.db import create_engine_for, upgrade_to_head
 
-T0 = datetime(2026, 11, 12, 8, 0, tzinfo=UTC)
+NOW = datetime(2026, 11, 13, 9, 0, tzinfo=UTC)
 TAIL = ["retry", "metered", "raw"]
 
 
@@ -21,34 +55,152 @@ def assert_port_order(name: str, port: object) -> None:
     assert layers_of(port) == expected, f"{name} is wrapped as {layers_of(port)}"
 
 
-def assert_all_ports_ordered(ports: Mapping[str, object]) -> None:
-    for name, port in ports.items():
-        assert_port_order(name, port)
+def _engine(tmp_path: Path) -> Engine:
+    engine = create_engine_for(make_settings(data_dir=tmp_path).database_url)
+    upgrade_to_head(engine)
+    return engine
 
 
-def test_every_paid_port_the_composition_root_builds_is_ordered(tmp_path):
-    ports = build_paid_ports(
-        make_settings(data_dir=tmp_path),
-        ledger=FakeUsageLedger(DEFAULT_CAPS, FixedClock(T0)),
-        clock=FixedClock(T0),
+def providers(
+    tmp_path: Path, *, transcriber: str = "azure_stt", raw: RawPorts | None = None, **env: object
+) -> Providers:
+    settings = make_settings(data_dir=tmp_path, transcriber=transcriber, **env)
+    engine = _engine(tmp_path)
+    return build_providers(
+        settings,
+        engine=engine,
+        ledger=_ledger(settings, engine),
+        clock=FixedClock(NOW),
+        raw=raw,
     )
-    assert_all_ports_ordered(ports)
 
 
-class _Wrapper:
-    """A stand-in layer: `layers_of` only reads `layer` and `inner`."""
-
-    def __init__(self, layer: str, inner: object) -> None:
-        self.layer = layer
-        self.inner = inner
+def _ledger(settings, engine):
+    return build_ledger(settings, engine, clock=FixedClock(NOW))
 
 
-def test_the_check_has_teeth():
-    raw = FakePaidPort()
-    misordered = _Wrapper("metered", _Wrapper("retry", raw))
-    with pytest.raises(AssertionError):
-        assert_port_order("pronunciation_scorer", misordered)
-    with pytest.raises(AssertionError):
-        assert_port_order("pronunciation_scorer", raw)
-    with pytest.raises(AssertionError):
-        assert_all_ports_ordered({"transcriber_azure": raw})
+def test_every_paid_port_is_retry_then_metered_then_raw(tmp_path):
+    p = providers(tmp_path)
+    assert wrapper_chain(p.scorer) == [
+        RetryingPronunciationScorer,
+        MeteredPronunciationScorer,
+        AzurePronunciationScorer,
+    ]
+    assert wrapper_chain(p.synthesizer) == [
+        CachedSynthesizer,
+        RetryingSpeechSynthesizer,
+        MeteredSpeechSynthesizer,
+        AzureTts,
+    ]
+    assert wrapper_chain(p.coach) == [RetryingCoach, MeteredCoach, ClaudeCoach]
+    assert wrapper_chain(p.transcriber) == [
+        RetryingTranscriber,
+        MeteredTranscriber,
+        AzureTranscriber,
+    ]
+    for name, port in p.paid_ports().items():
+        assert_port_order(name, port)
+    assert set(p.paid_ports()) == {
+        "pronunciation_scorer",
+        "synthesizer",
+        "coach",
+        "transcriber_azure",
+    }
+
+
+def _speech_of(port: object, *, depth: int) -> object:
+    """The `AzureSpeech` under `depth` wrapper layers (the raw adapter holds it as `_speech`)."""
+    current: Any = port
+    for _ in range(depth):
+        current = current.inner
+    speech: object = current._speech
+    return speech
+
+
+def test_the_speech_adapters_share_one_client(tmp_path):
+    p = providers(tmp_path)
+    scorer_speech = _speech_of(p.scorer, depth=2)
+    transcriber_speech = _speech_of(p.transcriber, depth=2)
+    synth_speech = _speech_of(p.synthesizer, depth=3)
+    assert isinstance(scorer_speech, AzureSpeech)
+    assert scorer_speech is transcriber_speech is synth_speech
+
+
+def test_local_transcriber_is_unmetered_and_not_in_the_azure_ports(tmp_path):
+    p = providers(tmp_path, transcriber="faster_whisper")
+    assert wrapper_chain(p.transcriber) == [FasterWhisperTranscriber]
+    assert "transcriber_azure" not in p.paid_ports()
+
+
+def test_injected_raw_ports_are_wrapped_like_real_ones(tmp_path):
+    p = providers(
+        tmp_path,
+        raw=RawPorts(scorer=FakeScorer(), transcriber=FakeTranscriber()),
+    )
+    assert wrapper_chain(p.scorer) == [
+        RetryingPronunciationScorer,
+        MeteredPronunciationScorer,
+        FakeScorer,
+    ]
+    assert wrapper_chain(p.transcriber) == [
+        RetryingTranscriber,
+        MeteredTranscriber,
+        FakeTranscriber,
+    ]
+    assert "transcriber_azure" in p.paid_ports()
+
+
+def test_build_needs_no_keys(tmp_path):
+    coach = providers(tmp_path).coach
+    with pytest.raises(RequestNotSent) as info:
+        coach.explain(error_key="grammar.article", quote="a apple", context="I ate a apple")
+    assert "NOSOLEAR_ANTHROPIC_API_KEY" in str(info.value)
+
+
+def test_the_meter_records_the_job_id_of_the_running_step(tmp_path):
+    settings = make_settings(data_dir=tmp_path)
+    engine = _engine(tmp_path)
+    ledger = _ledger(settings, engine)
+    scorer = FakeScorer(results=[assessment()])
+    p = build_providers(
+        settings,
+        engine=engine,
+        ledger=ledger,
+        clock=FixedClock(NOW),
+        raw=RawPorts(scorer=scorer),
+    )
+    wav = write_wav(tmp_path / "a.wav", 1.2)
+    insert_job(engine, "job-7")
+    with running_job("job-7"):
+        p.scorer.score(wav, reference_text=None)
+    with engine.connect() as conn:
+        job_ids = conn.execute(text("SELECT job_id FROM usage_ledger")).scalars().all()
+    assert job_ids == ["job-7"]
+
+
+def test_build_services_registers_the_provider_steps_and_keeps_given_ones(tmp_path):
+    settings = make_settings(data_dir=tmp_path)
+    engine = _engine(tmp_path)
+    registry = StepRegistry()
+    services = build_services(
+        settings,
+        engine,
+        registry=registry,
+        clock=FixedClock(NOW),
+        raw_ports=RawPorts(coach=None),
+    )
+    try:
+        for name in ("score", "transcribe", "probe", "coach"):
+            assert registry.get(JobKind.ANALYZE, name) is not None
+        assert services.providers.coach is not None
+    finally:
+        services.runner.stop(timeout=10.0)
+        engine.dispose()
+
+
+def test_create_app_hands_its_raw_ports_to_the_lifespan(tmp_path):
+    ports = RawPorts(scorer=FakeScorer(results=[assessment()]))
+    app = create_app(
+        make_settings(data_dir=tmp_path), start_runner=False, raw_ports=ports, clock=FixedClock(NOW)
+    )
+    assert app.state.raw_ports is ports

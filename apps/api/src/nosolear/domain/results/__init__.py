@@ -1,5 +1,6 @@
 """Parsers from raw provider payloads to the typed results in `domain/speech.py`. Pure."""
 
+from nosolear.domain.coach import parse_coach_analysis
 from nosolear.domain.results.azure_pa import parse_azure_pa
 from nosolear.domain.results.azure_stt import parse_azure_stt
 from nosolear.domain.results.phone_probe import parse_phone_probe
@@ -21,6 +22,7 @@ def parse_transcript(raw: RawResult) -> Transcript:
 __all__ = [
     "parse_azure_pa",
     "parse_azure_stt",
+    "parse_coach_analysis",
     "parse_local_transcript",
     "parse_phone_probe",
     "parse_transcript",

@@ -1,9 +1,17 @@
 """What is configured and what is missing, as plain rows. Pure: no I/O, and no key ever enters."""
 
 import shlex
-from dataclasses import dataclass
-from datetime import date
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from enum import StrEnum
+
+from nosolear.domain.speech import ProviderCapabilities
+from nosolear.domain.transcriber_choice import (
+    Platform,
+    TranscriberChoice,
+    TranscriberName,
+    choose_transcriber,
+)
 
 
 class Component(StrEnum):
@@ -36,8 +44,9 @@ COMPONENT_LABELS: dict[Component, str] = {
     Component.USAGE: "Usage",
 }
 
-_LOCAL_FIX = "uv sync --extra local"
-_APPLE_FIX = "uv sync --extra apple"
+LOCAL_FIX = "uv sync --extra local"
+APPLE_FIX = "uv sync --extra apple"
+AZURE_FIX = "set NOSOLEAR_AZURE_SPEECH_KEY and NOSOLEAR_AZURE_SPEECH_REGION in .env"
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,13 +55,6 @@ class PackStatus:
     name: str | None
     hypotheses: int
     problems: tuple[str, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class CapabilityFindings:
-    nbest: bool
-    prosody: bool
-    probed_on: date
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,8 +91,13 @@ class ReadinessInputs:
     env_file_mode: int | None
     caps: Caps
     usage: UsageSnapshot | None
-    capabilities: CapabilityFindings | None
     inspect_errors: tuple[str, ...] = ()
+    capability_records: tuple[ProviderCapabilities, ...] = ()
+    real_time_factors: Mapping[TranscriberName, float] = field(
+        default_factory=lambda: dict[TranscriberName, float]()
+    )
+    transcriber_choice: TranscriberChoice | None = None
+    """None derives the choice from the inputs above, the way the runtime does."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,31 +141,8 @@ def _azure_speech(i: ReadinessInputs) -> ReadinessRow:
         Component.AZURE_SPEECH,
         ReadinessStatus.MISSING,
         f"{' and '.join(missing)} not set",
-        _AZURE_FIX,
+        AZURE_FIX,
     )
-
-
-def _azure_capabilities(i: ReadinessInputs) -> ReadinessRow:
-    c = Component.AZURE_CAPABILITIES
-    if not _azure_ready(i):
-        return _row(
-            c,
-            ReadinessStatus.NOT_PROBED,
-            "Azure Speech is not configured",
-            "configure Azure Speech first",
-        )
-    if i.capabilities is None:
-        return _row(
-            c,
-            ReadinessStatus.NOT_PROBED,
-            "not probed yet",
-            "run `nosolear doctor --probe` (available from Phase 0d)",
-        )
-    f = i.capabilities
-    yn = {True: "yes", False: "no"}
-    reason = f"n-best {yn[f.nbest]}, prosody {yn[f.prosody]} (probed {f.probed_on.isoformat()})"
-    status = ReadinessStatus.READY if f.nbest and f.prosody else ReadinessStatus.DEGRADED
-    return _row(c, status, reason)
 
 
 def _anthropic(i: ReadinessInputs) -> ReadinessRow:
@@ -172,10 +156,6 @@ def _anthropic(i: ReadinessInputs) -> ReadinessRow:
     )
 
 
-def _needs(name: str) -> tuple[str, ...]:
-    return ("torch", "transformers") if name == "crisper_whisper" else (name,)
-
-
 def _auto_order(i: ReadinessInputs) -> tuple[str, ...]:
     if i.system == "darwin" and i.machine == "arm64":
         return ("mlx_whisper", "faster_whisper", "azure_stt")
@@ -184,60 +164,13 @@ def _auto_order(i: ReadinessInputs) -> tuple[str, ...]:
     return ("azure_stt",)
 
 
-_AZURE_FIX = "set NOSOLEAR_AZURE_SPEECH_KEY and NOSOLEAR_AZURE_SPEECH_REGION in .env"
-
-
 def _auto_fix(i: ReadinessInputs) -> str:
     order = _auto_order(i)
-    options = [f"run `{_APPLE_FIX}`"] if "mlx_whisper" in order else []
+    options = [f"run `{APPLE_FIX}`"] if "mlx_whisper" in order else []
     if "faster_whisper" in order:
-        options.append(f"run `{_LOCAL_FIX}`")
-    options.append(_AZURE_FIX)
+        options.append(f"run `{LOCAL_FIX}`")
+    options.append(AZURE_FIX)
     return ", or ".join(options)
-
-
-def _usable(name: str, i: ReadinessInputs) -> bool:
-    if name == "azure_stt":
-        return _azure_ready(i)
-    return all(module in i.modules for module in _needs(name))
-
-
-def _transcriber(i: ReadinessInputs) -> ReadinessRow:
-    c = Component.TRANSCRIBER
-    if i.transcriber == "auto":
-        for name in _auto_order(i):
-            if _usable(name, i):
-                return _row(c, ReadinessStatus.READY, f"auto -> {name} (speed not yet checked)")
-        return _row(
-            c,
-            ReadinessStatus.MISSING,
-            "no transcriber is usable here",
-            _auto_fix(i),
-        )
-    name = i.transcriber
-    note = " (non-commercial licence, opt-in)" if name == "crisper_whisper" else ""
-    if _usable(name, i):
-        return _row(c, ReadinessStatus.READY, f"{name}{note}")
-    if name == "azure_stt":
-        return _row(
-            c,
-            ReadinessStatus.MISSING,
-            "azure_stt needs Azure Speech",
-            _AZURE_FIX,
-        )
-    fix = _APPLE_FIX if name == "mlx_whisper" else _LOCAL_FIX
-    return _row(c, ReadinessStatus.NOT_INSTALLED, f"{name} library is not installed{note}", fix)
-
-
-def _phone_probe(i: ReadinessInputs) -> ReadinessRow:
-    if {"torch", "transformers"} <= i.modules and i.espeak_installed:
-        return _row(Component.PHONE_PROBE, ReadinessStatus.READY, "torch, transformers, espeak-ng")
-    return _row(
-        Component.PHONE_PROBE,
-        ReadinessStatus.NOT_INSTALLED,
-        "optional; needs torch, transformers and espeak-ng",
-        f"run `{_LOCAL_FIX}`, then install espeak-ng",
-    )
 
 
 def _language_pack(i: ReadinessInputs) -> ReadinessRow:
@@ -310,14 +243,64 @@ def _usage(i: ReadinessInputs) -> ReadinessRow:
     return _row(Component.USAGE, ReadinessStatus.READY, reason)
 
 
+def _needs(name: str) -> tuple[str, ...]:
+    return ("torch", "transformers") if name == "crisper_whisper" else (name,)
+
+
+def _platform(i: ReadinessInputs) -> Platform:
+    if i.system == "darwin" and i.machine == "arm64":
+        return Platform.MACOS_ARM64
+    if i.system == "linux":
+        return Platform.LINUX
+    return Platform.OTHER
+
+
+def _installed(i: ReadinessInputs) -> frozenset[TranscriberName]:
+    found = {
+        name
+        for name in TranscriberName
+        if name is not TranscriberName.AZURE_STT
+        and all(module in i.modules for module in _needs(name))
+    }
+    if _azure_ready(i):
+        found.add(TranscriberName.AZURE_STT)
+    return frozenset(found)
+
+
+def _choice(i: ReadinessInputs) -> TranscriberChoice:
+    if i.transcriber_choice is not None:
+        return i.transcriber_choice
+    return choose_transcriber(
+        i.transcriber,
+        platform=_platform(i),
+        installed=_installed(i),
+        real_time_factors=i.real_time_factors,
+    )
+
+
 def build_readiness(inputs: ReadinessInputs) -> ReadinessReport:
+    # Imported here: capabilities.py builds rows from this module's types.
+    from nosolear.domain.capabilities import capability_rows
+
+    azure_caps, transcriber, phone = capability_rows(
+        records=inputs.capability_records,
+        region=inputs.azure_region,
+        locale=inputs.azure_locale,
+        azure_ready=_azure_ready(inputs),
+        transcriber=_choice(inputs),
+        installed=_installed(inputs),
+        real_time_factors=inputs.real_time_factors,
+        phone_probe_installed={"torch", "transformers"} <= inputs.modules,
+        espeak_found=inputs.espeak_installed,
+        auto_fix=_auto_fix(inputs),
+    )
     return ReadinessReport(
         rows=(
             _azure_speech(inputs),
-            _azure_capabilities(inputs),
+            azure_caps,
             _anthropic(inputs),
-            _transcriber(inputs),
-            _phone_probe(inputs),
+            transcriber,
+            phone,
             _language_pack(inputs),
             _data_dir(inputs),
             _usage(inputs),

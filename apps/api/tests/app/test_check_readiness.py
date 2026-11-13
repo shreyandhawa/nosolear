@@ -131,7 +131,7 @@ def test_field_mapping_uses_the_settings_values(tmp_path: Path):
     assert "Azure 1.5 h" in usage and "TTS 2k chars" in usage and "Claude 3k tokens" in usage
     assert "en-GB" in rows[Component.AZURE_SPEECH].reason
     assert "claude-test-9" in rows[Component.ANTHROPIC].reason
-    assert "auto -> mlx_whisper" in rows[Component.TRANSCRIBER].reason
+    assert "auto → mlx_whisper" in rows[Component.TRANSCRIBER].reason
 
 
 def test_explicit_transcriber_with_module_present(tmp_path: Path):

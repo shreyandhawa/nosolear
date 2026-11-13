@@ -69,3 +69,14 @@ def test_umask_is_owner_only_when_creating(tmp_path: Path) -> None:
     probe = tmp_path / "d" / "probe"
     probe.write_text("x")
     assert mode(probe) == 0o600
+
+
+QUIET = ("httpx", "httpcore", "httpx2", "httpcore2", "anthropic", "azure")
+
+
+def test_the_sdk_and_http_loggers_stay_at_warning(tmp_path: Path) -> None:
+    for name in QUIET:
+        logging.getLogger(name).setLevel(logging.DEBUG)
+    prepare_process(make_settings(data_dir=tmp_path), create_data_dir=False)
+    for name in QUIET:
+        assert logging.getLogger(name).level == logging.WARNING, name

@@ -208,13 +208,21 @@ def test_doctor_exits_0_when_configured_and_never_prints_keys(
         assert key not in captured.out and key not in captured.err
 
 
-def test_doctor_probe_is_not_available_yet(
+def test_doctor_probe_without_a_region_exits_1_and_reveals_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    # The keys are planted without a region, so every Azure call raises before anything is sent.
+    # `_env_file=None` keeps the repo's .env out of the test.
+    monkeypatch.setattr("nosolear.cli.Settings", make_settings)
     monkeypatch.setenv("NOSOLEAR_DATA_DIR", str(tmp_path / "data"))
-    assert main(["doctor", "--probe"]) == 2
+    monkeypatch.setenv("NOSOLEAR_AZURE_SPEECH_KEY", AZURE_KEY)
+    monkeypatch.setenv("NOSOLEAR_ANTHROPIC_API_KEY", CLAUDE_KEY)
+    assert main(["doctor", "--probe"]) == 1
     captured = capsys.readouterr()
-    assert "probes arrive in Phase 0d" in captured.err and captured.out == ""
+    assert "NOSOLEAR_AZURE_SPEECH_REGION" in captured.out
+    assert "failed" in captured.out
+    for key in (AZURE_KEY, CLAUDE_KEY):
+        assert key not in captured.out and key not in captured.err
 
 
 def test_doctor_with_an_unknown_pack_still_prints_every_row(

@@ -10,7 +10,7 @@ Nosolear runs on your machine. It has no accounts and no server of ours. It talk
 | | Audio of recordings to transcribe | Only when the transcriber is `azure_stt` |
 | | Text to speak, as SSML | Text-to-speech cache misses: model voice, calibration controls, probe and speed-check clips |
 | | Synthesized audio only, never your voice | `nosolear doctor --probe` and `make test-live` |
-| Anthropic (your own key) | Transcripts, the item text (prompt or reference), and the error keys the request is about | Coach calls. Never audio |
+| Anthropic (your own key) | The fixed system prompt; a JSON user message with the task, the prompt text and the transcript (for an explanation: the error key, its description, the quoted words and the context); the JSON schema the reply must follow; the model id. Your key goes only to `api.anthropic.com`, as a Bearer token. The SDK adds its platform headers (operating system, architecture, Python and SDK version) | Coach calls. Never audio |
 | Hugging Face | Requests for pinned model files; no user data | First use of a local model (`local` or `apple` extra). Telemetry is switched off (`HF_HUB_DISABLE_TELEMETRY=1`) before any Hugging Face import |
 
 The Azure Speech SDK 1.53.0 has its own telemetry code. Its Python API, which Nosolear uses, exposes no switch for it, so Nosolear cannot turn it off from its side; this was checked on that version and is not something Nosolear adds.

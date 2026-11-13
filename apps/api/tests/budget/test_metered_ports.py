@@ -4,23 +4,35 @@ import pytest
 from factories import FixedClock
 from fakes import FakeUsageLedger
 from provider_fakes import (
+    FakeCoach,
     FakeScorer,
     FakeSpeechSynthesizer,
     FakeTranscriber,
     assessment,
+    raw_result,
     transcript,
 )
 from wavs import write_wav
 
+from nosolear.budget.estimators import claude_tokens
 from nosolear.budget.meter import Meter
 from nosolear.budget.metered_ports import (
+    MeteredCoach,
     MeteredPronunciationScorer,
     MeteredSpeechSynthesizer,
     MeteredTranscriber,
 )
 from nosolear.domain.budget import Caps, Provider, Unit
+from nosolear.domain.coach import (
+    ANALYZE_MAX_TOKENS,
+    CoachAnalysis,
+    CoachTask,
+    analysis_request,
+    coach_keys,
+)
 from nosolear.domain.errors import CapExceeded, RequestNotSent
 from nosolear.domain.speech import SynthesizedAudio
+from nosolear.domain.taxonomy import DEFAULT_TAXONOMY as TAX
 
 T0 = datetime(2026, 11, 13, 9, 0, tzinfo=UTC)
 CAPS = Caps(azure_audio_seconds=100, azure_tts_chars=100, claude_tokens=100)
@@ -123,3 +135,68 @@ def test_tts_request_not_sent_releases_the_reservation():
         port.synthesize("hello", rate_percent=0)
     usage = ledger.usage(Provider.AZURE, Unit.TTS_CHARS)
     assert (usage.recorded, usage.reserved) == (0, 0)
+
+
+COACH_KEYS = coach_keys(TAX, CoachTask.QUICK_ANSWERS)
+COACH_CAPS = Caps(azure_audio_seconds=100, azure_tts_chars=100, claude_tokens=100_000)
+
+
+def _coach_analysis(tokens: int) -> CoachAnalysis:
+    return CoachAnalysis(
+        findings=(),
+        rubric=None,
+        rewrite=None,
+        dropped=0,
+        tokens_used=tokens,
+        raw=raw_result(adapter="claude_coach", provider="anthropic"),
+    )
+
+
+def test_coach_reserves_upper_bound():
+    ledger = FakeUsageLedger(COACH_CAPS, FixedClock(T0))
+    fake = FakeCoach(results=[_coach_analysis(500)])
+    MeteredCoach(fake, Meter(ledger), taxonomy=TAX).analyze(
+        task=CoachTask.QUICK_ANSWERS,
+        prompt_text="Why?",
+        transcript="I go yesterday",
+        allowed_keys=COACH_KEYS,
+    )
+    request = analysis_request(
+        task=CoachTask.QUICK_ANSWERS,
+        prompt_text="Why?",
+        transcript="I go yesterday",
+        allowed_keys=COACH_KEYS,
+        taxonomy=TAX,
+    )
+    assert claude_tokens(request) >= len(request.system.encode()) + ANALYZE_MAX_TOKENS
+    assert claude_tokens(request) >= ANALYZE_MAX_TOKENS + 1000
+    usage = ledger.usage(Provider.ANTHROPIC, Unit.TOKENS)
+    assert usage.reserved == 0 and usage.recorded == 500
+    assert len(fake.calls) == 1
+
+
+def test_coach_records_tokens_used():
+    ledger = FakeUsageLedger(COACH_CAPS, FixedClock(T0))
+    fake = FakeCoach(results=[_coach_analysis(1234)])
+    MeteredCoach(fake, Meter(ledger), taxonomy=TAX).analyze(
+        task=CoachTask.QUICK_ANSWERS,
+        prompt_text="Why?",
+        transcript="I go",
+        allowed_keys=COACH_KEYS,
+    )
+    assert ledger.usage(Provider.ANTHROPIC, Unit.TOKENS).recorded == 1234
+
+
+def test_a_coach_estimate_over_the_cap_makes_no_call():
+    ledger = FakeUsageLedger(
+        Caps(azure_audio_seconds=1, azure_tts_chars=1, claude_tokens=10), FixedClock(T0)
+    )
+    fake = FakeCoach(results=[_coach_analysis(1)])
+    with pytest.raises(CapExceeded):
+        MeteredCoach(fake, Meter(ledger), taxonomy=TAX).analyze(
+            task=CoachTask.QUICK_ANSWERS,
+            prompt_text="Why?",
+            transcript="I go",
+            allowed_keys=COACH_KEYS,
+        )
+    assert fake.calls == []

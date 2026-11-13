@@ -5,7 +5,7 @@ from typing import Protocol
 
 from nosolear.domain.observations import Observation
 from nosolear.domain.profile import Profile
-from nosolear.domain.speech import SynthesizedClip
+from nosolear.domain.speech import ProviderCapabilities, SynthesizedClip
 
 
 class ObservationReader(Protocol):
@@ -30,3 +30,13 @@ class TtsCacheStore(Protocol):
     def get(self, hash: str) -> SynthesizedClip | None: ...
 
     def put(self, clip: SynthesizedClip, *, text: str, created_at: datetime) -> None: ...
+
+
+class CapabilityWriter(Protocol):
+    def add(self, caps: ProviderCapabilities) -> None: ...
+
+
+class CapabilityReader(Protocol):
+    def latest(self, provider: str, adapter: str) -> ProviderCapabilities | None: ...
+
+    def latest_all(self) -> list[ProviderCapabilities]: ...
