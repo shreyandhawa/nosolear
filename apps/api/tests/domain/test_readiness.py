@@ -204,7 +204,7 @@ def test_usage_row():
     assert r.status is S.READY
     assert r.reason == (
         "caps: Azure 4.5 h and TTS 450k chars a month, Claude 100k tokens a day (UTC);"
-        " usage tracking arrives with the ledger"
+        " no usage recorded yet"
     )
     usage = UsageSnapshot(azure_audio_hours=0.4, tts_chars=12000, claude_tokens=3000)
     r = row(make_inputs(usage=usage), C.USAGE)

@@ -299,7 +299,7 @@ def _usage(i: ReadinessInputs) -> ReadinessRow:
         reason = (
             f"caps: Azure {caps.azure_audio_hours:g} h and TTS {_count(caps.tts_chars)} chars"
             f" a month, Claude {_count(caps.claude_tokens)} tokens a day (UTC);"
-            " usage tracking arrives with the ledger"
+            " no usage recorded yet"
         )
     else:
         reason = (
