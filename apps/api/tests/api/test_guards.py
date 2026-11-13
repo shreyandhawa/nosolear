@@ -20,7 +20,8 @@ WS_URL = "ws://127.0.0.1:8000/ws-test"
 READ_ONLY_GET_ROUTES = {"/api/health", "/api/profile", "/api/readiness"}  # later phases add theirs
 
 
-DOCS_ROUTES = {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}
+# Swagger UI and ReDoc load scripts from a CDN, so they are disabled; the schema itself is kept.
+DOCS_ROUTES = {"/openapi.json"}
 
 
 def _all_get_paths(app: Any) -> set[str]:
@@ -86,8 +87,20 @@ def test_duplicate_origin_header_refused(app: FastAPI) -> None:
 
 
 def test_vite_proxy_host_allowed(app: FastAPI) -> None:
+    # The Vite proxy keeps the browser's Host (changeOrigin: false), so this is what it sends.
     with loopback_client(app) as c:
         assert c.get("/api/health", headers={"Host": "localhost:5173"}).status_code == 200
+
+
+@pytest.mark.parametrize("path", ["/docs", "/redoc", "/docs/oauth2-redirect"])
+def test_interactive_docs_are_not_served(app: FastAPI, path: str) -> None:
+    with loopback_client(app) as c:
+        assert c.get(path).status_code == 404
+
+
+def test_openapi_schema_is_still_served(app: FastAPI) -> None:
+    with loopback_client(app) as c:
+        assert c.get("/openapi.json").status_code == 200
 
 
 def test_origin_null_refused(app: FastAPI) -> None:

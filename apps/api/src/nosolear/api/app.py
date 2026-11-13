@@ -51,7 +51,13 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    app = FastAPI(title="Nosolear", lifespan=_lifespan)
+    app = FastAPI(
+        title="Nosolear",
+        lifespan=_lifespan,
+        # Swagger UI and ReDoc load JavaScript from a CDN into the API's origin (spec §16).
+        docs_url=None,
+        redoc_url=None,
+    )
     settings = settings or Settings()
     app.state.settings = settings
     app.include_router(profile_router)

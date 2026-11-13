@@ -201,11 +201,17 @@ def test_data_dir_rows():
 
 def test_usage_row():
     r = row(make_inputs(), C.USAGE)
-    assert r.status is S.READY and "4.5" in r.reason and "ledger" in r.reason
+    assert r.status is S.READY
+    assert r.reason == (
+        "caps: Azure 4.5 h and TTS 450k chars a month, Claude 100k tokens a day (UTC);"
+        " usage tracking arrives with the ledger"
+    )
     usage = UsageSnapshot(azure_audio_hours=0.4, tts_chars=12000, claude_tokens=3000)
     r = row(make_inputs(usage=usage), C.USAGE)
     assert r.status is S.READY
-    assert r.reason == "Azure 0.4 of 4.5 h, TTS 12k of 450k chars, Claude 3k of 100k tokens today"
+    assert r.reason == (
+        "Azure 0.4 of 4.5 h and TTS 12k of 450k chars this month, Claude 3k of 100k tokens today"
+    )
 
 
 def test_report_has_eight_rows_in_enum_order():
