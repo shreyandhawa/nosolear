@@ -32,9 +32,10 @@ def advance_rechecks(
     """The schedule after one session.
 
     `checked` holds the mastered keys that had at least one opportunity in the session just
-    completed. A key with no opportunity keeps its state, so a key the learner did not practise
-    is not moved along the ladder by a session that never tested it. Only the clock passed in
-    is read, so the result is a function of its arguments.
+    completed. A key moves one rung only when its check was due (`next_at <= now`): practising it
+    early tests it but does not skip the ladder. A key with no opportunity, or one not yet due,
+    keeps its state. Only the clock passed in is read, so the result is a function of its
+    arguments.
     """
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
@@ -46,7 +47,7 @@ def advance_rechecks(
         prior = previous.get(key)
         if prior is None:
             stage = 0
-        elif key in checked:
+        elif key in checked and prior.next_at <= now:
             stage = min(prior.stage + 1, _TOP_STAGE)
         else:
             result[key] = prior

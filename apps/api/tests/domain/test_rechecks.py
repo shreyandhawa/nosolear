@@ -45,6 +45,25 @@ def test_unchecked_key_keeps_state() -> None:
     assert states == previous
 
 
+def test_checked_key_that_is_not_yet_due_keeps_its_rung() -> None:
+    """Practised early is not a re-check: the ladder moves only when the check is due."""
+    previous = {KEY: RecheckState(stage=1, next_at=NOW + timedelta(days=3))}
+    states = advance_rechecks(profile=mastered(KEY), previous=previous, checked={KEY}, now=NOW)
+    assert states == previous
+
+
+def test_five_daily_sessions_do_not_race_a_key_up_the_ladder() -> None:
+    """A key checked every day moves only when each re-check falls due: 2 days, then 4 more. The
+    old rule reached the 32-day rung in five sessions."""
+    profile = mastered(KEY)
+    states = advance_rechecks(profile=profile, previous={}, checked=set(), now=NOW)
+    for day in range(1, 6):
+        now = NOW + timedelta(days=day)
+        states = advance_rechecks(profile=profile, previous=states, checked={KEY}, now=now)
+    assert states[KEY].stage == 1
+    assert states[KEY].next_at == NOW + timedelta(days=2 + 4)
+
+
 def test_relapsed_key_is_dropped_and_restarts_at_stage_zero() -> None:
     previous = {KEY: RecheckState(stage=3, next_at=NOW + timedelta(days=5))}
     relapsed = profile_of([entry(KEY, a=40, b=60, status=Status.ACTIVE)])
