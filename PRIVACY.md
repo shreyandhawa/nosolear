@@ -6,7 +6,7 @@ Nosolear runs on your machine. It has no accounts and no server of ours. It talk
 
 | Destination | What is sent | When |
 |---|---|---|
-| Azure Speech (your own resource and region) | Audio of each scored recording (16 kHz WAV) with its reference text | Scoring, calibration, the baseline and drills |
+| Azure Speech (your own resource and region) | Audio of each scored recording (16 kHz WAV), the locale, and the reference text with the scoring settings (pronunciation config JSON) | Scoring, calibration, the baseline and drills |
 | | Audio of recordings to transcribe | Only when the transcriber is `azure_stt` |
 | | Text to speak, as SSML | Text-to-speech cache misses: model voice, calibration controls, probe and speed-check clips |
 | | Synthesized audio only, never your voice | `nosolear doctor --probe` and `make test-live` |
