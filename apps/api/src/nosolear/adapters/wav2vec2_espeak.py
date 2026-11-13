@@ -64,7 +64,7 @@ def espeak_ipa(text: str, *, executable: Path, run: Run = subprocess.run) -> str
     try:
         done = run(
             [str(executable), *ESPEAK_ARGS],
-            input=text,
+            input=text + "\n",  # without it, espeak-ng drops the last character
             capture_output=True,
             text=True,
             timeout=_TIMEOUT_S,
