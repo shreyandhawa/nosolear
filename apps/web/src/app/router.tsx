@@ -5,20 +5,78 @@ import { DailyPage } from "../features/daily/DailyPage";
 import { HomePage } from "../features/home/HomePage";
 import { ProfilePage } from "../features/progress/ProfilePage";
 import { SetupPage } from "../features/setup/SetupPage";
+import { StatusDot } from "../shared/ui/Desk";
+import { useNav } from "./useNav";
+
+const TRAIL = [
+  { step: "readiness", label: "Setup", to: "/setup" },
+  { step: "calibration", label: "Calibration", to: "/calibration" },
+  { step: "baseline", label: "Baseline", to: "/baseline" },
+  { step: "report", label: "Report", to: "/baseline" },
+] as const;
+
+const link = "rounded-sm py-1 text-ink/70 transition-colors duration-150 hover:text-ink [&.active]:text-ink [&.active]:font-semibold";
 
 function RootLayout() {
+  const nav = useNav();
+  const at = TRAIL.findIndex((t) => t.step === nav.step);
   return (
-    <>
-      <nav className="flex gap-4 border-b border-slate-200 px-8 py-3 text-sm">
-        <Link to="/">Home</Link>
-        <Link to="/setup">Setup</Link>
-        <Link to="/calibration">Calibration</Link>
-        <Link to="/baseline">Baseline</Link>
-        <Link to="/today">Today</Link>
-        <Link to="/profile">Progress</Link>
+    <div className="app">
+      <nav aria-label="Main" className="flex h-14 items-center gap-10 border-b border-ink/15 px-8 text-[0.9375rem]">
+        <Link to="/" className="font-display text-[1.375rem] leading-none">
+          Nosolear
+        </Link>
+        {nav.firstRun ? (
+          <ol aria-label="First run" className="flex items-center gap-7">
+            {TRAIL.map((t, i) => (
+              <li key={t.step} className="flex items-center gap-2">
+                <StatusDot ok={i < at} />
+                <Link to={t.to} className={link} aria-current={i === at ? "step" : undefined}>
+                  {t.label}
+                </Link>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <ul className="flex items-center gap-7">
+            <li>
+              <Link to="/today" className={link}>
+                Today
+              </Link>
+            </li>
+            <li>
+              <Link to="/profile" className={link}>
+                Progress
+              </Link>
+            </li>
+            <li>
+              <Link to="/baseline" className={link}>
+                Baseline
+              </Link>
+            </li>
+            <li>
+              <Link to="/setup" className={link}>
+                Setup
+              </Link>
+            </li>
+          </ul>
+        )}
+        <p className="ml-auto flex min-w-0 items-center gap-2 text-[0.8125rem] text-ink/70">
+          {!nav.firstRun && (
+            <span className="flex shrink-0 items-center gap-1.5">
+              <StatusDot ok={nav.ready} />
+              {nav.ready ? "Ready" : "Not ready"}
+            </span>
+          )}
+          {nav.usage && (
+            <span className="truncate" title={nav.usage}>
+              {nav.usage}
+            </span>
+          )}
+        </p>
       </nav>
       <Outlet />
-    </>
+    </div>
   );
 }
 

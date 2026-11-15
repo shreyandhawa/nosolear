@@ -22,7 +22,16 @@ function isTyping(target: EventTarget | null): boolean {
 }
 
 /** Records from the microphone into a 48 kHz mono WAV held in memory. Space toggles. */
-export function useRecorder({ maxSeconds, keyboard = true }: { maxSeconds: number; keyboard?: boolean }) {
+export function useRecorder({
+  maxSeconds,
+  keyboard = true,
+  deviceId,
+}: {
+  maxSeconds: number;
+  keyboard?: boolean;
+  /** A microphone from `enumerateDevices`; the browser's default when unset. */
+  deviceId?: string;
+}) {
   const [state, setState] = useState<RecorderState>("idle");
   const [level, setLevel] = useState(0);
   const [elapsed, setElapsed] = useState(0);
@@ -53,7 +62,13 @@ export function useRecorder({ maxSeconds, keyboard = true }: { maxSeconds: numbe
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
-        audio: { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+        audio: {
+          channelCount: 1,
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+        },
       });
     } catch (e) {
       setState(e instanceof DOMException && e.name === "NotAllowedError" ? "denied" : "error");
@@ -88,7 +103,7 @@ export function useRecorder({ maxSeconds, keyboard = true }: { maxSeconds: numbe
       stream.getTracks().forEach((t) => t.stop());
       setState("error");
     }
-  }, [maxSeconds, stop]);
+  }, [maxSeconds, stop, deviceId]);
 
   const toggle = useCallback(() => {
     if (live.current) stop();
@@ -120,5 +135,8 @@ export function useRecorder({ maxSeconds, keyboard = true }: { maxSeconds: numbe
     setState("idle");
   }, []);
 
-  return { state, level, elapsed, wav, start, stop, toggle, reset };
+  /** The latest block's level, read per animation frame without a React render. */
+  const getLevel = useCallback(() => live.current?.level ?? 0, []);
+
+  return { state, level, elapsed, wav, start, stop, toggle, reset, getLevel };
 }

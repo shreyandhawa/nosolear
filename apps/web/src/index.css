@@ -1,1 +1,292 @@
 @import "tailwindcss";
+@import "@fontsource/gentium-book-plus/400.css";
+@import "@fontsource/gentium-book-plus/700.css";
+@import "@fontsource/schibsted-grotesk/400.css";
+@import "@fontsource/schibsted-grotesk/500.css";
+@import "@fontsource/schibsted-grotesk/600.css";
+
+@theme {
+  --color-paper: oklch(94.4% 0.0144 84.6);
+  --color-ink: oklch(21.4% 0.0119 167.3);
+  --color-onair: oklch(66.6% 0.2237 34.3);
+  /* The microphone's halo and rim light only. */
+  --color-phosphor: oklch(88.1% 0.1237 167.9);
+  --font-display: "Gentium Book Plus", Georgia, serif;
+  --font-sans: "Schibsted Grotesk", ui-sans-serif, sans-serif;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+html {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 100%;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  font-size: 1.0625rem;
+  line-height: 1.55;
+}
+
+::selection {
+  background: color-mix(in oklch, var(--color-ink) 85%, transparent);
+  color: var(--color-paper);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 3px;
+}
+
+.stage :focus-visible {
+  outline-color: var(--color-paper);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--color-ink) 30%, transparent) transparent;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+/* The desk: one layout for every screen. Navigation, then columns 36 / 44 / 20. */
+.app {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100dvh;
+  min-height: 560px;
+}
+
+.desk {
+  display: grid;
+  grid-template-columns: minmax(0, 36fr) minmax(0, 44fr) minmax(0, 20fr);
+  min-height: 0;
+}
+
+.desk-left,
+.desk-right {
+  display: grid;
+  min-height: 0;
+}
+
+.desk-left {
+  grid-template-rows: 50% auto minmax(0, 1fr);
+}
+
+.desk-right {
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) auto;
+  border-left: 1px solid color-mix(in oklch, var(--color-ink) 14%, transparent);
+}
+
+.slot {
+  min-height: 0;
+  overflow: auto;
+  padding: 1.75rem 2rem;
+}
+
+.slot > div {
+  height: 100%;
+}
+
+.slot pre,
+.slot p {
+  overflow-wrap: anywhere;
+}
+
+.desk-left > .slot + .slot,
+.desk-right > .slot + .slot {
+  border-top: 1px solid color-mix(in oklch, var(--color-ink) 14%, transparent);
+}
+
+.desk-left > .slot:not(:first-child) {
+  width: 75%;
+}
+
+.stage {
+  position: relative;
+  background: var(--color-ink);
+  color: var(--color-paper);
+  overflow: hidden;
+}
+
+/* Pressable controls feel heard. */
+.press {
+  transition:
+    transform 140ms var(--ease-out),
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
+
+.press:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.press:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* State changes: each slot's content cross-fades with an 8 px shift. */
+.swap {
+  animation: swap-in 220ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 35ms);
+}
+
+@keyframes swap-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .swap {
+    animation: swap-fade 150ms ease both;
+  }
+  @keyframes swap-fade {
+    from {
+      opacity: 0;
+    }
+  }
+  .press:active:not(:disabled) {
+    transform: none;
+  }
+}
+
+.sr-only-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The microphone. */
+.mic {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.mic-box {
+  position: relative;
+  height: 58%;
+  aspect-ratio: 3.225 / 4.3;
+}
+
+.mic-halo {
+  --level: 0;
+  position: absolute;
+  left: 50%;
+  width: 150%;
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in oklch, var(--color-phosphor) 50%, transparent),
+    color-mix(in oklch, var(--color-phosphor) 14%, transparent) 55%,
+    transparent
+  );
+  opacity: 0.26;
+  scale: 0.8;
+  transition:
+    opacity 220ms ease,
+    scale 220ms var(--ease-out);
+}
+
+.mic[data-state="ready"] .mic-halo {
+  opacity: 0.36;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .mic:has(.mic-button:not(:disabled):hover) .mic-halo {
+    opacity: 0.42;
+  }
+}
+
+/* While recording the halo follows the voice, written per frame, so no transition. */
+.mic[data-state="recording"] .mic-halo {
+  transition: none;
+  opacity: calc(0.3 + var(--level) * 0.7);
+  scale: calc(0.8 + var(--level) * 0.4);
+}
+
+.mic[data-state="error"] .mic-halo {
+  opacity: 0;
+}
+
+/* The flat silhouette hands over to the 3D scene with a cross-fade, never a pop. */
+.mic-flat,
+.mic-scene {
+  transition: opacity 240ms var(--ease-out);
+}
+
+.mic-scene,
+.mic-box[data-scene="ready"] .mic-flat {
+  opacity: 0;
+}
+
+.mic-box[data-scene="ready"] .mic-scene {
+  opacity: 1;
+}
+
+.mic-arc {
+  fill: none;
+  stroke: var(--color-onair);
+  stroke-width: 0.025;
+  stroke-linecap: round;
+}
+
+.mic-button {
+  position: absolute;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.mic-button:disabled {
+  cursor: default;
+}
+
+.mic-button:focus-visible {
+  outline: 2px solid var(--color-paper);
+  outline-offset: 4px;
+}
+
+.mic-hint {
+  margin-top: 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.9375rem;
+  color: color-mix(in oklch, var(--color-paper) 72%, transparent);
+}
+
+.mic-onair {
+  border-radius: 999px;
+  background: var(--color-onair);
+  color: var(--color-ink);
+  padding: 0.125rem 0.625rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
