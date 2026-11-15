@@ -34,6 +34,7 @@ Spec: `docs/app-first.md`. Each item is ticked with a one-line proof.
 - B: calibration and baseline items now carry `item_id` (additive) so the model voice can name the content item.
 - B: the daily screen POSTs feedback once when the analyze job is done; the API lock stops a second coach call.
 - B: a calibration take records for up to 10 s; a baseline item for its `max_seconds` (60 s when none).
+- B0 follow-up: the recorder now opens its AudioContext at 48 kHz and uploads a 48 kHz WAV; the server's filtered `resample_to_16k` makes the 16 kHz copy, and the browser's linear `resample()` (no low-pass, so it aliased) is gone. The longest item (90 s) is about 8.6 MB, under the unchanged 10 MB cap. Proof: `wav.test.ts` and `test_web_encoder_bytes_are_accepted_by_the_upload_route` pin the new digest; the upload returns 202 with `duration_ms` 1000.
 
 ## Blocked
 
