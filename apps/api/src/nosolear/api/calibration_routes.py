@@ -63,6 +63,7 @@ def _run_out(view: CalibrationView) -> CalibrationRunOut:
         items=[
             CalibrationItemOut(
                 attempt_id=i.attempt_id,
+                item_id=i.item_id,
                 order=i.order,
                 error_key=i.error_key,
                 word=i.word,

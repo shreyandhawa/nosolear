@@ -390,6 +390,8 @@ export interface components {
         BaselineItemOut: {
             /** Attempt Id */
             attempt_id: string;
+            /** Item Id */
+            item_id: string;
             /** Job Status */
             job_status: string | null;
             /** Max Seconds */
@@ -459,6 +461,8 @@ export interface components {
             error_key: string;
             /** Instruction */
             instruction: string;
+            /** Item Id */
+            item_id: string;
             /** Job Status */
             job_status: string | null;
             /** Order */

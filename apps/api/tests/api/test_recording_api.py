@@ -11,6 +11,7 @@ from factories import FixedClock, loopback_client, make_settings
 from fakes import FakeStep
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from harness import Harness
 from sqlalchemy import Engine
 from wavs import make_wav, raw_wav
 
@@ -295,3 +296,36 @@ def test_second_upload_is_rejected_before_any_body_is_stored(
         second = _wav_post(client, attempt_id, make_wav(1.0))
     assert second.status_code == 409
     assert begun == []
+
+
+# The web recorder's encoder (`apps/web/src/shared/audio/wav.ts`) is tested on the same synthetic
+# samples, and its test pins the same digest, so these are the bytes the browser would send.
+WEB_ENCODER_SHA256 = "e8d62151e71b3d5d29b5093f29eba3375014b376c61df77e22bdf1b357ac7e6d"
+
+
+def _web_encoder_bytes() -> bytes:
+    """What `encodeWav` makes of one second of a 400 Hz sawtooth at 16 kHz, done the same way:
+    float32 samples, then `x * 32768` below zero and `x * 32767` above, rounded half up."""
+    import math
+
+    import numpy as np
+
+    pcm = bytearray()
+    for i in range(16000):
+        x = float(np.float32(((i % 40) - 20) / 20))
+        v = math.floor((x * 32768 if x < 0 else x * 32767) + 0.5)
+        pcm += struct.pack("<h", max(-32768, min(32767, v)))
+    return raw_wav(rate=16000, pcm=bytes(pcm))
+
+
+def test_web_encoder_bytes_are_accepted_by_the_upload_route(harness: Harness) -> None:
+    import hashlib
+
+    wav = _web_encoder_bytes()
+    assert hashlib.sha256(wav).hexdigest() == WEB_ENCODER_SHA256
+    attempt_id = harness.attempt(step="speak", scripted=False, reference_text=None)
+    response = harness.client.post(
+        f"/api/attempts/{attempt_id}/recording", content=wav, headers={"content-type": "audio/wav"}
+    )
+    assert response.status_code == 202, response.text
+    assert response.json()["duration_ms"] == 1000

@@ -37,6 +37,10 @@
             "title": "Attempt Id",
             "type": "string"
           },
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
           "job_status": {
             "anyOf": [
               {
@@ -101,6 +105,7 @@
         },
         "required": [
           "attempt_id",
+          "item_id",
           "order",
           "section",
           "step",
@@ -236,6 +241,10 @@
             "title": "Instruction",
             "type": "string"
           },
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
           "job_status": {
             "anyOf": [
               {
@@ -270,6 +279,7 @@
         },
         "required": [
           "attempt_id",
+          "item_id",
           "order",
           "error_key",
           "word",

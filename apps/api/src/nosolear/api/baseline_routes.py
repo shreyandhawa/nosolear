@@ -65,6 +65,7 @@ def _session_out(view: BaselineView) -> BaselineSessionOut:
         items=[
             BaselineItemOut(
                 attempt_id=i.attempt_id,
+                item_id=i.item_id,
                 order=i.order,
                 section=i.section,
                 step=i.step,

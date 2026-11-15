@@ -12,16 +12,16 @@ Spec: `docs/app-first.md`. Each item is ticked with a one-line proof.
 
 ## Part B (branch `app/b-web`)
 
-- [ ] B0. Recorder
-- [ ] B1. Setup
-- [ ] B2. Calibration
-- [ ] B3. Baseline
-- [ ] B4. Daily session
-- [ ] B5. Home
+- [x] B0. Recorder (`shared/audio`). Proof: `wav.test.ts` checks the header and pins the SHA-256 of the encoded synthetic samples; `test_web_encoder_bytes_are_accepted_by_the_upload_route` builds the same bytes, matches the digest and gets 202 from the upload route.
+- [x] B1. Setup. Proof: `useSetup.test.tsx` (missing `.env` lines, Run check moves onboarding past readiness) passes; seen in the browser pane at `/setup` on `data/verify`.
+- [x] B2. Calibration. Proof: `useCalibration.test.tsx` (start, resume at the first unrecorded take, n of N, finish job, result) passes.
+- [x] B3. Baseline. Proof: `useBaseline.test.tsx` (start, complete, report with clips, provisional flag and skill score) passes.
+- [x] B4. Daily session. Proof: `useDaily.test.tsx` (plan, start, upload, analyze job, one feedback POST, fix/not scored/clean cards with a template fallback, complete) passes.
+- [x] B5. Home. Proof: `useHomeTarget.test.tsx` passes; in the browser pane `/` went to `/setup`. Nav: Home, Setup, Calibration, Baseline, Today, Progress. `pnpm typecheck`, `pnpm lint` and `pnpm build` pass.
 
 ## Part C
 
-- [ ] C. HANDOFF "Next", ARCHITECTURE §13 "Later phases" and the done rule
+- [x] C. HANDOFF "Next", ARCHITECTURE §13 "Later phases" and the done rule. Proof: `git diff --stat` shows 14 lines in HANDOFF and 15 in ARCHITECTURE.
 
 ## Decisions
 
@@ -30,6 +30,10 @@ Spec: `docs/app-first.md`. Each item is ticked with a one-line proof.
 - A3 model voice is `POST /api/model-voice` `{source: feedback_item|content_item, id, rate_percent}` → `{clip_id, duration_ms}`; the clip id is the cache hash, and the GET checks it is 64 hex characters.
 - A4 serves `dist` as the router's default for HTTP only (not a mount), with an `index.html` fallback except under `api/`, `docs/` and `redoc/`. When `dist` is served, the guard also accepts the API's own loopback origin (`create_app`, not `guards.py` or `network_policy.py`).
 - A5 all-clean GET: an analyzed daily session with no fix returns its computed report without a POST (nothing would be stored either way). Double POST: a per-session lock, and an `invalid_output` template is no longer re-asked on every POST.
+- Part A gate review (one opus subagent, the four kinds only): no key leakage, weakened guards, unmetered paid calls or data loss. PR #51 merged with every check green.
+- B: calibration and baseline items now carry `item_id` (additive) so the model voice can name the content item.
+- B: the daily screen POSTs feedback once when the analyze job is done; the API lock stops a second coach call.
+- B: a calibration take records for up to 10 s; a baseline item for its `max_seconds` (60 s when none).
 
 ## Blocked
 
