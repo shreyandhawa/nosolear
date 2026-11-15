@@ -28,6 +28,8 @@ READ_ONLY_GET_ROUTES = {
     "/api/onboarding",
     "/api/plan/today",
     "/api/sessions/{session_id}/feedback",
+    "/api/attempts/{attempt_id}/recording",
+    "/api/model-voice/{clip_id}",
 }  # later phases add theirs
 
 

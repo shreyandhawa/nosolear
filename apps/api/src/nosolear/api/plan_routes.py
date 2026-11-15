@@ -61,7 +61,7 @@ def _plan_out(stored: StoredPlan) -> PlanOut:
     return PlanOut(
         id=stored.id,
         for_date=plan.for_date,
-        seed=plan.seed,
+        seed=str(plan.seed),
         protocol_version=plan.protocol_version,
         foci=[
             FocusOut(

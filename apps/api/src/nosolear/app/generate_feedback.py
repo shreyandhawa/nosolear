@@ -7,6 +7,7 @@ the coach again for an item the coach already wrote. A skill's stored fix keeps 
 upgrade explains what was shown and a newer profile cannot change it.
 """
 
+import threading
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -46,6 +47,15 @@ from nosolear.ports.providers import Coach
 
 _EVIDENCE_CAP = 300
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+# One generation per session at a time, so a double POST cannot ask the coach twice.
+_LOCKS: dict[str, threading.Lock] = {}
+_LOCKS_GUARD = threading.Lock()
+
+
+def _lock_for(session_id: str) -> threading.Lock:
+    with _LOCKS_GUARD:
+        return _LOCKS.setdefault(session_id, threading.Lock())
 
 
 def _no_profile(taxonomy: Taxonomy) -> Profile:
@@ -118,7 +128,18 @@ def generate_feedback(
         raise SessionNotDaily("Feedback is only made for a daily session.")
     if not jobs.analyzed(session_id):
         raise SessionNotAnalyzed("The session has no finished analysis yet.")
+    with _lock_for(session_id):
+        return _generate(session_id, observations, profiles, feedback, coach, taxonomy)
 
+
+def _generate(
+    session_id: str,
+    observations: SessionObservationReader,
+    profiles: ProfileReader,
+    feedback: FeedbackStore,
+    coach: Coach,
+    taxonomy: Taxonomy,
+) -> FeedbackReport:
     profile = profiles.latest() or _no_profile(taxonomy)
     held = {item.skill: item for item in feedback.for_session(session_id)}
     # A stored fix keeps its key: a newer profile may rank another key first, but what was shown
@@ -137,7 +158,11 @@ def generate_feedback(
             continue
         fix = outcome.fix
         existing = held.get(outcome.skill)
-        if existing is not None and existing.source == "coach":
+        # The coach already wrote it, or already answered it badly: asking again would be another
+        # paid call with no limit on attempts.
+        if existing is not None and (
+            existing.source == "coach" or existing.fallback_reason == "invalid_output"
+        ):
             continue
         if down is None:
             reason, down = _ask_coach(session_id, fix, coach, taxonomy, written)
@@ -202,6 +227,8 @@ def _ask_coach(
 def read_feedback(
     *,
     session_id: str,
+    sessions: SessionReader,
+    jobs: SessionJobStatus,
     observations: SessionObservationReader,
     feedback: FeedbackStore,
     taxonomy: Taxonomy,
@@ -209,15 +236,23 @@ def read_feedback(
     """The stored feedback with each skill's state, or None when none was ever generated.
 
     No coach and no profile: the states come from the session's own observations, and the items
-    are the stored ones. A later profile rebuild therefore cannot change what was shown.
+    are the stored ones. A later profile rebuild therefore cannot change what was shown. An
+    analyzed daily session with no fix to explain (all clean or not scored) stores no item, so its
+    report is the same with or without a POST and is returned as it is.
     """
-    if not feedback.for_session(session_id):
-        return None
     outcomes = choose_fixes(
         session_observations=observations.for_session(session_id),
         profile=_no_profile(taxonomy),
         taxonomy=taxonomy,
     )
+    if not feedback.for_session(session_id):
+        nothing_to_explain = all(o.state is not SkillState.FIX for o in outcomes)
+        if not (
+            nothing_to_explain
+            and sessions.kind(session_id) == "daily"
+            and jobs.analyzed(session_id)
+        ):
+            return None
     return _report(session_id, outcomes, feedback)
 
 

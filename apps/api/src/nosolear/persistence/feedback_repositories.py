@@ -149,6 +149,12 @@ class FeedbackRepository:
             )
         return items
 
+    def model_text(self, item_id: str) -> str | None:
+        """The stored model text of one item, read by the model-voice route."""
+        stmt = select(feedback_items.c.model_text).where(feedback_items.c.id == item_id)
+        with self._engine.connect() as conn:
+            return conn.execute(stmt).scalar_one_or_none()
+
     def upsert(self, session_id: str, items: Sequence[FeedbackItem]) -> None:
         stamp = datetime.now(UTC)
         with self._engine.begin() as conn:

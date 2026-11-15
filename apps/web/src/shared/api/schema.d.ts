@@ -11,7 +11,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Get Attempt Recording
+         * @description The stored 16 kHz WAV. The client seeks to an item's `start_ms` and `end_ms` itself.
+         */
+        get: operations["getRecording"];
         put?: never;
         /** Upload Attempt Recording */
         post: operations["uploadRecording"];
@@ -176,6 +180,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/model-voice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Synthesize Model Voice */
+        post: operations["synthesizeModelVoice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/model-voice/{clip_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Model Voice */
+        get: operations["getModelVoice"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/onboarding": {
         parameters: {
             query?: never;
@@ -256,6 +294,27 @@ export interface paths {
         get: operations["getReadiness"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/readiness/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Readiness Probe
+         * @description `doctor --probe` from the app: paid calls through the app's metered ports, so POST only.
+         *     Each outcome's message is the safe one its adapter gave.
+         */
+        post: operations["runReadinessProbe"];
         delete?: never;
         options?: never;
         head?: never;
@@ -637,6 +696,28 @@ export interface components {
             /** Tries */
             tries: number;
         };
+        /** ModelVoiceIn */
+        ModelVoiceIn: {
+            /** Id */
+            id: string;
+            /**
+             * Rate Percent
+             * @default 0
+             */
+            rate_percent: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "feedback_item" | "content_item";
+        };
+        /** ModelVoiceOut */
+        ModelVoiceOut: {
+            /** Clip Id */
+            clip_id: string;
+            /** Duration Ms */
+            duration_ms: number;
+        };
         /** OnboardingBlockerOut */
         OnboardingBlockerOut: {
             /** Component */
@@ -677,7 +758,7 @@ export interface components {
             /** Protocol Version */
             protocol_version: number;
             /** Seed */
-            seed: number;
+            seed: string;
             /** Steps */
             steps: components["schemas"]["PlanStepOut"][];
         };
@@ -707,6 +788,20 @@ export interface components {
              * @enum {string}
              */
             skill: "sounds" | "on_the_spot" | "articulate";
+        };
+        /** ProbeOutcomeOut */
+        ProbeOutcomeOut: {
+            /** Adapter */
+            adapter: string;
+            /** Message */
+            message: string;
+            /** Ok */
+            ok: boolean;
+        };
+        /** ProbeRunOut */
+        ProbeRunOut: {
+            /** Outcomes */
+            outcomes: components["schemas"]["ProbeOutcomeOut"][];
         };
         /** ProfileEntryOut */
         ProfileEntryOut: {
@@ -900,6 +995,46 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getRecording: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attempt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "audio/wav": unknown;
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     uploadRecording: {
         parameters: {
             query?: never;
@@ -1249,6 +1384,88 @@ export interface operations {
             };
         };
     };
+    synthesizeModelVoice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelVoiceIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelVoiceOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    getModelVoice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                clip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "audio/wav": unknown;
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     getOnboarding: {
         parameters: {
             query?: never;
@@ -1379,6 +1596,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReadinessOut"];
+                };
+            };
+        };
+    };
+    runReadinessProbe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProbeRunOut"];
                 };
             };
         };
