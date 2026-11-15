@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { encodeWav, joinChunks, resample, rms } from "./wav";
+import { encodeWav, joinChunks, rms, SAMPLE_RATE } from "./wav";
 
 export type RecorderState = "idle" | "starting" | "recording" | "recorded" | "denied" | "error";
 
@@ -21,7 +21,7 @@ function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && target.closest("button, input, textarea, select") !== null;
 }
 
-/** Records from the microphone into a 16 kHz mono WAV held in memory. Space toggles. */
+/** Records from the microphone into a 48 kHz mono WAV held in memory. Space toggles. */
 export function useRecorder({ maxSeconds, keyboard = true }: { maxSeconds: number; keyboard?: boolean }) {
   const [state, setState] = useState<RecorderState>("idle");
   const [level, setLevel] = useState(0);
@@ -40,7 +40,7 @@ export function useRecorder({ maxSeconds, keyboard = true }: { maxSeconds: numbe
     if (!l) return;
     live.current = null;
     release(l);
-    setWav(encodeWav(resample(joinChunks(l.chunks), l.ctx.sampleRate)));
+    setWav(encodeWav(joinChunks(l.chunks), l.ctx.sampleRate));
     setLevel(0);
     setState("recorded");
   }, []);
@@ -60,7 +60,7 @@ export function useRecorder({ maxSeconds, keyboard = true }: { maxSeconds: numbe
       return;
     }
     try {
-      const ctx = new AudioContext();
+      const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
       const url = URL.createObjectURL(new Blob([TAP], { type: "text/javascript" }));
       try {
         await ctx.audioWorklet.addModule(url);

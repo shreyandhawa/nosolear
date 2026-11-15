@@ -299,23 +299,24 @@ def test_second_upload_is_rejected_before_any_body_is_stored(
 
 
 # The web recorder's encoder (`apps/web/src/shared/audio/wav.ts`) is tested on the same synthetic
-# samples, and its test pins the same digest, so these are the bytes the browser would send.
-WEB_ENCODER_SHA256 = "e8d62151e71b3d5d29b5093f29eba3375014b376c61df77e22bdf1b357ac7e6d"
+# samples, and its test pins the same digest, so these are the bytes the browser would send. The
+# browser records at 48 kHz and the server's filtered resampler takes it to 16 kHz.
+WEB_ENCODER_SHA256 = "aa4a0e643125c21e3b4ab393dfb4767d56a691a1c9df61e7eb987c35c18e1fc6"
 
 
 def _web_encoder_bytes() -> bytes:
-    """What `encodeWav` makes of one second of a 400 Hz sawtooth at 16 kHz, done the same way:
+    """What `encodeWav` makes of one second of a 1200 Hz sawtooth at 48 kHz, done the same way:
     float32 samples, then `x * 32768` below zero and `x * 32767` above, rounded half up."""
     import math
 
     import numpy as np
 
     pcm = bytearray()
-    for i in range(16000):
+    for i in range(48000):
         x = float(np.float32(((i % 40) - 20) / 20))
         v = math.floor((x * 32768 if x < 0 else x * 32767) + 0.5)
         pcm += struct.pack("<h", max(-32768, min(32767, v)))
-    return raw_wav(rate=16000, pcm=bytes(pcm))
+    return raw_wav(rate=48000, pcm=bytes(pcm))
 
 
 def test_web_encoder_bytes_are_accepted_by_the_upload_route(harness: Harness) -> None:

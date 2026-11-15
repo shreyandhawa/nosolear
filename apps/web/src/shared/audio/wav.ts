@@ -1,18 +1,6 @@
-export const SAMPLE_RATE = 16000;
-
-/** Linear resampling, enough for speech going to a 16 kHz scorer. */
-export function resample(samples: Float32Array, fromRate: number, toRate = SAMPLE_RATE): Float32Array {
-  if (fromRate === toRate) return samples;
-  const out = new Float32Array(Math.floor((samples.length * toRate) / fromRate));
-  const step = fromRate / toRate;
-  for (let i = 0; i < out.length; i++) {
-    const at = i * step;
-    const lo = Math.floor(at);
-    const hi = Math.min(lo + 1, samples.length - 1);
-    out[i] = samples[lo] + (samples[hi] - samples[lo]) * (at - lo);
-  }
-  return out;
-}
+/** The recording rate. The server's filtered resampler takes it to 16 kHz, so the browser does
+ * no resampling (a plain linear one would alias). */
+export const SAMPLE_RATE = 48000;
 
 /** A mono 16-bit PCM WAV. `x * 32768` below zero and `x * 32767` above, rounded half up. */
 export function encodeWav(samples: Float32Array, sampleRate = SAMPLE_RATE): Uint8Array<ArrayBuffer> {
