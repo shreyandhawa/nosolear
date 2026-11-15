@@ -1,20 +1,26 @@
 import type { components } from "../api/schema";
+import { StatusDot } from "./Desk";
 
 type Job = components["schemas"]["JobOut"];
 
 /** A job's real steps, as the API reports them. */
 export function JobSteps({ job }: { job: Job }) {
   return (
-    <section aria-label="Job progress" className="mt-4">
-      <p>
-        {job.status === "done" ? "Done" : job.status === "failed" ? "Failed" : "Working"} ({Math.round(job.progress * 100)}%)
+    <section aria-label="Job progress">
+      <p className="num mb-3 text-[2rem] leading-none font-medium">
+        {Math.round(job.progress * 100)}%
+        <span className="text-[1.0625rem] font-normal text-ink/70">
+          {" "}
+          {job.status === "done" ? "done" : job.status === "failed" ? "failed" : "analyzing"}
+        </span>
       </p>
-      <progress max={1} value={job.progress} />
-      <ol className="mt-2 list-decimal pl-6">
+      <ol className="flex flex-col gap-1.5 text-[0.9375rem]">
         {job.steps.map((s) => (
-          <li key={s.name}>
-            {s.name}: {s.state}
-            {s.message && ` (${s.message})`}
+          <li key={s.name} className="flex items-center gap-2.5">
+            <StatusDot ok={s.state === "done"} />
+            <span>{s.name}</span>
+            <span className="text-ink/70">{s.state}</span>
+            {s.message && <span className="text-ink/70">({s.message})</span>}
           </li>
         ))}
       </ol>

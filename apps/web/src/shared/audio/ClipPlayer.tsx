@@ -1,3 +1,5 @@
+import { Action } from "../ui/Desk";
+
 /** Plays `src`, or only `startMs`–`endMs` of it. */
 export function ClipPlayer({
   src,
@@ -22,9 +24,5 @@ export function ClipPlayer({
       });
     }
   };
-  return (
-    <button type="button" className="rounded border px-3 py-1" onClick={play}>
-      {label}
-    </button>
-  );
+  return <Action onClick={play}>{label}</Action>;
 }

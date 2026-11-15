@@ -1,47 +1,20 @@
 import { screen, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
-import type { components } from "../../shared/api/schema";
+import { profile } from "../../test/fixtures";
 import { renderWithProviders } from "../../test/render";
 import { server } from "../../test/server";
 import { ProfilePage } from "./ProfilePage";
 
-const PROFILE_FIXTURE: components["schemas"]["ProfileOut"] = {
-  as_of: "2026-11-10T12:00:00Z",
-  taxonomy_version: 1,
-  algo_version: 1,
-  entries: [
-    {
-      error_key: "sound.sub.v.w",
-      description: "/v/ said as /w/",
-      family: "sound",
-      skill: "sounds",
-      impact: 3,
-      status: "active",
-      p_hat: 0.25,
-      ci_low: 0.17,
-      ci_high: 0.34,
-      n_eff: 31.6,
-      priority: 0.75,
-      last_seen_at: "2026-11-10T12:00:00Z",
-      provisional: false,
-    },
-    {
-      error_key: "sound.sub.th.t",
-      description: "/θ/ said as /t/",
-      family: "sound",
-      skill: "sounds",
-      impact: 2,
-      status: "unknown",
-      p_hat: 0.1,
-      ci_low: 0.04,
-      ci_high: 0.2,
-      n_eff: 3.2,
-      priority: 0.2,
-      last_seen_at: "2026-11-09T12:00:00Z",
-      provisional: false,
-    },
-  ],
-};
+// The page links to Today; this test renders it without a router.
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ to, children, className }: { to: string; children: React.ReactNode; className?: string }) => (
+    <a href={to} className={className}>
+      {children}
+    </a>
+  ),
+}));
+
+const PROFILE_FIXTURE = profile;
 
 test("shows the empty state", async () => {
   server.use(
