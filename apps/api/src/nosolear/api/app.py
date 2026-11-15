@@ -6,8 +6,12 @@ from typing import Literal, cast
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import Engine
+from starlette.exceptions import HTTPException
+from starlette.responses import Response
+from starlette.types import Receive, Scope, Send
 
 from nosolear.adapters.content_files import load_seed_content
 from nosolear.adapters.system_clock import SystemClock
@@ -18,6 +22,7 @@ from nosolear.api.errors import install_error_handlers
 from nosolear.api.feedback_routes import router as feedback_router
 from nosolear.api.guards import RequestGuardMiddleware
 from nosolear.api.job_routes import router as job_router
+from nosolear.api.model_voice_routes import router as model_voice_router
 from nosolear.api.onboarding_routes import router as onboarding_router
 from nosolear.api.plan_routes import router as plan_router
 from nosolear.api.profile_routes import router as profile_router
@@ -35,10 +40,38 @@ from nosolear.persistence.db import create_engine_for, upgrade_to_head
 from nosolear.ports.clock import Clock
 from nosolear.ports.content_store import ContentConflict
 from nosolear.ports.ledger import UsageLedger
-from nosolear.settings import CONTENT_DIR, Settings
+from nosolear.settings import CONTENT_DIR, REPO_ROOT, Settings
 from nosolear.startup import prepare_process
 
 logger = logging.getLogger(__name__)
+WEB_DIST = REPO_ROOT / "apps" / "web" / "dist"
+
+
+_NO_FALLBACK = frozenset({"api", "docs", "redoc"})
+
+
+class _WebApp(StaticFiles):
+    """The built web app. A path with no file serves `index.html`, so a reload on a client route
+    still loads the app; an unknown `api/...` path, and the disabled docs, stay a 404."""
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        try:
+            return await super().get_response(path, scope)
+        except HTTPException as exc:
+            if exc.status_code != 404 or path.split("/", 1)[0] in _NO_FALLBACK:
+                raise
+            return await super().get_response("index.html", scope)
+
+
+def _serve_web_app(app: FastAPI) -> None:
+    """Answers HTTP requests no route matched with the built app; everything else is unchanged."""
+    web = _WebApp(directory=WEB_DIST, html=True)
+    not_found = app.router.default
+
+    async def default(scope: Scope, receive: Receive, send: Send) -> None:
+        await (web if scope["type"] == "http" else not_found)(scope, receive, send)
+
+    app.router.default = default
 
 
 class HealthResponse(BaseModel):
@@ -154,6 +187,7 @@ def create_app(
     app.include_router(readiness_router)
     app.include_router(job_router)
     app.include_router(recording_router)
+    app.include_router(model_voice_router)
     app.include_router(rescore_router)
     app.include_router(calibration_router)
     app.include_router(baseline_router)
@@ -164,6 +198,14 @@ def create_app(
     def health() -> HealthResponse:  # pyright: ignore[reportUnusedFunction]
         return HealthResponse(status="ok")
 
+    guarded_origins = settings.app_origins
+    if (WEB_DIST / "index.html").is_file():
+        # Only for requests no API route matched. The built app is served from the API's own
+        # loopback origin, so its POSTs carry that origin and the guard must accept it.
+        _serve_web_app(app)
+        own = (f"http://127.0.0.1:{settings.port}", f"http://localhost:{settings.port}")
+        guarded_origins = (*settings.app_origins, *own)
+
     # CORS first, guard last: the guard is outermost and refuses before CORS answers anything.
     app.add_middleware(
         CORSMiddleware,
@@ -172,5 +214,5 @@ def create_app(
         allow_headers=["content-type"],
         allow_credentials=False,
     )
-    app.add_middleware(RequestGuardMiddleware, port=settings.port, app_origins=settings.app_origins)
+    app.add_middleware(RequestGuardMiddleware, port=settings.port, app_origins=guarded_origins)
     return app

@@ -116,11 +116,15 @@ def generate_session_feedback(
 )
 def get_session_feedback(
     session_id: str,
+    sessions: Annotated[SessionReader, Depends(get_session_reader)],
+    jobs: Annotated[SessionJobStatus, Depends(get_session_jobs)],
     observations: Annotated[SessionObservationReader, Depends(get_observation_repository)],
     feedback: Annotated[FeedbackStore, Depends(get_feedback_store)],
 ) -> FeedbackOut:
     report = read_feedback(
         session_id=session_id,
+        sessions=sessions,
+        jobs=jobs,
         observations=observations,
         feedback=feedback,
         taxonomy=DEFAULT_TAXONOMY,

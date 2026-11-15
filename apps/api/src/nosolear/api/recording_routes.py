@@ -3,6 +3,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import FileResponse
 from starlette.concurrency import run_in_threadpool
 
 from nosolear.api.deps import Services, get_services
@@ -103,3 +104,20 @@ async def upload_attempt_recording(
         job_id=result.job_id,
         duration_ms=result.duration_ms,
     )
+
+
+@router.get(
+    "/api/attempts/{attempt_id}/recording",
+    operation_id="getRecording",
+    response_class=FileResponse,
+    responses={200: {"content": {WAV_CONTENT_TYPE: {}}}, 404: {"model": ErrorOut}},
+)
+def get_attempt_recording(
+    attempt_id: str,
+    services: Annotated[Services, Depends(get_services)],
+) -> FileResponse:
+    """The stored 16 kHz WAV. The client seeks to an item's `start_ms` and `end_ms` itself."""
+    recording = services.recordings.for_attempt(attempt_id)
+    if recording is None:
+        raise ApiError(404, "no_recording", "This attempt has no recording.")
+    return FileResponse(services.audio_store.resolve(recording.path), media_type=WAV_CONTENT_TYPE)

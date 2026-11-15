@@ -944,6 +944,55 @@
         "title": "JobOut",
         "type": "object"
       },
+      "ModelVoiceIn": {
+        "properties": {
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "rate_percent": {
+            "default": 0,
+            "maximum": 50.0,
+            "minimum": -50.0,
+            "title": "Rate Percent",
+            "type": "integer"
+          },
+          "source": {
+            "enum": [
+              "feedback_item",
+              "content_item"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "id"
+        ],
+        "title": "ModelVoiceIn",
+        "type": "object"
+      },
+      "ModelVoiceOut": {
+        "properties": {
+          "clip_id": {
+            "title": "Clip Id",
+            "type": "string"
+          },
+          "duration_ms": {
+            "title": "Duration Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip_id",
+          "duration_ms"
+        ],
+        "title": "ModelVoiceOut",
+        "type": "object"
+      },
       "OnboardingBlockerOut": {
         "properties": {
           "component": {
@@ -1068,7 +1117,7 @@
           },
           "seed": {
             "title": "Seed",
-            "type": "integer"
+            "type": "string"
           },
           "steps": {
             "items": {
@@ -1161,6 +1210,45 @@
           "due_at"
         ],
         "title": "ProbeOut",
+        "type": "object"
+      },
+      "ProbeOutcomeOut": {
+        "properties": {
+          "adapter": {
+            "title": "Adapter",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "adapter",
+          "ok",
+          "message"
+        ],
+        "title": "ProbeOutcomeOut",
+        "type": "object"
+      },
+      "ProbeRunOut": {
+        "properties": {
+          "outcomes": {
+            "items": {
+              "$ref": "#/components/schemas/ProbeOutcomeOut"
+            },
+            "title": "Outcomes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "outcomes"
+        ],
+        "title": "ProbeRunOut",
         "type": "object"
       },
       "ProfileEntryOut": {
@@ -1659,6 +1747,50 @@
   "openapi": "3.1.0",
   "paths": {
     "/api/attempts/{attempt_id}/recording": {
+      "get": {
+        "description": "The stored 16 kHz WAV. The client seeks to an item's `start_ms` and `end_ms` itself.",
+        "operationId": "getRecording",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "audio/wav": {}
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Attempt Recording"
+      },
       "post": {
         "operationId": "uploadRecording",
         "parameters": [
@@ -2024,6 +2156,100 @@
         "summary": "Resume Job"
       }
     },
+    "/api/model-voice": {
+      "post": {
+        "operationId": "synthesizeModelVoice",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelVoiceIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelVoiceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Synthesize Model Voice"
+      }
+    },
+    "/api/model-voice/{clip_id}": {
+      "get": {
+        "operationId": "getModelVoice",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clip_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Clip Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "audio/wav": {}
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Model Voice"
+      }
+    },
     "/api/onboarding": {
       "get": {
         "operationId": "getOnboarding",
@@ -2134,6 +2360,25 @@
           }
         },
         "summary": "Get Readiness"
+      }
+    },
+    "/api/readiness/probe": {
+      "post": {
+        "description": "`doctor --probe` from the app: paid calls through the app's metered ports, so POST only.\nEach outcome's message is the safe one its adapter gave.",
+        "operationId": "runReadinessProbe",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProbeRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Run Readiness Probe"
       }
     },
     "/api/rescore": {

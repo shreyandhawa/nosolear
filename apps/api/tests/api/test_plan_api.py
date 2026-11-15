@@ -111,3 +111,9 @@ def test_route_uses_the_configured_zone(tmp_path: Path) -> None:
 
     with loopback_client(app) as client:
         assert client.post(PLAN).json()["for_date"] == "2026-11-13"
+
+
+def test_seed_is_sent_as_a_string(client_with_tmp_db: TestClient) -> None:
+    seed = client_with_tmp_db.post("/api/plan/today").json()["seed"]
+    assert isinstance(seed, str)
+    assert 0 <= int(seed) < 2**64

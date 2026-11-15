@@ -49,6 +49,16 @@ class ReadinessOut(BaseModel):
     rows: list[ReadinessRowOut]
 
 
+class ProbeOutcomeOut(BaseModel):
+    adapter: str
+    ok: bool
+    message: str
+
+
+class ProbeRunOut(BaseModel):
+    outcomes: list[ProbeOutcomeOut]
+
+
 class StepOut(BaseModel):
     name: str
     state: Literal["pending", "running", "done", "skipped", "failed", "blocked"]
@@ -126,7 +136,7 @@ class PlanStepOut(BaseModel):
 class PlanOut(BaseModel):
     id: str
     for_date: date
-    seed: int
+    seed: str  # in [0, 2^64): a JSON number would lose precision in JavaScript
     protocol_version: int
     foci: list[FocusOut]
     probe: ProbeOut | None

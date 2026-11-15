@@ -103,3 +103,35 @@ def test_environment_dependency_can_be_overridden(tmp_path: Path):
     with loopback_client(app) as client:
         rows = {r["component"]: r for r in client.get("/api/readiness").json()["rows"]}
     assert rows["phone_probe"]["status"] == "ready"
+
+
+def test_probe_route_stores_the_probe_and_onboarding_moves_past_readiness(
+    make_harness: typing.Callable[..., typing.Any], monkeypatch: typing.Any
+) -> None:
+    from factories import count
+    from harness import ready_report
+
+    import nosolear.api.deps as deps
+
+    monkeypatch.setattr(deps, "installed_transcribers", frozenset)
+    h = make_harness()
+
+    def report() -> ReadinessReport:
+        """Ready except the Azure capabilities, which wait for a probe the app itself ran."""
+        probed = count(h.engine, "provider_capabilities") > 1  # the harness stores one
+        status = ReadinessStatus.READY if probed else ReadinessStatus.NOT_PROBED
+        return ReadinessReport(
+            rows=tuple(
+                ReadinessRow(Component.AZURE_CAPABILITIES, status, "test", None)
+                if row.component is Component.AZURE_CAPABILITIES
+                else row
+                for row in ready_report().rows
+            )
+        )
+
+    h.client.app.dependency_overrides[get_readiness_report] = report  # pyright: ignore[reportAttributeAccessIssue]
+    assert h.client.get("/api/onboarding").json()["step"] == "readiness"
+    response = h.client.post("/api/readiness/probe")
+    assert response.status_code == 200, response.text
+    assert [(o["adapter"], o["ok"]) for o in response.json()["outcomes"]] == [("azure_pa", True)]
+    assert h.client.get("/api/onboarding").json()["step"] == "calibration"

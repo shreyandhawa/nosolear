@@ -1,7 +1,10 @@
 """The feedback routes through the real app: POST makes the cards, GET only reads them."""
 
 import json
+import threading
+import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from typing import cast
 
 import pytest
@@ -55,6 +58,7 @@ def seed(
     *,
     kind: str = "daily",
     job_status: str | None = "done",
+    outcome: Outcome = Outcome.MISS,
 ) -> str:
     """A session of `kind` with one attempt, three misses (one per skill) and its analyze job in
     `job_status`. `None` is a session with no upload, which is not analysed."""
@@ -69,7 +73,7 @@ def seed(
         [
             mk(
                 SOUND,
-                Outcome.MISS,
+                outcome,
                 NOW,
                 detector=Detector.AZURE_PA,
                 attempt_id=attempt_id,
@@ -77,7 +81,7 @@ def seed(
             ),
             mk(
                 FILLER,
-                Outcome.MISS,
+                outcome,
                 NOW,
                 detector=Detector.ASR_METRICS,
                 attempt_id=attempt_id,
@@ -85,7 +89,7 @@ def seed(
             ),
             mk(
                 CLARITY,
-                Outcome.MISS,
+                outcome,
                 NOW,
                 detector=Detector.COACH,
                 attempt_id=attempt_id,
@@ -255,3 +259,46 @@ def test_feedback_with_no_upload_is_409_and_calls_no_coach(
     assert response.json()["code"] == "session_not_analyzed"
     assert coach.explain_calls == []
     assert harness.client.get(f"/api/sessions/{session_id}/feedback").status_code == 404
+
+
+def test_get_after_an_all_clean_post_returns_the_result_not_404(
+    make_harness: Callable[..., Harness],
+) -> None:
+    coach = _coach_three()
+    harness = make_harness(coach=coach)
+    session_id = seed(harness, outcome=Outcome.OK)
+    posted = harness.client.post(f"/api/sessions/{session_id}/feedback")
+    assert posted.status_code == 200, posted.text
+    assert all(s["item"] is None for s in posted.json()["skills"])
+    got = harness.client.get(f"/api/sessions/{session_id}/feedback")
+    assert got.status_code == 200, got.text
+    assert got.json() == posted.json()
+    assert coach.explain_calls == []
+
+
+class SlowCoach(FakeCoach):
+    """Holds each answer long enough for a second POST to arrive while the first is asking."""
+
+    def __init__(self) -> None:
+        super().__init__(explain_results=[expl(f"fix {n}") for n in range(6)])
+        self.asking = threading.Event()
+
+    def explain(self, *, error_key: str, quote: str, context: str) -> CoachExplanation:
+        self.asking.set()
+        time.sleep(0.1)
+        return super().explain(error_key=error_key, quote=quote, context=context)
+
+
+def test_a_double_post_asks_the_coach_once_per_fix(make_harness: Callable[..., Harness]) -> None:
+    coach = SlowCoach()
+    harness = make_harness(coach=coach)
+    session_id = seed(harness)
+    url = f"/api/sessions/{session_id}/feedback"
+    with ThreadPoolExecutor(2) as pool:
+        first = pool.submit(harness.client.post, url)
+        assert coach.asking.wait(5)
+        second = pool.submit(harness.client.post, url)
+        responses = [first.result(), second.result()]
+    assert [r.status_code for r in responses] == [200, 200]
+    assert responses[0].json() == responses[1].json()
+    assert len(coach.explain_calls) == 3
