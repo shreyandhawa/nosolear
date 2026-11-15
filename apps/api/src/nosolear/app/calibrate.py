@@ -59,6 +59,7 @@ class TokensPending(CalibrationError):
 @dataclass(frozen=True, slots=True)
 class CalibrationItemView:
     attempt_id: str
+    item_id: str  # the content item, which the model voice speaks
     order: int
     error_key: str
     word: str
@@ -92,6 +93,7 @@ def _view_items(
         out.append(
             CalibrationItemView(
                 attempt_id=item.attempt_id,
+                item_id=item.item_id,
                 order=item.order,
                 error_key=item.error_key,
                 word=item.word,

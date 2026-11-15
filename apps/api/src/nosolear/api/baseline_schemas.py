@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 class BaselineItemOut(BaseModel):
     attempt_id: str
+    item_id: str
     order: int
     section: str
     step: str

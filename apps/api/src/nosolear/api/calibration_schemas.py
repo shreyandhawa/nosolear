@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 class CalibrationItemOut(BaseModel):
     attempt_id: str
+    item_id: str
     order: int
     error_key: str
     word: str

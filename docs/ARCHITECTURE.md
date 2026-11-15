@@ -735,13 +735,16 @@ The selection policy (§6.6), the daily plan, and one-fix-per-skill feedback (§
 
 ### Later phases
 
-The intent is unchanged from the 2026-11-11 plan; the numbers follow the approved order and can change when each phase is planned.
+The web app (onboarding, calibration, the baseline and the daily loop, with in-browser recording) is built (`docs/app-first.md`). Next, in order:
 
-- **Phase 2: web UI** for onboarding, calibration, the baseline and the daily loop, with in-browser recording.
-- **Phase 3: targeted drills.** Drill families per key: minimal pairs; shadowing with slow TTS and word highlighting; rapid-fire questions with sentence starters; a point-reason-example builder and retell. The coach fills the content bank. **Research item:** a word-stress score from pitch, loudness and duration per syllable (Praat via `parselmouth`), aligned with Azure's syllable timings.
-- **Phase 4: live voice conversation.** A spike first, measuring latency of browser VAD → local Whisper → Claude streaming → Azure TTS. Each user turn is recorded and analyzed afterwards by the same pipeline. Gemini Live (Google uses free-tier data to improve its products) and OpenAI realtime (about $0.15–0.50 per 10 minutes) are noted, not planned.
-- **Phase 5: progress:** daily per-skill scores (`skill_scores` written each day; the baseline writes the first row in 0e), the weekly re-test (§9.4), comparison against the baseline, and trend charts with uncertainty bands.
-- **Phase 6: token mode and phone access** via Tailscale Serve (§10).
+1. A design pass on these screens.
+2. Drills, one family at a time, each as backend, API and screen together, sounds first.
+3. Progress screens.
+4. Live voice conversation, spike first.
+5. Token mode and phone access.
+6. In-app key entry, write-only.
+
+A feature is done when the owner can use it in the browser, verified with stand-in audio.
 
 ### Deliberately not building
 

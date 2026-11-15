@@ -117,13 +117,13 @@ Phase 1 (daily loop backend) is done as of 2026-11-13. Phases 0b through 1 are c
 
 ## Next
 
-1. Owner:
-   - Run `make test-live` with keys in `.env`; see "Adapters not yet verified against the live service".
-   - Read the baseline passage (`content/baseline/protocol.json`) aloud once.
-   - Decide the free-talk scoring mode (§4, §18), M3 (retried 429s recorded at the estimate) and whether to read the Azure Speech SDK licence terms.
-2. Phase 2 (web UI) needs a plan. Brainstorm and write it with the owner first (`superpowers:brainstorming`, then `superpowers:writing-plans`). It consumes the Phase 1 HTTP API and the generated TS types. Mind the plan seed above 2^53 (Phase 1 review M4).
-3. Any task that adds a dependency reruns `uv run --project apps/api python scripts/third_party_licences.py`.
-4. At the end of each phase, run one combined opus security and final review over the phase range, then one fix dispatch. Then update this file and hand off to a fresh session.
+The order is now app first: `docs/app-first.md` overrides this file where they differ, and `docs/PROGRESS.md` records what is done.
+
+1. Owner: put `NOSOLEAR_ANTHROPIC_API_KEY` in `.env`, then run the A1 live check from `docs/app-first.md` (it is Blocked on that key).
+2. Owner: run `make app` and do the first run (setup, calibration, baseline) in the browser at http://127.0.0.1:8000.
+3. Owner: decide the free-talk scoring mode (§4, §18) and M3 (retried 429s recorded at the estimate).
+4. Then the later phases in ARCHITECTURE §13: a feature is done when the owner can use it in the browser, verified with stand-in audio.
+5. Any task that adds a dependency reruns `uv run --project apps/api python scripts/third_party_licences.py`.
 
 ## What Phase 2 and later can rely on (from Phase 1)
 

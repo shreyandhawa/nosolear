@@ -65,6 +65,7 @@ class BaselineNotOpen(BaselineError):
 @dataclass(frozen=True, slots=True)
 class BaselineItemView:
     attempt_id: str
+    item_id: str  # the content item, which the model voice speaks
     order: int
     section: str
     step: str
@@ -101,6 +102,7 @@ def _item_view(record: BaselineItemRecord, found: _Found | None) -> BaselineItem
     if found is None:
         return BaselineItemView(
             attempt_id=record.attempt_id,
+            item_id=record.item_id,
             order=record.order,
             section=record.step,
             step=record.step,
@@ -115,6 +117,7 @@ def _item_view(record: BaselineItemRecord, found: _Found | None) -> BaselineItem
     text = found.item.item.text
     return BaselineItemView(
         attempt_id=record.attempt_id,
+        item_id=record.item_id,
         order=record.order,
         section=found.section.name,
         step=record.step,
