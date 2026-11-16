@@ -4,8 +4,20 @@
     {
       "name": "web",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--dir", "apps/web", "dev"],
+      "runtimeArgs": [
+        "--dir",
+        "apps/web",
+        "dev"
+      ],
       "port": 5173
+    },
+    {
+      "name": "app",
+      "runtimeExecutable": "make",
+      "runtimeArgs": [
+        "app"
+      ],
+      "port": 8000
     }
   ]
 }

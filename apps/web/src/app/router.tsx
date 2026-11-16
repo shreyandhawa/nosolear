@@ -15,14 +15,14 @@ const TRAIL = [
   { step: "report", label: "Report", to: "/baseline" },
 ] as const;
 
-const link = "rounded-sm py-1 text-ink/70 transition-colors duration-150 hover:text-ink [&.active]:text-ink [&.active]:font-semibold";
+const link = "rounded-sm py-1 text-fg/72 transition-colors duration-150 hover:text-fg [&.active]:text-fg [&.active]:font-semibold";
 
 function RootLayout() {
   const nav = useNav();
   const at = TRAIL.findIndex((t) => t.step === nav.step);
   return (
     <div className="app">
-      <nav aria-label="Main" className="flex h-14 items-center gap-10 border-b border-ink/15 px-8 text-[0.9375rem]">
+      <nav aria-label="Main" className="flex h-14 items-center gap-10 border-b border-fg/15 px-8 text-[0.9375rem]">
         <Link to="/" className="font-display text-[1.375rem] leading-none">
           Nosolear
         </Link>
@@ -61,7 +61,7 @@ function RootLayout() {
             </li>
           </ul>
         )}
-        <p className="ml-auto flex min-w-0 items-center gap-2 text-[0.8125rem] text-ink/70">
+        <p className="ml-auto flex min-w-0 items-center gap-2 text-[0.8125rem] text-fg/72">
           {!nav.firstRun && (
             <span className="flex shrink-0 items-center gap-1.5">
               <StatusDot ok={nav.ready} />

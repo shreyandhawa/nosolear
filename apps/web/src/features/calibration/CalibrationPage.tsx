@@ -67,7 +67,7 @@ export function CalibrationPage() {
         ) : (
           run?.status === "done" && (
             <table className="w-full text-left text-[0.875rem]">
-              <thead className="text-ink/70">
+              <thead className="text-fg/72">
                 <tr>
                   <th className="pb-1 font-medium">Error</th>
                   <th className="pb-1 font-medium">On</th>
@@ -77,7 +77,7 @@ export function CalibrationPage() {
               </thead>
               <tbody className="num">
                 {run.results.map((r) => (
-                  <tr key={`${r.detector}-${r.error_key}`} className="border-t border-ink/10">
+                  <tr key={`${r.detector}-${r.error_key}`} className="border-t border-fg/10">
                     <td className="py-1">{r.error_key}</td>
                     <td>{r.enabled ? "yes" : "no"}</td>
                     <td>{pct(r.hit_rate)}</td>
@@ -105,7 +105,7 @@ export function CalibrationPage() {
           <Label>This step</Label>
           <p>{PURPOSE}</p>
           {running && (
-            <p className="num mt-3 text-ink/70">
+            <p className="num mt-3 text-fg/72">
               {c.items.length - c.position + (c.current ? 1 : 0)} of {c.items.length} takes left
             </p>
           )}

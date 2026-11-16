@@ -13,7 +13,7 @@ export function ModelVoice({ source, id }: { source: "feedback_item" | "content_
   });
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="mr-1 text-[0.8125rem] font-medium text-ink/70">Model voice</span>
+      <span className="mr-1 text-[0.8125rem] font-medium text-fg/72">Model voice</span>
       <Action onClick={() => voice.mutate(0)} disabled={voice.isPending}>
         Normal
       </Action>

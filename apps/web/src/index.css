@@ -11,6 +11,9 @@
   --color-onair: oklch(66.6% 0.2237 34.3);
   /* The microphone's halo and rim light only. */
   --color-phosphor: oklch(88.1% 0.1237 167.9);
+  /* One dark studio: Ink is the ground everywhere, Paper the text. */
+  --color-bg: var(--color-ink);
+  --color-fg: var(--color-paper);
   --font-display: "Gentium Book Plus", Georgia, serif;
   --font-sans: "Schibsted Grotesk", ui-sans-serif, sans-serif;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -18,35 +21,33 @@
 }
 
 html {
-  background: var(--color-paper);
-  color: var(--color-ink);
+  background: var(--color-bg);
+  color: var(--color-fg);
   font-family: var(--font-sans);
   font-size: 100%;
   -webkit-font-smoothing: antialiased;
 }
 
+/* Light text on a dark ground reads lighter: a touch more leading and tracking. */
 body {
   font-size: 1.0625rem;
-  line-height: 1.55;
+  line-height: 1.6;
+  letter-spacing: 0.005em;
 }
 
 ::selection {
-  background: color-mix(in oklch, var(--color-ink) 85%, transparent);
-  color: var(--color-paper);
+  background: color-mix(in oklch, var(--color-fg) 85%, transparent);
+  color: var(--color-bg);
 }
 
 :focus-visible {
-  outline: 2px solid var(--color-ink);
+  outline: 2px solid var(--color-fg);
   outline-offset: 3px;
-}
-
-.stage :focus-visible {
-  outline-color: var(--color-paper);
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in oklch, var(--color-ink) 30%, transparent) transparent;
+  scrollbar-color: color-mix(in oklch, var(--color-fg) 25%, transparent) transparent;
 }
 
 .num {
@@ -90,7 +91,7 @@ p {
 
 .desk-right {
   grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) auto;
-  border-left: 1px solid color-mix(in oklch, var(--color-ink) 14%, transparent);
+  border-left: 1px solid color-mix(in oklch, var(--color-fg) 10%, transparent);
 }
 
 .slot {
@@ -110,17 +111,16 @@ p {
 
 .desk-left > .slot + .slot,
 .desk-right > .slot + .slot {
-  border-top: 1px solid color-mix(in oklch, var(--color-ink) 14%, transparent);
+  border-top: 1px solid color-mix(in oklch, var(--color-fg) 10%, transparent);
 }
 
 .desk-left > .slot:not(:first-child) {
   width: 75%;
 }
 
+/* The stage is the same ground: only the microphone's light sets it apart. */
 .stage {
   position: relative;
-  background: var(--color-ink);
-  color: var(--color-paper);
   overflow: hidden;
 }
 
@@ -261,25 +261,40 @@ p {
 .mic-button {
   position: absolute;
   border-radius: 50%;
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;
 }
 
-.mic-button:disabled {
-  cursor: default;
+.mic-button[data-dragging] {
+  cursor: grabbing;
+}
+
+/* The 3D canvas: larger than the overlay box, same centre, behind the overlays. */
+.mic-canvas {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+}
+
+/* The CSS halo stands in only behind the flat silhouette; the 3D scene draws its own glow. */
+.mic-box[data-scene="ready"] .mic-halo {
+  opacity: 0;
 }
 
 .mic-button:focus-visible {
-  outline: 2px solid var(--color-paper);
+  outline: 2px solid var(--color-fg);
   outline-offset: 4px;
 }
 
 .mic-hint {
+  position: relative; /* above the larger 3D canvas */
   margin-top: 1.25rem;
   display: flex;
   align-items: center;
   gap: 0.75rem;
   font-size: 0.9375rem;
-  color: color-mix(in oklch, var(--color-paper) 72%, transparent);
+  color: color-mix(in oklch, var(--color-fg) 72%, transparent);
 }
 
 .mic-onair {

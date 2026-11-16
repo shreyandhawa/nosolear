@@ -27,7 +27,7 @@ export function SetupPage() {
         envLines.length > 0 && (
           <>
             <Label>Still missing in .env</Label>
-            <pre className="rounded bg-ink/6 px-3 py-2 text-[0.9375rem] break-all whitespace-pre-wrap">{envLines.join("\n")}</pre>
+            <pre className="rounded bg-fg/6 px-3 py-2 text-[0.9375rem] break-all whitespace-pre-wrap">{envLines.join("\n")}</pre>
           </>
         )
       }
@@ -47,7 +47,7 @@ export function SetupPage() {
               <li key={r.component} className="grid grid-cols-[0.625rem_1fr] items-baseline gap-x-2">
                 <StatusDot ok={r.status === "ready"} />
                 <p className="font-medium leading-snug">{r.label}</p>
-                <p className="col-start-2 text-[0.8125rem] leading-snug text-ink/70">
+                <p className="col-start-2 text-[0.8125rem] leading-snug text-fg/72">
                   {r.status === "ready" ? "ready" : r.reason}
                 </p>
                 {r.status !== "ready" && r.fix && (

@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties } from "react";
-import { ARC_R, HEAD, SLATS, svgY, VIEW, VIEW_BOX } from "./micGeometry";
+import { ARC_R, CANVAS_SCALE, HEAD, SLATS, svgY, VIEW, VIEW_BOX } from "./micGeometry";
+import type { Drag } from "./MicScene";
 
 const MicScene = lazy(() => import("./MicScene"));
 
@@ -69,6 +70,41 @@ export function MicStage({
   const level = useRef(0);
   const reduced = useReducedMotion();
   const [scene, setScene] = useState<"loading" | "ready" | "failed">("loading");
+  const drag = useRef<Drag>({ active: false, x: 0, y: 0 });
+  const grab = useRef<{ px: number; py: number; moved: boolean } | null>(null);
+  const dragged = useRef(false);
+
+  // Drag turns the microphone (a pointer-only extra); a press without movement still records.
+  const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.button !== 0) return;
+    grab.current = { px: e.clientX, py: e.clientY, moved: false };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const g = grab.current;
+    if (!g) return;
+    const dx = e.clientX - g.px;
+    const dy = e.clientY - g.py;
+    if (!g.moved && Math.hypot(dx, dy) > 4) {
+      g.moved = true;
+      drag.current.active = true;
+      e.currentTarget.dataset.dragging = "";
+    }
+    if (g.moved) {
+      drag.current.y = dx * 0.012;
+      drag.current.x = dy * 0.006;
+      drag.current.wake?.();
+    }
+  };
+  const onPointerEnd = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const g = grab.current;
+    grab.current = null;
+    if (!g?.moved) return;
+    dragged.current = true;
+    Object.assign(drag.current, { active: false, x: 0, y: 0 });
+    delete e.currentTarget.dataset.dragging;
+    drag.current.wake?.();
+  };
 
   useEffect(() => {
     const el = halo.current;
@@ -95,16 +131,19 @@ export function MicStage({
         <div ref={halo} className="mic-halo" style={{ top: haloCentre }} aria-hidden />
         <Silhouette lit={lit} state={state} />
         {scene !== "failed" && (
-          <Suspense fallback={null}>
-            <MicScene
-              state={state}
-              progress={state === "analyzing" ? progress : 0}
-              level={level}
-              reduced={reduced}
-              onReady={() => setScene("ready")}
-              onFail={() => setScene("failed")}
-            />
-          </Suspense>
+          <div className="mic-canvas" style={{ width: `${CANVAS_SCALE * 100}%`, height: `${CANVAS_SCALE * 100}%` }}>
+            <Suspense fallback={null}>
+              <MicScene
+                state={state}
+                progress={state === "analyzing" ? progress : 0}
+                level={level}
+                drag={drag}
+                reduced={reduced}
+                onReady={() => setScene("ready")}
+                onFail={() => setScene("failed")}
+              />
+            </Suspense>
+          </div>
         )}
         <svg viewBox={VIEW_BOX} className="pointer-events-none absolute inset-0 size-full" aria-hidden>
           {state === "recording" && filled > 0 && <path className="mic-arc" d={arc(filled)} />}
@@ -116,8 +155,17 @@ export function MicStage({
           aria-pressed={state === "recording"}
           aria-label={!onPress ? "Microphone, not available here" : state === "recording" ? "Stop recording" : "Start recording"}
           aria-keyshortcuts="Space"
-          disabled={!onPress}
-          onClick={onPress}
+          aria-disabled={!onPress}
+          tabIndex={onPress ? 0 : -1}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerEnd}
+          onPointerCancel={onPointerEnd}
+          onClick={() => {
+            // The click that ends a drag is not a press.
+            if (dragged.current) dragged.current = false;
+            else onPress?.();
+          }}
         />
       </div>
       <p className="mic-hint">
