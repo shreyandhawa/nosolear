@@ -57,9 +57,9 @@ export function BaselinePage() {
           top && (
             <>
               <p className="num">
-                {Math.round(top.p_hat * 100)}% of chances <span className="text-ink/70">({Math.round(top.ci_low * 100)}–{Math.round(top.ci_high * 100)}%)</span>
+                {Math.round(top.p_hat * 100)}% of chances <span className="text-fg/72">({Math.round(top.ci_low * 100)}–{Math.round(top.ci_high * 100)}%)</span>
               </p>
-              <p className="mt-1 text-ink/70">
+              <p className="mt-1 text-fg/72">
                 {SKILLS[top.skill]}, {top.status}
                 {top.provisional && ", provisional"}
               </p>
@@ -101,7 +101,7 @@ export function BaselinePage() {
                       setPicked(i);
                       releaseFocus(e);
                     }}
-                    className="press -mx-2 flex w-[calc(100%+1rem)] items-baseline gap-2 rounded px-2 py-1.5 text-left hover:bg-ink/6 aria-pressed:bg-ink aria-pressed:text-paper"
+                    className="press -mx-2 flex w-[calc(100%+1rem)] items-baseline gap-2 rounded px-2 py-1.5 text-left hover:bg-fg/6 aria-pressed:bg-fg aria-pressed:text-bg"
                   >
                     <span className="num w-5 shrink-0 opacity-70">{i + 1}</span>
                     <span>{r.description}</span>
@@ -155,7 +155,7 @@ export function BaselinePage() {
         item && (
           <>
             <p className="font-display text-[1.375rem]">{item.section}</p>
-            <p className="text-ink/70">{limits(item.max_seconds, item.start_limit_seconds) || "No time limit"}</p>
+            <p className="text-fg/72">{limits(item.max_seconds, item.start_limit_seconds) || "No time limit"}</p>
           </>
         )
       }
@@ -179,7 +179,7 @@ export function BaselinePage() {
                 <li key={i.attempt_id} className="flex items-center gap-2">
                   <StatusDot ok={i.recorded} />
                   <span className="truncate">{i.section}</span>
-                  <span className="ml-auto shrink-0 text-ink/70">{i.recorded ? (i.job_status ?? "queued") : ""}</span>
+                  <span className="ml-auto shrink-0 text-fg/72">{i.recorded ? (i.job_status ?? "queued") : ""}</span>
                 </li>
               ))}
             </ol>

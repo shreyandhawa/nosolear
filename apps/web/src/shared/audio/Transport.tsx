@@ -24,7 +24,7 @@ export function Transport({ take }: { take: Take }) {
     <div className="flex flex-col gap-3">
       <p className="num text-[2rem] leading-none font-medium">
         {clock(take.elapsed)}
-        <span className="text-ink/70"> of {take.maxSeconds} s</span>
+        <span className="text-fg/72"> of {take.maxSeconds} s</span>
       </p>
       <div
         role="meter"
@@ -32,15 +32,15 @@ export function Transport({ take }: { take: Take }) {
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={Math.round(Math.min(1, take.level * 4) * 100)}
-        className="h-1.5 w-full overflow-hidden rounded-full bg-ink/12"
+        className="h-1.5 w-full overflow-hidden rounded-full bg-fg/12"
       >
-        <div className="h-full rounded-full bg-ink" style={{ width: `${Math.min(1, take.level * 4) * 100}%` }} />
+        <div className="h-full rounded-full bg-fg" style={{ width: `${Math.min(1, take.level * 4) * 100}%` }} />
       </div>
       {mics.length > 1 && (
-        <label className="flex items-center gap-2 text-[0.8125rem] text-ink/70">
+        <label className="flex items-center gap-2 text-[0.8125rem] text-fg/72">
           Microphone
           <select
-            className="min-w-0 flex-1 rounded border border-ink/30 bg-transparent px-2 py-1 text-ink"
+            className="min-w-0 flex-1 rounded border border-fg/30 bg-transparent px-2 py-1 text-fg"
             value={take.deviceId ?? ""}
             onChange={(e) => take.setDeviceId(e.target.value || undefined)}
             disabled={recording}

@@ -49,9 +49,9 @@ function PlanSlots(plan: Plan) {
         <ul className="flex flex-col gap-4">
           {plan.foci.map((f) => (
             <li key={f.skill}>
-              <p className="text-[0.8125rem] font-medium text-ink/70">{SKILLS[f.skill]}</p>
+              <p className="text-[0.8125rem] font-medium text-fg/72">{SKILLS[f.skill]}</p>
               <p className="leading-snug">{f.description}</p>
-              <p className="flex items-center gap-1.5 text-[0.8125rem] text-ink/70">
+              <p className="flex items-center gap-1.5 text-[0.8125rem] text-fg/72">
                 <StatusDot ok={f.status === "mastered" || f.status === "improving"} />
                 {statusLabel(f.status)}
                 {f.provisional && ", provisional"}
@@ -69,9 +69,9 @@ function PlanSlots(plan: Plan) {
             <li key={i} className="flex justify-between gap-3">
               <span>
                 {STEPS[s.kind] ?? s.kind}
-                {s.skill && <span className="text-ink/70"> · {SKILLS[s.skill]}</span>}
+                {s.skill && <span className="text-fg/72"> · {SKILLS[s.skill]}</span>}
               </span>
-              <span className="num shrink-0 whitespace-nowrap text-ink/70">{Math.max(1, Math.round(s.duration_s / 60))} min</span>
+              <span className="num shrink-0 whitespace-nowrap text-fg/72">{Math.max(1, Math.round(s.duration_s / 60))} min</span>
             </li>
           ))}
         </ol>
@@ -93,7 +93,7 @@ function FeedbackSlots(skill: SkillFeedback) {
         <Label>You and the model</Label>
         {item.attempt_id && (
           <div className="flex items-center gap-2">
-            <span className="mr-1 text-[0.8125rem] font-medium text-ink/70">You</span>
+            <span className="mr-1 text-[0.8125rem] font-medium text-fg/72">You</span>
             <ClipPlayer src={recordingUrl(item.attempt_id)} label="Your clip" startMs={item.start_ms} endMs={item.end_ms} />
           </div>
         )}
@@ -103,11 +103,11 @@ function FeedbackSlots(skill: SkillFeedback) {
     text: item && (
       <dl className="grid grid-cols-2 gap-4">
         <div>
-          <dt className="text-[0.8125rem] font-medium text-ink/70">Your word</dt>
+          <dt className="text-[0.8125rem] font-medium text-fg/72">Your word</dt>
           <dd className="font-display text-[1.375rem]">{item.word ?? "—"}</dd>
         </div>
         <div>
-          <dt className="text-[0.8125rem] font-medium text-ink/70">Say it like this</dt>
+          <dt className="text-[0.8125rem] font-medium text-fg/72">Say it like this</dt>
           <dd className="font-display text-[1.375rem]">{item.model_text ?? "—"}</dd>
         </div>
       </dl>
@@ -116,7 +116,7 @@ function FeedbackSlots(skill: SkillFeedback) {
       <>
         <p>{item.message}</p>
         {item.source === "template" && (
-          <p className="mt-3 text-[0.9375rem] text-ink/70">
+          <p className="mt-3 text-[0.9375rem] text-fg/72">
             Template fallback{item.fallback_reason ? `: ${REASONS[item.fallback_reason] ?? item.fallback_reason}` : ""}.
           </p>
         )}
@@ -159,7 +159,7 @@ export function DailyPage() {
                     setPicked(i);
                     releaseFocus(e);
                   }}
-                  className="press -mx-2 flex items-center justify-between gap-2 rounded px-2 py-2 text-left hover:bg-ink/6 aria-pressed:bg-ink aria-pressed:text-paper"
+                  className="press -mx-2 flex items-center justify-between gap-2 rounded px-2 py-2 text-left hover:bg-fg/6 aria-pressed:bg-fg aria-pressed:text-bg"
                 >
                   <span className="font-medium">{SKILLS[k.skill]}</span>
                   <span className="text-[0.8125rem] opacity-75">{STATES[k.state]}</span>
@@ -167,13 +167,13 @@ export function DailyPage() {
               ))}
             </div>
             {s.feedback.degraded && (
-              <p className="mt-3 text-[0.8125rem] text-ink/70">Some cards use the template fallback today.</p>
+              <p className="mt-3 text-[0.8125rem] text-fg/72">Some cards use the template fallback today.</p>
             )}
           </>
         }
         cta={
           s.phase === "done" ? (
-            <p className="w-full py-4 text-ink/70">Session complete. See you tomorrow.</p>
+            <p className="w-full py-4 text-fg/72">Session complete. See you tomorrow.</p>
           ) : last ? (
             <Cta onClick={() => d.complete.mutate(s.session.session_id)} disabled={d.complete.isPending}>
               Finish session

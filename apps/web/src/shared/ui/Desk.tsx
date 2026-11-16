@@ -54,13 +54,13 @@ export function TitleBlock({ step, children, sub }: { step: ReactNode; children?
           {children}
         </p>
       )}
-      {sub && <p className="mt-3 text-ink/70">{sub}</p>}
+      {sub && <p className="mt-3 text-fg/72">{sub}</p>}
     </div>
   );
 }
 
 export function Label({ children }: { children: ReactNode }) {
-  return <h2 className="mb-3 text-[0.8125rem] font-medium text-ink/70">{children}</h2>;
+  return <h2 className="mb-3 text-[0.8125rem] font-medium text-fg/72">{children}</h2>;
 }
 
 /** Status by shape and words: a filled dot when ready, a hollow one otherwise. */
@@ -79,7 +79,7 @@ export function Cta({ children, ...props }: React.ButtonHTMLAttributes<HTMLButto
     <button
       type="button"
       {...props}
-      className="press w-full rounded-md bg-onair px-4 py-4 text-left text-[1.0625rem] font-semibold text-ink hover:bg-[color-mix(in_oklch,var(--color-onair)_88%,var(--color-ink))] disabled:bg-ink/8 disabled:text-ink/70 disabled:opacity-100"
+      className="press w-full rounded-md bg-onair px-4 py-4 text-left text-[1.0625rem] font-semibold text-ink hover:bg-[color-mix(in_oklch,var(--color-onair)_88%,var(--color-ink))] disabled:bg-fg/8 disabled:text-fg/72 disabled:opacity-100"
     >
       {children}
     </button>
@@ -102,7 +102,7 @@ export function Action({ children, onClick, ...props }: React.ButtonHTMLAttribut
         onClick?.(e);
         releaseFocus(e);
       }}
-      className={`press rounded-full border border-ink/40 px-4 py-1.5 text-[0.9375rem] font-medium hover:border-ink ${props.className ?? ""}`}
+      className={`press rounded-full border border-fg/40 px-4 py-1.5 text-[0.9375rem] font-medium hover:border-fg ${props.className ?? ""}`}
     >
       {children}
     </button>

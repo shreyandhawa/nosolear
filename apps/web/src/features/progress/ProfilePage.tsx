@@ -30,16 +30,16 @@ export function ProfilePage() {
       }
       text={
         <>
-          {isPending && <p className="text-ink/70">Loading…</p>}
+          {isPending && <p className="text-fg/72">Loading…</p>}
           {isError && <p role="alert">Couldn't load your profile. Is the API running?</p>}
-          {data && data.entries.length === 0 && <p className="text-ink/70">No practice data yet. Your baseline will fill this in.</p>}
+          {data && data.entries.length === 0 && <p className="text-fg/72">No practice data yet. Your baseline will fill this in.</p>}
         </>
       }
       media={
         data &&
         data.entries.length > 0 && (
           <table className="w-full text-left align-top text-[0.875rem] [&_td]:py-2 [&_td]:pr-3 [&_td]:align-top [&_th]:pr-3">
-            <thead className="text-ink/70">
+            <thead className="text-fg/72">
               <tr>
                 <th className="pb-1 font-medium">Problem</th>
                 <th className="pb-1 font-medium">Status</th>
@@ -49,10 +49,10 @@ export function ProfilePage() {
             </thead>
             <tbody>
               {data.entries.map((e) => (
-                <tr key={e.error_key} className="border-t border-ink/10">
+                <tr key={e.error_key} className="border-t border-fg/10">
                   <td>
                     <span className="block font-display text-[1rem]">{e.description}</span>
-                    <span className="text-ink/70">{SKILL_LABELS[e.skill]}</span>
+                    <span className="text-fg/72">{SKILL_LABELS[e.skill]}</span>
                   </td>
                   <td>{statusLabel(e.status)}</td>
                   <td className="num whitespace-nowrap">{formatRate(e.p_hat, e.ci_low, e.ci_high)}</td>
