@@ -27,7 +27,7 @@ export function SetupPage() {
         envLines.length > 0 && (
           <>
             <Label>Still missing in .env</Label>
-            <pre className="rounded bg-fg/6 px-3 py-2 text-[0.9375rem] break-all whitespace-pre-wrap">{envLines.join("\n")}</pre>
+            <pre className="bg-fg/12 px-3 py-2 text-[0.9375rem] break-all whitespace-pre-wrap">{envLines.join("\n")}</pre>
           </>
         )
       }

@@ -36,9 +36,9 @@ export function Desk({ stateKey, title, media, text, stage, card, note, cta }: S
       </div>
       <div className="stage">{stage}</div>
       <div className="desk-right">
-        {slot(card, 3, "This step")}
+        {slot(card && <div className="chamfer">{card}</div>, 3, "This step")}
         {slot(note, 4, "Notes")}
-        <div className="flex items-end p-4">{cta}</div>
+        <div className="flex items-end p-6">{cta}</div>
       </div>
     </main>
   );
@@ -73,13 +73,13 @@ export function StatusDot({ ok }: { ok: boolean }) {
   );
 }
 
-/** The one primary action: an On air fill with Ink text. */
+/** The one primary action: an accent fill with Ink text, On air while it is pressed (recording). */
 export function Cta({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
       type="button"
       {...props}
-      className="press w-full rounded-md bg-onair px-4 py-4 text-left text-[1.0625rem] font-semibold text-ink hover:bg-[color-mix(in_oklch,var(--color-onair)_88%,var(--color-ink))] disabled:bg-fg/8 disabled:text-fg/72 disabled:opacity-100"
+      className="press w-full bg-accent px-4 py-4 text-left text-[1.0625rem] font-semibold text-ink hover:bg-[color-mix(in_oklch,var(--color-accent)_88%,var(--color-ink))] aria-pressed:bg-onair disabled:bg-fg/12 disabled:text-fg/72 disabled:opacity-100"
     >
       {children}
     </button>
@@ -102,7 +102,7 @@ export function Action({ children, onClick, ...props }: React.ButtonHTMLAttribut
         onClick?.(e);
         releaseFocus(e);
       }}
-      className={`press rounded-full border border-fg/40 px-4 py-1.5 text-[0.9375rem] font-medium hover:border-fg ${props.className ?? ""}`}
+      className={`press border border-fg/40 px-4 py-1.5 text-[0.9375rem] font-medium hover:border-fg ${props.className ?? ""}`}
     >
       {children}
     </button>

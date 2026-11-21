@@ -6,11 +6,15 @@
 @import "@fontsource/schibsted-grotesk/600.css";
 
 @theme {
-  --color-paper: oklch(94.4% 0.0144 84.6);
-  --color-ink: oklch(21.4% 0.0119 167.3);
-  --color-onair: oklch(66.6% 0.2237 34.3);
-  /* The microphone's halo and rim light only. */
-  --color-phosphor: oklch(88.1% 0.1237 167.9);
+  /* Ice. Hex, so the 3D scene's constants match the page exactly. */
+  --color-paper: #f2f5f7;
+  --color-ink: #07090b;
+  /* Recording only. */
+  --color-onair: #ff5b4a;
+  /* The primary action and the card's outline. */
+  --color-accent: #afddff;
+  /* The microphone's halo, rim light and lit slats only. */
+  --color-glow: #afddff;
   /* One dark studio: Ink is the ground everywhere, Paper the text. */
   --color-bg: var(--color-ink);
   --color-fg: var(--color-paper);
@@ -64,7 +68,7 @@ p {
   text-wrap: pretty;
 }
 
-/* The desk: one layout for every screen. Navigation, then columns 36 / 44 / 20. */
+/* The desk: one layout for every screen. Navigation, then columns 4 / 5 / 3 of a 12-cell grid. */
 .app {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -74,9 +78,43 @@ p {
 }
 
 .desk {
+  --cell: calc(100vw / 12);
+  position: relative;
+  isolation: isolate;
   display: grid;
-  grid-template-columns: minmax(0, 36fr) minmax(0, 44fr) minmax(0, 20fr);
+  grid-template-columns: minmax(0, 4fr) minmax(0, 5fr) minmax(0, 3fr);
   min-height: 0;
+}
+
+/* The grid: faint lines on square cells, and a 10 px plus mark where they cross. The marks are
+ * the same lines, brighter, seen through an 11 px window at each crossing. */
+.desk::before,
+.desk::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, var(--line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--line) 1px, transparent 1px);
+  background-size: var(--cell) var(--cell);
+}
+
+.desk::before {
+  --line: color-mix(in oklch, var(--color-fg) 5%, transparent);
+}
+
+.desk::after {
+  --line: color-mix(in oklch, var(--color-fg) 34%, transparent);
+  mask-image:
+    linear-gradient(to right, #000 11px, transparent 11px),
+    linear-gradient(to bottom, #000 11px, transparent 11px);
+  mask-size: var(--cell) var(--cell);
+  mask-position: -5px -5px;
+  mask-composite: intersect;
+  /* No half marks on the left edge or under the navigation. */
+  clip-path: inset(6px 0 0 6px);
 }
 
 .desk-left,
@@ -91,13 +129,16 @@ p {
 
 .desk-right {
   grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) auto;
-  border-left: 1px solid color-mix(in oklch, var(--color-fg) 10%, transparent);
 }
 
 .slot {
   min-height: 0;
   overflow: auto;
-  padding: 1.75rem 2rem;
+  padding: 1.5rem 2rem;
+}
+
+.desk-right > .slot {
+  padding-inline: 1.5rem;
 }
 
 .slot > div {
@@ -109,13 +150,29 @@ p {
   overflow-wrap: anywhere;
 }
 
-.desk-left > .slot + .slot,
-.desk-right > .slot + .slot {
-  border-top: 1px solid color-mix(in oklch, var(--color-fg) 10%, transparent);
+.desk-left > .slot:not(:first-child):not(:has(table)) {
+  width: 75%;
 }
 
-.desk-left > .slot:not(:first-child) {
-  width: 75%;
+/* The one card: square, with an accent hairline and one corner cut at 45 degrees. The outline is
+ * the accent showing round a ground-coloured inset, so the cut edge gets its line too. */
+.chamfer {
+  --cut: 28px;
+  position: relative;
+  isolation: isolate;
+  padding: 1.5rem 1.5rem 2.25rem;
+  background: var(--color-accent);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%);
+}
+
+.chamfer::before {
+  --cut: 27.4px; /* 28 - 2 + sqrt(2): a 1 px line along the cut */
+  content: "";
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
+  background: var(--color-bg);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%);
 }
 
 /* The stage is the same ground: only the microphone's light sets it apart. */
@@ -204,8 +261,8 @@ p {
   border-radius: 50%;
   background: radial-gradient(
     closest-side,
-    color-mix(in oklch, var(--color-phosphor) 50%, transparent),
-    color-mix(in oklch, var(--color-phosphor) 14%, transparent) 55%,
+    color-mix(in oklch, var(--color-glow) 50%, transparent),
+    color-mix(in oklch, var(--color-glow) 14%, transparent) 55%,
     transparent
   );
   opacity: 0.26;
@@ -275,6 +332,8 @@ p {
   left: 50%;
   top: 50%;
   translate: -50% -50%;
+  /* Bloom lifts the canvas a touch above the ground; fading its edges leaves no rectangle. */
+  mask-image: radial-gradient(closest-side, #000 55%, transparent);
 }
 
 /* The CSS halo stands in only behind the flat silhouette; the 3D scene draws its own glow. */
@@ -298,7 +357,6 @@ p {
 }
 
 .mic-onair {
-  border-radius: 999px;
   background: var(--color-onair);
   color: var(--color-ink);
   padding: 0.125rem 0.625rem;

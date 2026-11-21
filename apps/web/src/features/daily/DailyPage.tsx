@@ -159,7 +159,7 @@ export function DailyPage() {
                     setPicked(i);
                     releaseFocus(e);
                   }}
-                  className="press -mx-2 flex items-center justify-between gap-2 rounded px-2 py-2 text-left hover:bg-fg/6 aria-pressed:bg-fg aria-pressed:text-bg"
+                  className="press -mx-2 flex items-center justify-between gap-2 px-2 py-2 text-left hover:bg-fg/6 aria-pressed:bg-fg aria-pressed:text-bg"
                 >
                   <span className="font-medium">{SKILLS[k.skill]}</span>
                   <span className="text-[0.8125rem] opacity-75">{STATES[k.state]}</span>

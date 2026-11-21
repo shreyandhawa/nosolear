@@ -205,7 +205,7 @@ function Silhouette({ lit, state }: { lit: number; state: MicState }) {
           y2={svgY(s.y)}
           strokeWidth={0.05}
           strokeLinecap="round"
-          stroke={i < lit ? "var(--color-phosphor)" : "color-mix(in oklch, var(--color-paper) 30%, transparent)"}
+          stroke={i < lit ? "var(--color-glow)" : "color-mix(in oklch, var(--color-paper) 30%, transparent)"}
         />
       ))}
       {lamp !== "none" && <circle cx={0} cy={svgY(1.5)} r={0.05} fill={lamp} />}

@@ -8,10 +8,11 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { CANVAS_SCALE, HEAD, SLATS, VIEW } from "./micGeometry";
 import type { MicState } from "./MicStage";
 
-const INK = 0x141b18;
-const PHOSPHOR = 0x7cf2c8;
-const ON_AIR = 0xff4a1c;
-const PAPER = 0xf1ece2;
+// The page's tokens (index.css), so the canvas ground is exactly the page's.
+const INK = 0x07090b;
+const GLOW = 0xafddff;
+const ON_AIR = 0xff5b4a;
+const PAPER = 0xf2f5f7;
 const POSE = { x: 0.06, y: -0.35 }; // a three-quarter turn, so it reads as an object
 const TAU = Math.PI * 2;
 
@@ -44,7 +45,7 @@ function radial(stops: [number, string][]) {
 }
 
 /** The 3D microphone: built from three.js geometry, lit by a room environment, a key light and a
- * Phosphor rim, with real bloom. It floats, turns toward the pointer, turns when dragged and leans
+ * glow-coloured rim, with real bloom. It floats, turns toward the pointer, turns when dragged and leans
  * into the voice. Decorative: the button sits over it. */
 export default function MicScene({ state, progress, level, drag, reduced, onReady, onFail }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -84,13 +85,13 @@ export default function MicScene({ state, progress, level, drag, reduced, onRead
 
     const key = new THREE.DirectionalLight(0xfff6ea, 2.4);
     key.position.set(-3, 5, 4);
-    const rim = new THREE.DirectionalLight(PHOSPHOR, 0.8);
+    const rim = new THREE.DirectionalLight(GLOW, 0.8);
     rim.position.set(0.6, 3.2, -4);
     scene.add(key, rim);
 
-    const body = new THREE.MeshPhysicalMaterial({ color: 0x2c3230, metalness: 1, roughness: 0.42, anisotropy: 0.6 });
+    const body = new THREE.MeshPhysicalMaterial({ color: 0x2a2f34, metalness: 1, roughness: 0.42, anisotropy: 0.6 });
     const bright = new THREE.MeshStandardMaterial({ color: 0xd9dad4, metalness: 1, roughness: 0.22 });
-    const core = new THREE.MeshStandardMaterial({ color: 0x0b0e0d, metalness: 0.3, roughness: 0.85 });
+    const core = new THREE.MeshStandardMaterial({ color: 0x0a0c0e, metalness: 0.3, roughness: 0.85 });
     const lampMat = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: PAPER, emissiveIntensity: 0 });
 
     const mic = new THREE.Group();
@@ -103,7 +104,7 @@ export default function MicScene({ state, progress, level, drag, reduced, onRead
     add(new THREE.CapsuleGeometry(HEAD.r - 0.04, (HEAD.half - HEAD.r) * 2, 12, 48), core, (m) => m.position.setY(HEAD.y));
     const slats = SLATS.map((s) => {
       const material = bright.clone();
-      material.emissive = new THREE.Color(PHOSPHOR);
+      material.emissive = new THREE.Color(GLOW);
       material.emissiveIntensity = 0;
       add(new THREE.TorusGeometry(s.r + 0.01, 0.03, 12, 72), material, (m) => {
         m.rotation.x = Math.PI / 2;
@@ -148,7 +149,7 @@ export default function MicScene({ state, progress, level, drag, reduced, onRead
     add(new THREE.LatheGeometry(profile, 72), body, () => {});
     scene.add(mic);
 
-    // The glow: an additive Phosphor sprite behind the head, bright enough to bloom. It is the
+    // The glow: an additive glow-coloured sprite behind the head, bright enough to bloom. It is the
     // level meter while recording.
     const glowTexture = radial([
       [0, "rgba(255,255,255,1)"],
@@ -157,7 +158,7 @@ export default function MicScene({ state, progress, level, drag, reduced, onRead
     ]);
     const glowMat = new THREE.SpriteMaterial({
       map: glowTexture,
-      color: new THREE.Color(PHOSPHOR).multiplyScalar(1.4),
+      color: new THREE.Color(GLOW).multiplyScalar(1.4),
       blending: THREE.AdditiveBlending,
       transparent: true,
       depthWrite: false,
