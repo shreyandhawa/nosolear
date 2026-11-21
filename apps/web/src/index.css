@@ -243,6 +243,11 @@ p {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  /* Fade to nothing at the stage's edges, so the canvas never ends in a line. */
+  mask-image:
+    linear-gradient(to right, transparent, #000 14%, #000 86%, transparent),
+    linear-gradient(to bottom, transparent, #000 8%, #000 92%, transparent);
+  mask-composite: intersect;
 }
 
 .mic-box {
@@ -332,8 +337,9 @@ p {
   left: 50%;
   top: 50%;
   translate: -50% -50%;
-  /* Bloom lifts the canvas a touch above the ground; fading its edges leaves no rectangle. */
-  mask-image: radial-gradient(closest-side, #000 55%, transparent);
+  /* Bloom lays a haze over the whole canvas, lighter than the ground. This fade hides the canvas's
+   * own edges; the one on .mic hides the stage's, where a narrow window crops the canvas. */
+  mask-image: radial-gradient(closest-side, #000 62%, transparent);
 }
 
 /* The CSS halo stands in only behind the flat silhouette; the 3D scene draws its own glow. */
