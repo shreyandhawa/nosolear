@@ -127,8 +127,10 @@ p {
   grid-template-rows: 50% auto minmax(0, 1fr);
 }
 
+/* The card starts at half the column, like the Title, and takes more when its content needs it;
+ * the notes keep at least a few lines. */
 .desk-right {
-  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) auto;
+  grid-template-rows: minmax(50%, auto) minmax(6rem, 1fr) auto;
 }
 
 .slot {
@@ -163,6 +165,18 @@ p {
   padding: 1.5rem 1.5rem 2.25rem;
   background: var(--color-accent);
   clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%);
+  /* Never taller than its slot: a long card scrolls inside its outline, so the cut corner stays. */
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;
+}
+
+/* The scrolling body. The margin and padding leave room for rows that bleed and for focus rings. */
+.chamfer > div {
+  min-height: 0;
+  margin: -0.5rem;
+  padding: 0.5rem;
+  overflow: auto;
 }
 
 .chamfer::before {

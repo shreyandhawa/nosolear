@@ -36,7 +36,15 @@ export function Desk({ stateKey, title, media, text, stage, card, note, cta }: S
       </div>
       <div className="stage">{stage}</div>
       <div className="desk-right">
-        {slot(card && <div className="chamfer">{card}</div>, 3, "This step")}
+        {slot(
+          card && (
+            <div className="chamfer">
+              <div>{card}</div>
+            </div>
+          ),
+          3,
+          "This step",
+        )}
         {slot(note, 4, "Notes")}
         <div className="flex items-end p-6">{cta}</div>
       </div>
