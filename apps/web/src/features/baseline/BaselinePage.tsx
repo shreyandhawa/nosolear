@@ -101,7 +101,7 @@ export function BaselinePage() {
                       setPicked(i);
                       releaseFocus(e);
                     }}
-                    className="press -mx-2 flex w-[calc(100%+1rem)] items-baseline gap-2 rounded px-2 py-1.5 text-left hover:bg-fg/6 aria-pressed:bg-fg aria-pressed:text-bg"
+                    className="press -mx-2 flex w-[calc(100%+1rem)] items-baseline gap-2 px-2 py-1.5 text-left hover:bg-fg/6 aria-pressed:bg-fg aria-pressed:text-bg"
                   >
                     <span className="num w-5 shrink-0 opacity-70">{i + 1}</span>
                     <span>{r.description}</span>
