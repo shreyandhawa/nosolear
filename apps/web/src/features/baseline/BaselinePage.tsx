@@ -33,14 +33,18 @@ export function BaselinePage() {
             : b.allRecorded
               ? "done"
               : "idle";
+  // A long prompt would shrink the title, so it goes in the media slot and the title keeps the step only.
   const long = (item?.text.length ?? 0) > 28;
+  const section = (item ?? b.items.at(-1))?.section;
+  const inSection = b.items.filter((i) => i.section === section);
+  const sectionDone = inSection.every((i) => i.recorded);
   return (
     <Desk
       stateKey={!session ? "none" : item ? `item-${item.attempt_id}` : "recorded"}
       title={
         item ? (
           <TitleBlock step={`Baseline, item ${index + 1} of ${b.items.length}`}>
-            <span className={long ? "block text-[clamp(2rem,2.8vw,2.75rem)] leading-tight" : undefined}>{item.text}</span>
+            {long ? undefined : item.text}
           </TitleBlock>
         ) : (
           <TitleBlock
@@ -49,11 +53,18 @@ export function BaselinePage() {
           />
         )
       }
-      media={item?.scripted && <ModelVoice source="content_item" id={item.item_id} />}
+      media={
+        item && (
+          <div className="flex flex-col gap-3">
+            {long && <p lang="en" className="font-display text-[1.5rem] leading-snug">{item.text}</p>}
+            {item.scripted && <ModelVoice source="content_item" id={item.item_id} />}
+          </div>
+        )
+      }
       text={
         item && (
           <>
-            <p className="font-display text-[1.375rem]">{item.section}</p>
+            <p className="font-display text-[1.375rem]">{item.scripted ? "Read it as written." : "Answer in your own words."}</p>
             <p className="text-fg/72">{limits(item.max_seconds, item.start_limit_seconds) || "No time limit"}</p>
           </>
         )
@@ -73,15 +84,21 @@ export function BaselinePage() {
           <Label>This step</Label>
           <p>{PURPOSE}</p>
           {session && (
-            <ol className="mt-4 flex flex-col gap-1 text-[0.875rem]">
-              {b.items.map((i) => (
-                <li key={i.attempt_id} className="flex items-center gap-2">
-                  <StatusDot ok={i.recorded} />
-                  <span className="truncate">{i.section}</span>
-                  <span className="ml-auto shrink-0 text-fg/72">{i.recorded ? (i.job_status ?? "queued") : ""}</span>
-                </li>
-              ))}
-            </ol>
+            <>
+              <h3 className="mt-4 flex items-baseline justify-between text-[0.875rem] font-semibold">
+                {section}
+                {sectionDone && <span className="font-normal text-fg/72">Done</span>}
+              </h3>
+              <ol className="mt-2 flex flex-col gap-1 text-[0.875rem]">
+                {inSection.map((i) => (
+                  <li key={i.attempt_id} className="flex items-center gap-2">
+                    <StatusDot ok={i.recorded} />
+                    <span className="truncate">{i.text}</span>
+                    <span className="ml-auto shrink-0 text-fg/72">{i.recorded ? "Recorded" : ""}</span>
+                  </li>
+                ))}
+              </ol>
+            </>
           )}
         </>
       }
@@ -95,9 +112,7 @@ export function BaselinePage() {
               </button>
             )}
           </p>
-        ) : (
-          item && <p>{item.scripted ? "Read it as written." : "Answer in your own words."}</p>
-        )
+        ) : undefined
       }
       cta={
         !session ? (

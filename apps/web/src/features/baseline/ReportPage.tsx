@@ -4,6 +4,7 @@ import { recordingUrl } from "../../shared/api/http";
 import { ClipPlayer } from "../../shared/audio/ClipPlayer";
 import { MicStage } from "../../shared/audio/MicStage";
 import { PhoneticPair } from "../../shared/ui/PhoneticPair";
+import { statusLabel } from "../../shared/statusLabel";
 import { Desk, Label, releaseFocus, TitleBlock } from "../../shared/ui/Desk";
 import { ctaLink } from "../../shared/ui/styles";
 import { useBaseline } from "./useBaseline";
@@ -33,13 +34,14 @@ export function ReportPage() {
     );
   }
 
-  const ranked = report.items;
+  // The API returns every ranked error; the full list lives on Progress.
+  const ranked = report.items.slice(0, 5);
   const top = ranked[Math.min(picked, ranked.length - 1)];
   return (
     <Desk
       stateKey={`report-${picked}`}
       title={
-        <TitleBlock step={`Report, error ${picked + 1} of ${ranked.length}`} sub={top?.description}>
+        <TitleBlock step={`Report, error ${picked + 1} of ${report.items.length}`}>
           {top && <PhoneticPair errorKey={top.error_key} fallback={top.description} />}
         </TitleBlock>
       }
@@ -68,11 +70,11 @@ export function ReportPage() {
               {Math.round(top.p_hat * 100)}% of chances <span className="text-fg/72">({Math.round(top.ci_low * 100)}–{Math.round(top.ci_high * 100)}%)</span>
             </p>
             <p className="mt-1 text-fg/72">
-              {SKILLS[top.skill]}, {top.status}
+              {SKILLS[top.skill]}, {statusLabel(top.status as Parameters<typeof statusLabel>[0])}
               {top.provisional && ", provisional"}
             </p>
             {report.calibration !== "done" && (
-              <p className="mt-3 text-[0.9375rem]">Calibration: {report.calibration}. Provisional flags may change.</p>
+              <p className="mt-3 text-[0.9375rem]">Calibration is {report.calibration}, so provisional flags may change.</p>
             )}
             {report.notes.map((note) => (
               <p key={note} className="mt-3 text-[0.9375rem]">
@@ -98,8 +100,13 @@ export function ReportPage() {
       }
       note={
         <>
-          <Label>Ranked errors</Label>
-          <ol className="flex flex-col gap-1">
+          <div className="flex items-baseline justify-between gap-3">
+            <Label>Ranked errors</Label>
+            <Link to="/profile" className="text-[0.8125rem] underline underline-offset-4">
+              See all on Progress
+            </Link>
+          </div>
+          <ol className="flex flex-col">
             {ranked.map((r, i) => (
               <li key={r.error_key}>
                 <button

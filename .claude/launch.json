@@ -12,6 +12,19 @@
       "port": 5173
     },
     {
+      "name": "web-5174",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--dir",
+        "apps/web",
+        "dev",
+        "--port",
+        "5174",
+        "--strictPort"
+      ],
+      "port": 5174
+    },
+    {
       "name": "app",
       "runtimeExecutable": "make",
       "runtimeArgs": [
