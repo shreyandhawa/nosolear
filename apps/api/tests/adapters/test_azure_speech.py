@@ -211,3 +211,40 @@ def test_sdk_cancellation_details_have_the_attributes_the_backend_reads():
     speechsdk = pytest.importorskip("azure.cognitiveservices.speech")
     assert {"reason", "code", "error_details"} <= set(dir(speechsdk.CancellationDetails))
     assert "error_code" in dir(speechsdk.SpeechSynthesisCancellationDetails)
+    assert hasattr(
+        speechsdk.PropertyId, "SpeechServiceConnection_SynthEnableCompressedAudioTransmission"
+    )
+
+
+def test_sdk_backend_synthesizes_without_compressed_transmission(monkeypatch):
+    """Compressed transmission decodes MP3 on an SDK thread that crashed the server on teardown."""
+    props: dict[str, str] = {}
+
+    class Synthesizer:
+        def __init__(self, **_kwargs) -> None:
+            self.synthesis_word_boundary = _Signal()
+
+        def speak_ssml_async(self, _ssml: str) -> SimpleNamespace:
+            return SimpleNamespace(
+                get=lambda: SimpleNamespace(reason="Completed", audio_data=b"RIFF")
+            )
+
+    sdk = SimpleNamespace(
+        SpeechConfig=lambda **_kwargs: SimpleNamespace(
+            set_speech_synthesis_output_format=lambda _format: None,
+            set_property=props.__setitem__,
+        ),
+        SpeechSynthesisOutputFormat=SimpleNamespace(Riff16Khz16BitMonoPcm="pcm"),
+        PropertyId=SimpleNamespace(
+            SpeechServiceConnection_SynthEnableCompressedAudioTransmission="compressed"
+        ),
+        SpeechSynthesizer=Synthesizer,
+        SpeechSynthesisBoundaryType=SimpleNamespace(Word="Word"),
+        ResultReason=SimpleNamespace(Canceled="Canceled"),
+    )
+    monkeypatch.setattr(azure_speech, "_sdk", lambda: sdk)
+    outcome = SdkSpeechBackend(key=SecretStr(PLANTED_AZURE_KEY), region="eastus").synthesize(
+        "<speak/>"
+    )
+    assert props == {"compressed": "false"}
+    assert outcome.audio == b"RIFF"
