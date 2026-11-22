@@ -61,7 +61,8 @@ def test_default_job_workers_is_one(tmp_path: Path) -> None:
 
 
 def test_build_services_uses_the_given_clock_and_registry(tmp_path: Path) -> None:
-    settings = make_settings(data_dir=tmp_path)
+    # pinned: "auto" picks a local transcriber when the local extra is installed
+    settings = make_settings(data_dir=tmp_path, transcriber="azure_stt")
     engine = _migrated(settings)
     clock = FixedClock(NOW)
     registry = StepRegistry()

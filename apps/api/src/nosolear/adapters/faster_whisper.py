@@ -64,7 +64,7 @@ class _Constructor(Protocol):
 
 def _load(spec: ModelSpec) -> WhisperModelLike:
     disable_hf_telemetry()  # before any Hugging Face import
-    from faster_whisper import (  # pyright: ignore[reportMissingImports]
+    from faster_whisper import (  # pyright: ignore[reportMissingImports, reportMissingTypeStubs]
         WhisperModel,  # pyright: ignore[reportUnknownVariableType]
     )
 
