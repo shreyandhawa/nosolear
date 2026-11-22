@@ -4,7 +4,7 @@ import argparse
 import json
 import logging
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import quote
@@ -55,6 +55,13 @@ from nosolear.settings import REPO_ROOT, Settings, settings_error_summary
 from nosolear.startup import prepare_process
 
 API_TIMEOUT_S = 30.0
+# Spoken when today's attempt has no prompt text: a plain answer of about 25 seconds.
+STAND_IN_DAILY_TEXT = (
+    "Last week our team had to move a deadline because a supplier was late. I told my manager "
+    "early, explained what had changed, and suggested a new plan with two smaller deliveries "
+    "instead of one big one. She agreed, and we shared the update with the client that same "
+    "afternoon. The client was fine with it, and we finished both parts on time."
+)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -318,21 +325,41 @@ def _daily_run(args: argparse.Namespace, api: ApiClient) -> int:
             "cannot read the recording: the file does not exist or is not a file", file=sys.stderr
         )
         return 2
+    return _run_day(api, lambda _prompt: Path(args.wav), no_generate=args.no_generate)
+
+
+def _run_day(api: ApiClient, recording: Callable[[str | None], Path], *, no_generate: bool) -> int:
+    """`recording` gets the speak attempt's prompt text and returns the WAV to upload."""
     body = api.post_json("/api/plan/today/session")
     for line in _daily_start_lines(body):
         print(line)
     session = _record(body, "session_id", "attempts")
-    first = _record(cast(list[object], session["attempts"])[0], "id")
-    code = _follow(api, api.upload_wav(str(first["id"]), Path(args.wav)))
+    first = _record(cast(list[object], session["attempts"])[0], "id", "prompt_text")
+    prompt = first["prompt_text"]
+    code = _follow(api, api.upload_wav(str(first["id"]), recording(prompt)))
     if code not in (0, 1):
         return code
     session_id = str(session["session_id"])
     path = _session_path(session_id, "feedback")
-    body = api.get_json(path) if args.no_generate else api.post_json(path)
+    body = api.get_json(path) if no_generate else api.post_json(path)
     for line in _feedback_lines(body):
         print(line)
     completed = _complete(api, session_id)
     return code or completed
+
+
+def _stand_in_daily(api: ApiClient, synthesizer: Synthesizer, data_dir: Path) -> int:
+    """Testing aid: today's speak attempt, answered with synthesized audio."""
+
+    def recording(_prompt: str | None) -> Path:
+        # The prompt is a question; reading it aloud would not answer it.
+        return data_dir / synthesizer.synthesize(STAND_IN_DAILY_TEXT).path
+
+    try:
+        return _run_day(api, recording, no_generate=False)
+    except NosolearError as exc:
+        print(f"stand-in stopped: {exc.safe_message}", file=sys.stderr)
+        return 2
 
 
 def _plan(args: argparse.Namespace, api: ApiClient) -> int:
@@ -394,7 +421,7 @@ def _api_command(
     owned = client is None
     api = client or ApiClient(
         httpx.Client(
-            base_url=args.base_url or f"http://{settings.host}:{settings.port}",
+            base_url=getattr(args, "base_url", None) or f"http://{settings.host}:{settings.port}",
             timeout=API_TIMEOUT_S,
         )
     )
@@ -413,6 +440,9 @@ def _api_command(
             return _daily_start(api)
         if args.command == first_run_cli.STAND_IN and synthesizer is None:
             synthesizer = build_stand_in_synthesizer(settings)
+        if args.command == first_run_cli.STAND_IN and args.kind == "daily":
+            assert synthesizer is not None
+            return _stand_in_daily(api, synthesizer, settings.data_dir)
         handled = first_run_cli.run(args, api, synthesizer=synthesizer, data_dir=settings.data_dir)
         return _job(args, api) if handled is None else handled
     except CliError as exc:

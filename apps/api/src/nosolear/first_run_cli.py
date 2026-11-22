@@ -17,7 +17,7 @@ BASELINE: Final = "baseline"
 BASELINE_STEPS: Final = ("start", "status", "complete", "report")
 ONBOARDING: Final = "onboarding"
 STAND_IN: Final = "stand-in"
-STAND_IN_STEPS: Final = ("calibration", "baseline")
+STAND_IN_STEPS: Final = ("calibration", "baseline", "daily")
 DAILY_HINT: Final = "Daily practice arrives in Phase 1."
 SKIPPED_MESSAGE: Final = "Calibration skipped. Scores stay provisional until you calibrate."
 
@@ -46,7 +46,7 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     commands.add_parser(ONBOARDING, help="show the next first-run step and what it needs")
     stand_in = commands.add_parser(
         STAND_IN,
-        help="testing aid: upload TTS audio for every unrecorded calibration or baseline item",
+        help="testing aid: upload TTS audio for each unrecorded item, or answer today's attempt",
     )
     stand_in.add_argument("kind", choices=STAND_IN_STEPS)
 

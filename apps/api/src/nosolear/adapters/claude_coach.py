@@ -27,8 +27,8 @@ from nosolear.domain.coach import (
     tokens_used_of,
 )
 from nosolear.domain.errors import (
+    NotConfigured,
     ProviderUnavailable,
-    RequestNotSent,
     RetryableProviderError,
 )
 from nosolear.domain.speech import RawResult
@@ -114,7 +114,7 @@ class ClaudeCoach:
 
     def _send(self, request: CoachRequest) -> dict[str, object]:
         if self._client is None:
-            raise RequestNotSent(_NOT_CONFIGURED) from None
+            raise NotConfigured(_NOT_CONFIGURED) from None
         try:
             response = self._client.messages.create(
                 model=self._model,

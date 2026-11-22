@@ -12,8 +12,8 @@ from nosolear.adapters.claude_coach import API_BASE_URL, ClaudeCoach
 from nosolear.domain.coach import ANALYZE_MAX_TOKENS, CoachTask, coach_keys
 from nosolear.domain.errors import (
     MalformedProviderResponse,
+    NotConfigured,
     ProviderUnavailable,
-    RequestNotSent,
     RetryableProviderError,
 )
 from nosolear.domain.taxonomy import DEFAULT_TAXONOMY as TAX
@@ -211,7 +211,7 @@ def test_tokens_used_sums_usage_and_the_model_is_the_provider_version():
     assert a.raw.provider_version == "claude-opus-5-5"
 
 
-def test_a_missing_key_is_request_not_sent_and_makes_no_call(monkeypatch):
+def test_a_missing_key_is_not_configured_and_makes_no_call(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     seen: list[httpx2.Request] = []
 
@@ -219,7 +219,7 @@ def test_a_missing_key_is_request_not_sent_and_makes_no_call(monkeypatch):
         seen.append(req)
         return httpx2.Response(200, json=message_json(GOOD))
 
-    with pytest.raises(RequestNotSent) as info:
+    with pytest.raises(NotConfigured) as info:
         analyze(coach(handler, key=None))
     assert "NOSOLEAR_ANTHROPIC_API_KEY" in str(info.value)
     assert seen == []

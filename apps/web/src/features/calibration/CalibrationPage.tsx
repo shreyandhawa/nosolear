@@ -5,10 +5,67 @@ import { useTake } from "../../shared/audio/useTake";
 import { Action, Cta, Desk, Label, TitleBlock } from "../../shared/ui/Desk";
 import { JobSteps } from "../../shared/ui/JobSteps";
 import { ctaLink } from "../../shared/ui/styles";
+import { phoneticPair } from "../../shared/phonetic";
+import type { components } from "../../shared/api/schema";
 import { useCalibration } from "./useCalibration";
 
 const TAKE_SECONDS = 10;
 const pct = (x: number | null) => (x === null ? "–" : `${Math.round(x * 100)}%`);
+const DETECTOR: Record<string, string> = { azure_pa: "Azure", phone_probe: "Probe" };
+const errorName = (key: string) => {
+  const pair = phoneticPair(key);
+  return pair ? `/${pair[0]}/ as /${pair[1]}/` : key;
+};
+const detectorName = (r: { detector: string; error_key: string }) =>
+  `${errorName(r.error_key)} (${DETECTOR[r.detector] ?? r.detector})`;
+
+/** The detectors that stay off for this voice, then every detector behind a disclosure. */
+function Results({ results }: { results: components["schemas"]["CalibrationResultOut"][] }) {
+  const off = results.filter((r) => !r.enabled);
+  return (
+    <>
+      {off.length > 0 ? (
+        <>
+          <Label>Off for your voice</Label>
+          <ul className="flex flex-col gap-1 text-[0.9375rem]">
+            {off.map((r) => (
+              <li key={`${r.detector}-${r.error_key}`}>
+                {detectorName(r)}: <span className="num">{pct(r.hit_rate)}</span> hits,{" "}
+                <span className="num">{pct(r.false_alarm_rate)}</span> false alarms
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <p>Every detector passed on your voice.</p>
+      )}
+      <details className="mt-3 text-[0.875rem]">
+        <summary className="cursor-pointer text-fg/72">All {results.length} detectors</summary>
+        <table className="mt-2 w-full text-left">
+          <thead className="text-fg/72">
+            <tr>
+              <th className="pb-1 font-medium">Error</th>
+              <th className="pb-1 font-medium">On</th>
+              <th className="pb-1 font-medium">Hits</th>
+              <th className="pb-1 font-medium">False alarms</th>
+            </tr>
+          </thead>
+          <tbody className="num">
+            {results.map((r) => (
+              <tr key={`${r.detector}-${r.error_key}`} className="border-t border-fg/10">
+                <td className="py-1">{detectorName(r)}</td>
+                <td>{r.enabled ? "yes" : "no"}</td>
+                <td>{pct(r.hit_rate)}</td>
+                <td>{pct(r.false_alarm_rate)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </details>
+    </>
+  );
+}
+
 const PURPOSE = "Calibration tunes the detectors to your voice: one short word per screen, said as asked.";
 
 export function CalibrationPage() {
@@ -65,28 +122,7 @@ export function CalibrationPage() {
         running && c.current ? (
           <p className="font-display text-[1.375rem] leading-snug">{c.current.instruction}</p>
         ) : (
-          run?.status === "done" && (
-            <table className="w-full text-left text-[0.875rem]">
-              <thead className="text-fg/72">
-                <tr>
-                  <th className="pb-1 font-medium">Error</th>
-                  <th className="pb-1 font-medium">On</th>
-                  <th className="pb-1 font-medium">Hits</th>
-                  <th className="pb-1 font-medium">False alarms</th>
-                </tr>
-              </thead>
-              <tbody className="num">
-                {run.results.map((r) => (
-                  <tr key={`${r.detector}-${r.error_key}`} className="border-t border-fg/10">
-                    <td className="py-1">{r.error_key}</td>
-                    <td>{r.enabled ? "yes" : "no"}</td>
-                    <td>{pct(r.hit_rate)}</td>
-                    <td>{pct(r.false_alarm_rate)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )
+          run?.status === "done" && <Results results={run.results} />
         )
       }
       stage={

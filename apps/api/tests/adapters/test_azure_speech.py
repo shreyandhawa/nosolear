@@ -93,14 +93,14 @@ def test_cancellation_details_never_leak(caplog):
         (
             "AuthenticationFailure",
             "",
-            False,
+            True,
             "Azure Speech rejected the key or region; check NOSOLEAR_AZURE_SPEECH_KEY and "
             "NOSOLEAR_AZURE_SPEECH_REGION",
         ),
         (
             "Forbidden",
             "",
-            False,
+            True,
             "Azure Speech rejected the key or region; check NOSOLEAR_AZURE_SPEECH_KEY and "
             "NOSOLEAR_AZURE_SPEECH_REGION",
         ),

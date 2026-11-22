@@ -80,6 +80,13 @@ class RequestNotSent(ProviderUnavailable):
     default_message: ClassVar[str] = "The request was not sent to the provider."
 
 
+class NotConfigured(RequestNotSent, CapabilityMissing):
+    """A provider with no credentials: nothing was sent (so no cap is spent), and the capability
+    is missing rather than the provider down."""
+
+    code: ClassVar[str] = "capability_missing"
+
+
 class RetryableProviderError(ProviderUnavailable):
     """A provider failure worth retrying: 429, 5xx, 529, connection errors and timeouts.
 

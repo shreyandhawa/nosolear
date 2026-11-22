@@ -100,13 +100,15 @@ class VoiceRejected(ProviderUnavailable):
 
 
 def classify(cancellation: Cancellation) -> ProviderUnavailable:
-    """The error a cancellation maps to. Retryable ones are 429 and 5xx-style service failures."""
+    """The error a cancellation maps to. Retryable ones are 429, 5xx-style and auth failures."""
     if cancellation.code == "TooManyRequests" or "429" in cancellation.details:
         return RetryableProviderError("Azure Speech is rate-limiting requests")
     if cancellation.code in _RETRYABLE_CODES:
         return RetryableProviderError("Azure Speech is unavailable")
     if cancellation.code in _KEY_CODES:
-        return ProviderUnavailable(
+        # Retried too: F0 sometimes refuses a valid key (16 of 175 takes in a 2026-11-22 run, all
+        # fine on retry). A key that is really wrong keeps this message once the retries run out.
+        return RetryableProviderError(
             "Azure Speech rejected the key or region; check NOSOLEAR_AZURE_SPEECH_KEY and "
             "NOSOLEAR_AZURE_SPEECH_REGION"
         )

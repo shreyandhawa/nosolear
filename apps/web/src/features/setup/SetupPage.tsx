@@ -105,7 +105,11 @@ export function SetupPage() {
           {local.length > 0 && (
             <div className="mt-5">
               <Label>On this machine</Label>
-              <Rows rows={local} brief />
+              {local.every((r) => r.status === "ready") ? (
+                <p className="text-[0.8125rem] text-fg/72">{local.map((r) => r.label).join(", ")}: ready</p>
+              ) : (
+                <Rows rows={local} brief />
+              )}
             </div>
           )}
         </>
@@ -135,7 +139,7 @@ export function SetupPage() {
               <b>The Anthropic coach is optional.</b> It writes personal fixes and scores On the spot and Articulate, for about
               $0.20 a month on Haiku or $7 on Opus. Without it, feedback uses written templates.
             </p>
-            <p className="mt-2 text-fg/72">The check makes a few paid calls to Azure, within your caps.</p>
+            {blocked && <p className="mt-2 text-fg/72">The check makes a few paid calls to Azure, within your caps.</p>}
           </>
         )
       }

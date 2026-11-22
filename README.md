@@ -117,7 +117,7 @@ make api    # the API on http://127.0.0.1:8000, restarts on code changes
 make web    # the web app on http://localhost:5173
 ```
 
-To try the profile page with synthetic data, run `make seed`, which writes under `data/dev`, then start the API with `make api-dev`. `make test`, `make lint` and `make test-live` run the tests, the linters and the live-provider tests (these last need your keys and are metered).
+To try the profile page with synthetic data, run `make seed`, which writes under `data/dev`, then start the API with `make api-dev`. `make test`, `make lint` and `make test-live` run the tests, the linters and the live-provider tests (these last need your keys and are metered). `make smoke` runs the whole first run against a temporary data dir with synthesized audio. It spends about 10 minutes of Azure F0 audio and is manual only (it refuses to run when `CI` is set).
 
 ## First run
 
