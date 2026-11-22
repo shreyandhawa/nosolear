@@ -53,3 +53,13 @@ test("the report shows the top error, five ranked errors and a link to Progress"
   // The description appears once, in the ranked list; the title holds the phonetic pair.
   expect(screen.getAllByText("/v/ said as /w/")).toHaveLength(1);
 });
+
+test("a top error without clips shows no clips label, and the calibration state is left to the API's notes", async () => {
+  const report = { ...baselineReport, calibration: "calibrated", items: [{ ...baselineReport.items[0], clips: [] }] };
+  server.use(http.get("/api/baseline", () => HttpResponse.json(baselineSession(true))));
+  server.use(http.get("/api/baseline/report", () => HttpResponse.json(report)));
+  renderWithProviders(<ReportPage />);
+  await screen.findByRole("link", { name: "See all on Progress" });
+  expect(screen.queryByText("Your clips")).toBeNull();
+  expect(screen.queryByText(/Calibration is/)).toBeNull();
+});
