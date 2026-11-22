@@ -6,7 +6,7 @@ const TARGETS = {
   readiness: "/setup",
   calibration: "/calibration",
   baseline: "/baseline",
-  report: "/baseline",
+  report: "/report",
   daily_plan: "/today",
 } as const;
 

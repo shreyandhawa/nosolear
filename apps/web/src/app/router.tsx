@@ -1,5 +1,6 @@
 import { createRootRoute, createRoute, createRouter, Link, Outlet, useLocation } from "@tanstack/react-router";
 import { BaselinePage } from "../features/baseline/BaselinePage";
+import { ReportPage } from "../features/baseline/ReportPage";
 import { CalibrationPage } from "../features/calibration/CalibrationPage";
 import { DailyPage } from "../features/daily/DailyPage";
 import { HomePage } from "../features/home/HomePage";
@@ -12,7 +13,7 @@ const TRAIL = [
   { step: "readiness", label: "Setup", to: "/setup" },
   { step: "calibration", label: "Calibration", to: "/calibration" },
   { step: "baseline", label: "Baseline", to: "/baseline" },
-  { step: "report", label: "Report", to: "/baseline" },
+  { step: "report", label: "Report", to: "/report" },
 ] as const;
 
 const link = "py-1 text-fg/72 transition-colors duration-150 hover:text-fg [&.active]:text-fg [&.active]:font-semibold";
@@ -52,8 +53,8 @@ function RootLayout() {
               </Link>
             </li>
             <li>
-              <Link to="/baseline" className={link}>
-                Baseline
+              <Link to="/report" className={link}>
+                Report
               </Link>
             </li>
             <li>
@@ -91,6 +92,7 @@ export function createAppRouter() {
       createRoute({ getParentRoute: parent, path: "/setup", component: SetupPage }),
       createRoute({ getParentRoute: parent, path: "/calibration", component: CalibrationPage }),
       createRoute({ getParentRoute: parent, path: "/baseline", component: BaselinePage }),
+      createRoute({ getParentRoute: parent, path: "/report", component: ReportPage }),
       createRoute({ getParentRoute: parent, path: "/today", component: DailyPage }),
       createRoute({ getParentRoute: parent, path: "/profile", component: ProfilePage }),
     ]),
