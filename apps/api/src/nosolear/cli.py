@@ -402,6 +402,17 @@ def _api_command(
             file=sys.stderr,
         )
         return 2
+    if (
+        args.command == first_run_cli.STAND_IN
+        and args.kind == "daily"
+        and settings.data_dir == REPO_ROOT / "data"
+    ):
+        print(
+            "refusing to answer today's real session with synthesized audio; set"
+            " NOSOLEAR_DATA_DIR to a separate location, e.g. NOSOLEAR_DATA_DIR=data/dev",
+            file=sys.stderr,
+        )
+        return 2
     if args.command == "upload" and not Path(args.file).is_file():
         print(
             "cannot read the recording: the file does not exist or is not a file", file=sys.stderr
