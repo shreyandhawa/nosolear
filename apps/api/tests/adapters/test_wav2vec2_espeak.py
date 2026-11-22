@@ -111,14 +111,26 @@ def test_probe_normalizes_both_sides(tmp_path):
     assert align_phones(r.expected, r.heard)[0].op == "ins"
 
 
-def test_unmapped_heard_symbol_is_provider_unavailable(tmp_path, caplog):
+def test_unmapped_heard_symbol_is_unknown(tmp_path):
     probe = Wav2Vec2EspeakProbe(
         espeak=EXE,
-        recognizer=LazyModel(lambda: FakeRecognizer(["q"])),
+        recognizer=LazyModel(lambda: FakeRecognizer(["q", "s"])),
         run=fake_run(),
     )
+    assert probe.probe(write_wav(tmp_path / "a.wav", 1), reference_text="school").heard == (
+        "?",
+        "s",
+    )
+
+
+def test_unmapped_expected_symbol_is_provider_unavailable(tmp_path, caplog):
+    probe = Wav2Vec2EspeakProbe(
+        espeak=EXE,
+        recognizer=LazyModel(lambda: FakeRecognizer(["s"])),
+        run=fake_run(stdout="q_ə\n"),
+    )
     with pytest.raises(
-        ProviderUnavailable, match="The phone probe heard a sound symbol Nosolear can't map yet"
+        ProviderUnavailable, match="The phone probe can't map a sound in the reference text yet"
     ):
         probe.probe(write_wav(tmp_path / "a.wav", 1), reference_text="school")
     assert "'q'" in caplog.text

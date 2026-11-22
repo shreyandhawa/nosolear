@@ -159,6 +159,8 @@ export const dailySession = {
   session_id: "s1",
   plan_id: "p1",
   attempts: [{ id: "a1", step: "speak", prompt_text: "Describe your morning." }],
+  job_id: null,
+  completed: false,
 };
 
 export const analyzeJob = (status = "done", progress = 1) => ({

@@ -107,3 +107,17 @@ def test_daily_attempt_analyzes_without_an_anthropic_key(
 
     assert h.drain() >= 1
     assert h.client.get(f"/api/jobs/{job_id}").json()["status"] == "done"
+
+
+def test_session_reports_its_analyze_job_once_a_recording_is_uploaded(
+    make_harness: Callable[..., Harness],
+) -> None:
+    h = make_harness()
+    fresh = h.client.post(SESSION).json()
+    attempt = fresh["attempts"][0]
+    assert (fresh["job_id"], fresh["completed"]) == (None, False)
+
+    job_id = h.upload(attempt["id"], attempt["prompt_text"] or "Tell me about your day.")
+
+    resumed = h.client.post(SESSION).json()
+    assert (resumed["job_id"], resumed["completed"]) == (job_id, False)

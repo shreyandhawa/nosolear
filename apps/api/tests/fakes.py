@@ -50,7 +50,7 @@ from nosolear.ports.clock import Clock
 from nosolear.ports.feedback import FeedbackItem, StoredObservation
 from nosolear.ports.jobs import JobNotResumable, UnknownJob
 from nosolear.ports.ledger import LedgerError, Reservation
-from nosolear.ports.plan import AttemptRef, StartedSession, StoredPlan
+from nosolear.ports.plan import AttemptRef, SessionProgress, StartedSession, StoredPlan
 
 
 class _FakeUpload:
@@ -547,6 +547,9 @@ class FakeDailySessionStore:
     def for_plan(self, plan_id: str) -> StartedSession | None:
         found = self.sessions.get(plan_id)
         return None if found is None else replace(found, created=False)
+
+    def progress(self, session_id: str) -> SessionProgress:
+        return SessionProgress(analyze_job_id=None, completed=False)
 
     def create(
         self, *, plan_id: str, prompt_item_id: str | None, started_at: datetime

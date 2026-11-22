@@ -189,6 +189,7 @@ def start_today_session(
     if not started.created:
         response.status_code = 200
     prompt = stored.plan.prompt
+    progress = sessions.progress(started.session_id)
     return DailySessionOut(
         session_id=started.session_id,
         plan_id=started.plan_id,
@@ -202,4 +203,6 @@ def start_today_session(
             )
             for attempt in started.attempts
         ],
+        job_id=progress.analyze_job_id,
+        completed=progress.completed,
     )

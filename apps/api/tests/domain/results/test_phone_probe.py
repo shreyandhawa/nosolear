@@ -27,10 +27,15 @@ def test_re_parsing_a_stored_payload_gives_the_same_result():
     assert parse_phone_probe(raw(stored)) == parse_phone_probe(raw(PAYLOAD))
 
 
-def test_an_unmapped_heard_symbol_propagates():
+def test_an_unmapped_heard_symbol_becomes_unknown():
+    r = parse_phone_probe(raw(dict(PAYLOAD, heard_tokens=["q", "s"])))
+    assert r.heard == ("?", "s")
+
+
+def test_an_unmapped_expected_symbol_propagates():
     from nosolear.domain.phones import UnmappedSymbol
 
-    bad = dict(PAYLOAD, heard_tokens=["q"])
+    bad = dict(PAYLOAD, espeak_ipa="q_ə")
     try:
         parse_phone_probe(raw(bad))
     except UnmappedSymbol as exc:

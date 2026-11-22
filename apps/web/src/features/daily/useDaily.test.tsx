@@ -29,3 +29,24 @@ test("a daily session goes from plan to recording, analysis, feedback and comple
   act(() => result.current.complete.mutate("s1"));
   await waitFor(() => expect(result.current.state.phase).toBe("done"));
 });
+
+test("opening Today again resumes at analysis when the session already has a recording", async () => {
+  server.use(
+    http.get("/api/plan/today", () => HttpResponse.json(plan)),
+    http.post("/api/plan/today/session", () => HttpResponse.json({ ...dailySession, job_id: "j1" })),
+    http.get("/api/jobs/j1", () => HttpResponse.json(analyzeJob("running", 0.5))),
+  );
+  const { result } = renderHookWithProviders(useDaily);
+  await waitFor(() => expect(result.current.state.phase).toBe("analyze"));
+  expect(result.current.job?.status).toBe("running");
+});
+
+test("opening Today again after completion shows the stored feedback as done", async () => {
+  server.use(
+    http.get("/api/plan/today", () => HttpResponse.json(plan)),
+    http.post("/api/plan/today/session", () => HttpResponse.json({ ...dailySession, job_id: "j1", completed: true })),
+    http.get("/api/sessions/s1/feedback", () => HttpResponse.json(feedback)),
+  );
+  const { result } = renderHookWithProviders(useDaily);
+  await waitFor(() => expect(result.current.state.phase).toBe("done"));
+});

@@ -20,11 +20,12 @@ from nosolear.domain.daily_plan import (
     DrillSpec,
     PromptCandidate,
 )
+from nosolear.domain.jobs import JobKind
 from nosolear.domain.selection import Focus, RecheckProbe
 from nosolear.domain.status import Status
 from nosolear.domain.taxonomy import Skill, Taxonomy
-from nosolear.persistence.models import attempts, content_items, daily_plans, sessions
-from nosolear.ports.plan import AttemptRef, StartedSession, StoredPlan
+from nosolear.persistence.models import attempts, content_items, daily_plans, jobs, sessions
+from nosolear.ports.plan import AttemptRef, SessionProgress, StartedSession, StoredPlan
 from nosolear.ports.scoring_stores import ScoringConfigReader
 
 _UNSIGNED_64 = 2**64
@@ -275,6 +276,20 @@ class DailySessionRepository:
                 for row in rows
             ),
         )
+
+    def progress(self, session_id: str) -> SessionProgress:
+        with self._engine.connect() as conn:
+            job_id = conn.execute(
+                select(jobs.c.id)
+                .join(attempts, jobs.c.attempt_id == attempts.c.id)
+                .where(attempts.c.session_id == session_id, jobs.c.kind == JobKind.ANALYZE.value)
+                .order_by(jobs.c.created_at.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+            completed_at = conn.execute(
+                select(sessions.c.completed_at).where(sessions.c.id == session_id)
+            ).scalar_one_or_none()
+        return SessionProgress(analyze_job_id=job_id, completed=completed_at is not None)
 
     def create(
         self, *, plan_id: str, prompt_item_id: str | None, started_at: datetime

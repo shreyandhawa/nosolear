@@ -244,7 +244,7 @@ class SdkSpeechBackend:
             details = speechsdk.CancellationDetails(result)
             if details.reason != speechsdk.CancellationReason.Error:
                 return None
-            return Cancellation(details.error_code.name, details.error_details or "")
+            return Cancellation(details.code.name, details.error_details or "")
 
         if not request.continuous:
             once = recognizer.recognize_once()

@@ -34,11 +34,11 @@ ADAPTER_VERSION = 1
 ESPEAK_ARGS = ("-q", "-v", "en-us", "--ipa", "--sep=_", "--stdin")
 MAX_REFERENCE_CHARS = 1000
 SPECIAL_TOKENS = frozenset({"<s>", "</s>", "<pad>"})
-"""Dropped from the output. `<unk>` is kept, so an unknown phone fails loudly downstream."""
+"""Dropped from the output. `<unk>` is kept, and becomes `UNKNOWN` downstream."""
 
 _ESPEAK_FAILED = "espeak-ng failed; check it is installed and runs"
 _FAILED = "The phone probe failed on this recording"
-_UNMAPPED = "The phone probe heard a sound symbol Nosolear can't map yet"
+_UNMAPPED = "The phone probe can't map a sound in the reference text yet"
 _TIMEOUT_S = 10
 _log = logging.getLogger(__name__)
 

@@ -11,7 +11,7 @@ export type DailyState =
   | { phase: "done"; session: Session; feedback: Feedback };
 
 export type DailyAction =
-  | { type: "started"; session: Session }
+  | { type: "started"; session: Session; feedback: Feedback | null }
   | { type: "uploaded"; jobId: string }
   | { type: "feedback"; feedback: Feedback }
   | { type: "completed" };
@@ -19,7 +19,12 @@ export type DailyAction =
 export function dailyReducer(state: DailyState, action: DailyAction): DailyState {
   switch (action.type) {
     case "started":
-      return state.phase === "plan" ? { phase: "record", session: action.session } : state;
+      if (state.phase !== "plan") return state;
+      // The server may already hold the day's recording, analysis or completion: resume there.
+      if (action.feedback) return { phase: "done", session: action.session, feedback: action.feedback };
+      return action.session.job_id
+        ? { phase: "analyze", session: action.session, jobId: action.session.job_id }
+        : { phase: "record", session: action.session };
     case "uploaded":
       return state.phase === "record" ? { phase: "analyze", session: state.session, jobId: action.jobId } : state;
     case "feedback":

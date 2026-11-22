@@ -138,6 +138,8 @@ def fake_sdk(result: SimpleNamespace) -> SimpleNamespace:
             return result
 
         def start_continuous_recognition(self) -> None:
+            if result.reason == "Canceled":
+                self.canceled.fire(SimpleNamespace(result=result))
             self.recognized.fire(SimpleNamespace(result=result))
             self.session_stopped.fire(None)
 
@@ -154,6 +156,11 @@ def fake_sdk(result: SimpleNamespace) -> SimpleNamespace:
         ResultReason=SimpleNamespace(
             Canceled="Canceled", RecognizedSpeech="RecognizedSpeech", NoMatch="NoMatch"
         ),
+        # Like the real class: the error code is `.code`, not `.error_code`.
+        CancellationDetails=lambda _result: SimpleNamespace(
+            reason="Error", code=SimpleNamespace(name="TooManyRequests"), error_details=""
+        ),
+        CancellationReason=SimpleNamespace(Error="Error"),
     )
 
 
@@ -176,3 +183,31 @@ def test_sdk_backend_reads_the_result_json(monkeypatch, tmp_path, continuous):
     outcome = backend.recognize(request)
     assert outcome.results == ({"RecognitionStatus": "Success"},)
     assert outcome.cancellation is None
+
+
+def _request(tmp_path, continuous):
+    return RecognitionRequest(
+        wav=tmp_path / "clip.wav",
+        locale="en-US",
+        continuous=continuous,
+        pronunciation_json="{}",
+        word_timestamps=False,
+        timeout_s=1,
+    )
+
+
+@pytest.mark.parametrize("continuous", [False, True])
+def test_sdk_backend_reads_the_cancellation_code(monkeypatch, tmp_path, continuous):
+    result = SimpleNamespace(reason="Canceled", json="{}")
+    monkeypatch.setattr(azure_speech, "_sdk", lambda: fake_sdk(result))
+    backend = SdkSpeechBackend(key=SecretStr(PLANTED_AZURE_KEY), region="eastus")
+    outcome = backend.recognize(_request(tmp_path, continuous))
+    cancelled = Cancellation("TooManyRequests", "")
+    assert outcome.cancellation == cancelled
+    assert isinstance(classify(cancelled), RetryableProviderError)  # so it is retried
+
+
+def test_sdk_cancellation_details_have_the_attributes_the_backend_reads():
+    speechsdk = pytest.importorskip("azure.cognitiveservices.speech")
+    assert {"reason", "code", "error_details"} <= set(dir(speechsdk.CancellationDetails))
+    assert "error_code" in dir(speechsdk.SpeechSynthesisCancellationDetails)

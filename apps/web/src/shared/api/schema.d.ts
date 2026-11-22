@@ -563,6 +563,10 @@ export interface components {
         DailySessionOut: {
             /** Attempts */
             attempts: components["schemas"]["AttemptOut"][];
+            /** Completed */
+            completed: boolean;
+            /** Job Id */
+            job_id: string | null;
             /** Plan Id */
             plan_id: string;
             /** Session Id */

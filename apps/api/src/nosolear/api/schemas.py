@@ -155,6 +155,8 @@ class DailySessionOut(BaseModel):
     session_id: str
     plan_id: str
     attempts: list[AttemptOut]
+    job_id: str | None  # the analyze job once a recording was uploaded
+    completed: bool
 
 
 FeedbackSourceName = Literal["coach", "template"]
