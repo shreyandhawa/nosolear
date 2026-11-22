@@ -2,14 +2,15 @@
 
 Costs: a match is free; a substitution costs 1.0 within a class (vowel or consonant) and 1.5
 across classes; an insertion or deletion costs 1.0. Callers normalize with `domain/phones.py`
-first, so a phone outside `AZURE_PHONES` is refused. Pure: no I/O.
+first, so a phone outside `AZURE_PHONES` is refused, except `UNKNOWN` on the heard side: it costs
+like a same-class substitution, and it never matches anything. Pure: no I/O.
 """
 
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from nosolear.domain.phones import AZURE_PHONES, AZURE_VOWELS
+from nosolear.domain.phones import AZURE_PHONES, AZURE_VOWELS, UNKNOWN
 
 SUB_SAME_CLASS = 1.0
 SUB_CROSS_CLASS = 1.5
@@ -27,22 +28,24 @@ class PhoneEdit:
     end). For a match, a substitution or a deletion, the index of the expected phone."""
 
 
-def _check(phones: Sequence[str]) -> None:
+def _check(phones: Sequence[str], *, allow: frozenset[str] = frozenset()) -> None:
     for phone in phones:
-        if phone not in AZURE_PHONES:
+        if phone not in AZURE_PHONES and phone not in allow:
             raise ValueError(f"not an Azure phone: {phone!r}")
 
 
 def _sub_cost(expected: str, heard: str) -> float:
     if expected == heard:
         return 0.0
+    if heard == UNKNOWN:
+        return SUB_SAME_CLASS
     same_class = (expected in AZURE_VOWELS) == (heard in AZURE_VOWELS)
     return SUB_SAME_CLASS if same_class else SUB_CROSS_CLASS
 
 
 def align_phones(expected: Sequence[str], heard: Sequence[str]) -> tuple[PhoneEdit, ...]:
     _check(expected)
-    _check(heard)
+    _check(heard, allow=frozenset({UNKNOWN}))
     n, m = len(expected), len(heard)
     cost = [[0.0] * (m + 1) for _ in range(n + 1)]
     for i in range(1, n + 1):

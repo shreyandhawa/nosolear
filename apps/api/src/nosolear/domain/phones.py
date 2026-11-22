@@ -2,7 +2,9 @@
 
 Azure's pronunciation scores use this phone set, so both sides of a comparison are mapped here
 first. `_MAP` grows only when a spike shows a symbol, with a test and a reason. A symbol with no
-defensible Azure equivalent raises `UnmappedSymbol`: the rule is to fail loudly, never to guess.
+defensible Azure equivalent raises `UnmappedSymbol` on the expected side, never guessed. On the
+heard side (a recognizer's output, which can emit anything) it becomes `UNKNOWN`, which only ever
+lowers hits.
 """
 
 from collections.abc import Iterable
@@ -57,6 +59,7 @@ AZURE_VOWELS: frozenset[str] = frozenset(
     }
 )
 AZURE_PHONES: frozenset[str] = AZURE_CONSONANTS | AZURE_VOWELS
+UNKNOWN = "?"
 
 _MAP: dict[str, str] = {
     "r": "ɹ",  # ASCII r is espeak's name for the English r, which Azure writes ɹ
@@ -72,6 +75,14 @@ _MAP: dict[str, str] = {
     "ɔːɹ": "ɔ ɹ",  # espeak's r-coloured compounds are two Azure phones
     "ɑːɹ": "ɑ ɹ",
     "ɪɹ": "ɪ ɹ",
+    "ɛɹ": "ɛ ɹ",
+    "ɐ": "ə",  # near-open central: espeak's unstressed vowel in "ago", Azure's schwa
+    "ᵻ": "ɪ",  # espeak's reduced ɪ
+    "əl": "ə l",  # syllabic l
+    "n̩": "ə n",  # syllabic n
+    "aɪə": "aɪ ə",  # espeak's "fire" triphthong
+    "ɾ": "t",  # flap: Azure has no flap, and en-US flaps are /t/ ("water"); decided in ARCH §4
+    "ʔ": "t",  # glottal stop: a /t/ allophone ("button")
     "iə": "ɪ",  # espeak's NEAR diphthong before a separate ɹ (for example "zero")
 }
 _UNSTRESSED = {ord(mark): None for mark in "ˈˌ"}  # primary and secondary stress
@@ -98,8 +109,17 @@ def normalize(symbol: str) -> str:
     raise UnmappedSymbol(symbol)
 
 
-def normalize_all(symbols: Iterable[str]) -> list[str]:
-    return [phone for symbol in symbols for phone in normalize(symbol).split()]
+def normalize_heard(symbol: str) -> str:
+    """`normalize` for a recognizer's output: a symbol with no Azure phone becomes `UNKNOWN`."""
+    try:
+        return normalize(symbol)
+    except UnmappedSymbol:
+        return UNKNOWN
+
+
+def normalize_all(symbols: Iterable[str], *, heard: bool = False) -> list[str]:
+    convert = normalize_heard if heard else normalize
+    return [phone for symbol in symbols for phone in convert(symbol).split()]
 
 
 def split_espeak_ipa(output: str) -> list[list[str]]:

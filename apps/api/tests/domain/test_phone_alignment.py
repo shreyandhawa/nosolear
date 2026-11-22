@@ -3,7 +3,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from nosolear.domain.phone_alignment import align_phones
-from nosolear.domain.phones import AZURE_PHONES
+from nosolear.domain.phones import AZURE_PHONES, UNKNOWN
 
 
 def ops(edits):
@@ -46,6 +46,17 @@ def test_substitution_beats_delete_and_insert_even_across_classes():
 def test_an_unknown_phone_is_refused():
     with pytest.raises(ValueError):
         align_phones(["q"], ["t"])
+    with pytest.raises(ValueError):
+        align_phones(["t"], ["q"])
+    with pytest.raises(ValueError):
+        align_phones([UNKNOWN], ["t"])  # `?` is only allowed on the heard side
+
+
+def test_a_heard_unknown_is_a_substitution_and_never_a_match():
+    assert ops(align_phones(["s", "ɪ"], ["s", UNKNOWN])) == [
+        ("match", "s", "s", 0),
+        ("sub", "ɪ", UNKNOWN, 1),
+    ]
 
 
 phones = st.lists(st.sampled_from(sorted(AZURE_PHONES)), max_size=12)

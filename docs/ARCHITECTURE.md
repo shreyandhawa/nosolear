@@ -179,7 +179,7 @@ apps/api/src/nosolear/
 - **How the probe works (`wav2vec2_espeak`):**
   - `facebook/wav2vec2-lv-60-espeak-cv-ft` (~300M parameters) turns the audio into IPA phones. It runs on the first available device in the order mps → cuda → cpu.
   - `espeak-ng` produces the expected en-US phones. It runs as a separate executable with a fixed argument list and the text on stdin, never through a shell.
-  - Both phone lists are normalized to Azure's en-US IPA with the map salvaged from the spike branch, which fails loudly on an unknown symbol instead of guessing.
+  - Both phone lists are normalized to Azure's en-US IPA with the map salvaged from the spike branch, which fails loudly on an unknown expected symbol instead of guessing. A heard symbol with no Azure phone becomes `?`: it counts as a wrong sound and never flags a key, so it can only lower hits. espeak's flap `ɾ` and glottal stop `ʔ` map to `t` (en-US flaps and glottalizes /t/, as in "water" and "button"). A test runs every shipped content text through espeak-ng and requires each expected symbol to map.
   - A weighted alignment between the two lists reports substitutions, insertions and deletions at the positions we care about.
   - ZIPA is the alternative model if wav2vec2 disappoints.
 - **Each user's calibration decides whether it scores.** Before calibration the probe is drill-only. Calibration enables it per error key only if it catches that error reliably on the user's own voice (§9.2).

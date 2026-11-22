@@ -1,12 +1,18 @@
 import pytest
 
+from nosolear.adapters.content_files import list_pack_ids, load_pack, load_seed_content
+from nosolear.adapters.local_env import espeak_ng_path
+from nosolear.adapters.wav2vec2_espeak import espeak_ipa
 from nosolear.domain.phones import (
     AZURE_PHONES,
+    UNKNOWN,
     UnmappedSymbol,
     normalize,
     normalize_all,
+    normalize_heard,
     split_espeak_ipa,
 )
+from nosolear.settings import CONTENT_DIR
 
 # Symbols espeak-ng printed for the calibration words (content/calibration/items.toml) and a
 # draft probe sentence, swept on 2026-11-13 with `espeak-ng -q -v en-us --ipa --sep=_ --stdin`.
@@ -90,13 +96,48 @@ def test_unknown_symbol_fails_loudly():
     assert info.value.symbol == "q" and isinstance(info.value, ValueError)
 
 
-@pytest.mark.parametrize("sym", ["ɾ", "ᵻ", "ɐ", "ʔ"])
-def test_symbols_without_a_defensible_azure_equivalent_stay_unmapped(sym):
-    # Flap, reduced vowel, near-open central vowel, glottal stop: no Azure phone is the same
-    # sound, so mapping one would be a guess. They are listed in HANDOFF for the owner.
-    with pytest.raises(UnmappedSymbol) as info:
-        normalize(sym)
-    assert info.value.symbol == sym
+@pytest.mark.parametrize(
+    ("sym", "out"),
+    [
+        ("ɛɹ", ["ɛ", "ɹ"]),
+        ("ɐ", ["ə"]),
+        ("ˈᵻ", ["ɪ"]),
+        ("əl", ["ə", "l"]),
+        ("aɪə", ["aɪ", "ə"]),
+        ("n̩", ["ə", "n"]),
+        ("ɾ", ["t"]),
+        ("ʔ", ["t"]),
+    ],
+)
+def test_espeak_gaps_found_by_the_coverage_sweep(sym, out):
+    assert normalize_all([sym]) == out
+
+
+def test_heard_side_turns_an_unmapped_symbol_into_unknown():
+    assert normalize_all(["q", "s"], heard=True) == [UNKNOWN, "s"]
+    assert normalize_heard("ɐ") == "ə"
+
+
+def test_every_shipped_content_text_maps_through_espeak():
+    exe = espeak_ng_path()
+    if exe is None:
+        pytest.skip("espeak-ng is not installed")
+    packs = CONTENT_DIR / "packs"
+    texts: set[str] = set()
+    for pack_id in list_pack_ids(packs):
+        seed = load_seed_content(CONTENT_DIR, load_pack(packs, pack_id))
+        texts |= {w.word for w in seed.calibration_set.words}
+        texts |= {i.item.text for s in seed.protocol.sections for i in s.items}
+    unmapped = set()
+    for text in sorted(texts):
+        ipa = espeak_ipa(text, executable=exe)
+        for word in split_espeak_ipa(ipa):
+            for symbol in word:
+                try:
+                    normalize(symbol)
+                except UnmappedSymbol:
+                    unmapped.add(symbol)
+    assert not unmapped
 
 
 def test_every_symbol_swept_from_espeak_normalizes():
