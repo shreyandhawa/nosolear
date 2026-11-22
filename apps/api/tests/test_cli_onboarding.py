@@ -72,3 +72,24 @@ def test_stand_in_daily_answers_todays_attempt_and_completes_the_session(
     assert main(["stand-in", "daily"], client=api, synthesizer=h.synthesizer) == 0
     out = capsys.readouterr().out
     assert "prompt: " in out and "completed at" in out
+
+
+def test_first_run_commands_build_their_own_client_from_the_settings(
+    make_harness: Callable[..., Harness], tmp_path, monkeypatch, capsys
+) -> None:
+    """Only some parsers define `--base-url`; the rest must fall back to the settings, not crash."""
+    h = make_harness(content=small_baseline_content())
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(mode=0o700)
+    monkeypatch.setenv("NOSOLEAR_DATA_DIR", str(data_dir))
+    monkeypatch.setenv("NOSOLEAR_PORT", "8123")
+    urls: list[str] = []
+
+    def client(*, base_url: str, timeout: float) -> object:
+        urls.append(base_url)
+        return h.client
+
+    monkeypatch.setattr("nosolear.cli.httpx.Client", client)
+    assert main(["onboarding"]) == 0
+    assert urls == ["http://127.0.0.1:8123"]
+    assert capsys.readouterr().out.startswith("Next: calibration")

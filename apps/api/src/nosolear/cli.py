@@ -420,7 +420,7 @@ def _api_command(
     owned = client is None
     api = client or ApiClient(
         httpx.Client(
-            base_url=args.base_url or f"http://{settings.host}:{settings.port}",
+            base_url=getattr(args, "base_url", None) or f"http://{settings.host}:{settings.port}",
             timeout=API_TIMEOUT_S,
         )
     )

@@ -8,7 +8,8 @@ if [ -n "${CI:-}" ]; then
 fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PORT=8765
+# A free port, so another server on this machine never collides with the run.
+PORT="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
 export NOSOLEAR_DATA_DIR="$(mktemp -d)"
 export NOSOLEAR_PORT="$PORT"
 LOG="$NOSOLEAR_DATA_DIR/server.log"
