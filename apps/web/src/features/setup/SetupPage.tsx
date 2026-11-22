@@ -11,7 +11,29 @@ const Env = ({ lines }: { lines: string[] }) => (
   <pre className="mt-2 bg-fg/12 px-3 py-2 text-[0.9375rem] break-all whitespace-pre-wrap">{lines.join("\n")}</pre>
 );
 
-function Rows({ rows }: { rows: Row[] }) {
+const STATUS_WORD: Record<Row["status"], string> = {
+  ready: "ready",
+  missing: "missing",
+  not_installed: "not installed",
+  not_probed: "not checked",
+  degraded: "degraded",
+};
+
+/** Required parts get their reason and fix; `brief` rows (optional and local parts) get a status word,
+ * since their .env line is shown once in the media slot. */
+function Rows({ rows, brief = false }: { rows: Row[]; brief?: boolean }) {
+  if (brief)
+    return (
+      <ul className="flex flex-col gap-1.5">
+        {rows.map((r) => (
+          <li key={r.component} className="flex items-baseline gap-2">
+            <StatusDot ok={r.status === "ready"} />
+            <span className="font-medium leading-snug">{r.label}</span>
+            <span className="ml-auto text-[0.8125rem] text-fg/72">{STATUS_WORD[r.status]}</span>
+          </li>
+        ))}
+      </ul>
+    );
   return (
     <ul className="flex flex-col gap-3">
       {rows.map((r) => (
@@ -49,10 +71,11 @@ export function SetupPage() {
         </TitleBlock>
       }
       media={
-        envLines.length > 0 && (
+        (envLines.length > 0 || coachLines.length > 0) && (
           <>
-            <Label>Still missing in .env</Label>
-            <Env lines={envLines} />
+            <Label>Add to .env at the repo root, then restart the server</Label>
+            {envLines.length > 0 && <Env lines={envLines} />}
+            {coachLines.length > 0 && <Env lines={["# optional: the coach", ...coachLines]} />}
           </>
         )
       }
@@ -63,17 +86,9 @@ export function SetupPage() {
           readiness.data && (
             <>
               <p>
-                <b>Azure Speech is required.</b> It scores your sounds and speaks the model voice. Signup asks for a card and a
-                phone number for identity, but the free F0 tier never bills.
+                <b>Azure Speech is required.</b> It scores your sounds and speaks the model voice. F0 is free and never bills,
+                though signup asks for a card and phone.
               </p>
-              <p className="mt-3">
-                <b>The Anthropic coach is optional.</b> It writes personal fixes and scores On the spot and Articulate, for about
-                $0.20 a month on Haiku or $7 on Opus. Without it, feedback uses written templates.
-              </p>
-              {coachLines.length > 0 && <Env lines={coachLines} />}
-              {(envLines.length > 0 || coachLines.length > 0) && (
-                <p className="mt-3">Keys go in the .env file at the repo root. Restart the server after adding them.</p>
-              )}
             </>
           )
         )
@@ -85,12 +100,14 @@ export function SetupPage() {
           <Rows rows={required} />
           <div className="mt-5">
             <Label>Anthropic coach, optional</Label>
-            <Rows rows={coach} />
+            <Rows rows={coach} brief />
           </div>
-          <div className="mt-5">
-            <Label>On this machine</Label>
-            <Rows rows={local} />
-          </div>
+          {local.length > 0 && (
+            <div className="mt-5">
+              <Label>On this machine</Label>
+              <Rows rows={local} brief />
+            </div>
+          )}
         </>
       }
       note={
@@ -113,7 +130,13 @@ export function SetupPage() {
             </ul>
           </>
         ) : (
-          <p>The check makes a few paid calls to Azure, within your caps.</p>
+          <>
+            <p>
+              <b>The Anthropic coach is optional.</b> It writes personal fixes and scores On the spot and Articulate, for about
+              $0.20 a month on Haiku or $7 on Opus. Without it, feedback uses written templates.
+            </p>
+            <p className="mt-2 text-fg/72">The check makes a few paid calls to Azure, within your caps.</p>
+          </>
         )
       }
       cta={

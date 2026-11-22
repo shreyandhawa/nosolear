@@ -54,7 +54,8 @@ export function WelcomePage() {
       stateKey={part.name}
       title={
         <TitleBlock step="Welcome" sub="Nosolear learns your own errors and practises exactly those.">
-          {part.name}
+          {/* "Calibration" only just fits the column at full display size */}
+          <span className="text-[0.8em]">{part.name}</span>
         </TitleBlock>
       }
       text={
@@ -63,7 +64,7 @@ export function WelcomePage() {
           <p className="mt-2">{part.what}</p>
         </>
       }
-      stage={<MicStage state="idle" hint="Space records" />}
+      stage={<MicStage state="idle" hint="Nothing records on this page" />}
       card={
         <>
           <Label>The parts</Label>
