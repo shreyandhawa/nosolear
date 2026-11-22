@@ -23,7 +23,6 @@ _NOT_READY: frozenset[str] = frozenset(
 
 BLOCKING: Mapping[str, frozenset[str]] = {
     Component.AZURE_SPEECH.value: _NOT_READY,
-    Component.ANTHROPIC.value: _NOT_READY,
     Component.LANGUAGE_PACK.value: _NOT_READY,
     Component.DATA_DIR.value: _NOT_READY,
     Component.AZURE_CAPABILITIES.value: frozenset(
@@ -33,7 +32,8 @@ BLOCKING: Mapping[str, frozenset[str]] = {
         {ReadinessStatus.MISSING.value, ReadinessStatus.NOT_INSTALLED.value}
     ),
 }
-"""Component to the statuses that block onboarding. The phone probe and usage never block."""
+"""Component to the statuses that block onboarding. Anthropic, the phone probe and usage never
+block: without a key the coach step is skipped and feedback falls back to templates."""
 
 
 def readiness_blockers(report: ReadinessReport) -> tuple[str, ...]:

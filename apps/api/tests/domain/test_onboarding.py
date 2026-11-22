@@ -35,7 +35,7 @@ def F(
 @pytest.mark.parametrize(
     ("facts", "step"),
     [
-        (F(blockers=("anthropic",)), OnboardingStep.READINESS),
+        (F(blockers=("azure_speech",)), OnboardingStep.READINESS),
         (F(), OnboardingStep.CALIBRATION),
         (F(calibration="running"), OnboardingStep.CALIBRATION),
         (F(calibration="skipped"), OnboardingStep.BASELINE),
@@ -61,6 +61,11 @@ def _report(**statuses: ReadinessStatus) -> ReadinessReport:
     return ReadinessReport(rows=tuple(rows))
 
 
+def test_a_missing_anthropic_key_never_blocks() -> None:
+    # Without a key the coach step is skipped and feedback falls back to templates.
+    assert readiness_blockers(_report(anthropic=ReadinessStatus.MISSING)) == ()
+
+
 def test_phone_probe_and_usage_never_block() -> None:
     report = _report(phone_probe=ReadinessStatus.NOT_INSTALLED, usage=ReadinessStatus.DEGRADED)
     assert readiness_blockers(report) == ()
@@ -84,11 +89,11 @@ def test_degraded_azure_speech_blocks() -> None:
 
 def test_blockers_come_in_row_order() -> None:
     report = _report(
-        anthropic=ReadinessStatus.MISSING,
+        transcriber=ReadinessStatus.MISSING,
         azure_speech=ReadinessStatus.MISSING,
     )
     names = readiness_blockers(report)
-    assert names == ("azure_speech", "anthropic")
+    assert names == ("azure_speech", "transcriber")
     assert names == tuple(
         row.component.value for row in report.rows if row.component.value in names
     )
