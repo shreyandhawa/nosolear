@@ -63,7 +63,7 @@ class BaselineReport:
 NOTE_SKIPPED = "Calibration was skipped: sound and prosody scores are provisional."
 NOTE_NOT_RUN = "Calibration hasn't been run: sound and prosody scores are provisional."
 NOTE_FILLERS = "Fillers may be undercounted: this transcriber drops filler words."
-NOTE_NO_COACH = "The coach was unavailable: grammar, structure and clarity were not scored."
+NOTE_NO_COACH = "Without the coach, grammar, structure and clarity were not scored."
 
 
 def _text(value: object) -> str | None:

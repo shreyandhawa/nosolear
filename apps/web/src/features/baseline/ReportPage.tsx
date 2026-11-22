@@ -46,7 +46,7 @@ export function ReportPage() {
         </TitleBlock>
       }
       media={
-        top && (
+        top && top.clips.length > 0 && (
           <div className="flex flex-col gap-3">
             <Label>Your clips</Label>
             <div className="flex flex-wrap gap-2">
@@ -73,9 +73,6 @@ export function ReportPage() {
               {SKILLS[top.skill]}, {statusLabel(top.status as Parameters<typeof statusLabel>[0])}
               {top.provisional && ", provisional"}
             </p>
-            {report.calibration !== "done" && (
-              <p className="mt-3 text-[0.9375rem]">Calibration is {report.calibration}, so provisional flags may change.</p>
-            )}
             {report.notes.map((note) => (
               <p key={note} className="mt-3 text-[0.9375rem]">
                 {note}

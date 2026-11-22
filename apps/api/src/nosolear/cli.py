@@ -351,8 +351,9 @@ def _run_day(api: ApiClient, recording: Callable[[str | None], Path], *, no_gene
 def _stand_in_daily(api: ApiClient, synthesizer: Synthesizer, data_dir: Path) -> int:
     """Testing aid: today's speak attempt, answered with synthesized audio."""
 
-    def recording(prompt: str | None) -> Path:
-        return data_dir / synthesizer.synthesize(prompt or STAND_IN_DAILY_TEXT).path
+    def recording(_prompt: str | None) -> Path:
+        # The prompt is a question; reading it aloud would not answer it.
+        return data_dir / synthesizer.synthesize(STAND_IN_DAILY_TEXT).path
 
     try:
         return _run_day(api, recording, no_generate=False)

@@ -5,6 +5,7 @@ import logging
 import traceback
 from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import patch
 
 import anthropic
 import httpx2
@@ -134,7 +135,11 @@ def job_steps_json(tmp: Path) -> tuple[str, str]:
         _, job = RecordingRepository(engine, clock).add_and_enqueue(
             NewRecording(attempt_id=attempt_id, stored=stored)
         )
-        with LogCapture(logging.Formatter(FORMAT), "nosolear.app.run_job") as cap:
+        # The rejecting scorer is retried; skip the real backoff.
+        with (
+            patch("nosolear.adapters.retry.BACKOFF_SECONDS", (0, 0, 0, 0)),
+            LogCapture(logging.Formatter(FORMAT), "nosolear.app.run_job") as cap,
+        ):
             finished = run_job(job_id=job.id, jobs=services.jobs, registry=services.registry)
         with engine.connect() as conn:
             steps_json = conn.execute(

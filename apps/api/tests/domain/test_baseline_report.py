@@ -115,7 +115,7 @@ def test_notes_when_calibration_was_skipped_and_fillers_and_coach_are_missing():
     assert r.notes == (
         "Calibration was skipped: sound and prosody scores are provisional.",
         "Fillers may be undercounted: this transcriber drops filler words.",
-        "The coach was unavailable: grammar, structure and clarity were not scored.",
+        "Without the coach, grammar, structure and clarity were not scored.",
     )
 
 
