@@ -9,6 +9,7 @@ from nosolear.cli import main
 from nosolear.cli_client import ApiClient
 from nosolear.domain.onboarding import Component
 from nosolear.domain.readiness import ReadinessReport, ReadinessRow, ReadinessStatus
+from nosolear.settings import REPO_ROOT
 
 
 def _api(h: Harness) -> ApiClient:
@@ -93,3 +94,10 @@ def test_first_run_commands_build_their_own_client_from_the_settings(
     assert main(["onboarding"]) == 0
     assert urls == ["http://127.0.0.1:8123"]
     assert capsys.readouterr().out.startswith("Next: calibration")
+
+
+def test_stand_in_daily_refuses_the_real_data_dir(monkeypatch, capsys) -> None:
+    """It would answer and complete today's real session with synthesized audio."""
+    monkeypatch.setenv("NOSOLEAR_DATA_DIR", str(REPO_ROOT / "data"))
+    assert main(["stand-in", "daily"]) == 2
+    assert "refusing to answer today's real session" in capsys.readouterr().err
