@@ -31,6 +31,7 @@ The first run and the daily session work in the browser, with recording in the p
 - calibrate the detectors on your voice, record a baseline and read the ranked report
 - do the daily session: speak for 60 seconds, get one fix per skill, and hear your clip beside a model voice
 - see each tracked error's miss rate on the Progress page
+- run the API on its own with `nosolear serve` (or `make api`)
 
 Not built yet: drills, live voice conversation, phone access and key entry in the app. The screens are tested with fake providers; a full run against live Azure and Claude has not been done yet. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and the build phases.
 
