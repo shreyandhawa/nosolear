@@ -10,6 +10,19 @@ It trains three skills:
 
 The daily loop takes about 15 minutes: speak for 60 seconds, get one fix per skill, shadow a model voice, and log misses to a personal error profile that picks tomorrow's practice.
 
+![The Today screen while recording: the prompt and the timer on the left, the microphone on air in the middle, today's focuses and the plan on the right](docs/screenshots/today-recording.png)
+
+## Screens
+
+The screens below show sample data.
+
+| | |
+|---|---|
+| ![Feedback after a take: the Sounds fix for the word "very", with your clip and the model voice](docs/screenshots/today-feedback.png) | ![The baseline report: the first ranked error, /v/ said as /w/, and a score per skill](docs/screenshots/baseline-report.png) |
+| **Feedback**: one fix per skill, with your clip beside the model voice | **Baseline report**: your errors ranked, with a score per skill |
+| ![The Progress page: a table of tracked errors with status, miss rate and evidence](docs/screenshots/progress.png) | |
+| **Progress**: each error's miss rate, its range and the evidence behind it | |
+
 ## Status
 
 The backend comes first. A first profile page exists, and the recording and scoring screens arrive in later phases (the main web UI is Phase 2). Today you can:
