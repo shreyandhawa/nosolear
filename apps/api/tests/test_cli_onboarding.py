@@ -55,3 +55,20 @@ def test_stand_in_refuses_a_closed_session_with_a_safe_message(
     h = make_harness(content=small_baseline_content())
     assert main(["stand-in", "baseline"], client=_api(h), synthesizer=h.synthesizer) == 2
     assert "No baseline exists yet." in capsys.readouterr().err
+
+
+def test_stand_in_daily_answers_todays_attempt_and_completes_the_session(
+    make_harness: Callable[..., Harness], capsys, monkeypatch
+) -> None:
+    h = make_harness()
+    monkeypatch.setenv("NOSOLEAR_DATA_DIR", str(h.data_dir))
+
+    class DrainingApi(ApiClient):
+        def follow_job(self, job_id, **kwargs):  # type: ignore[no-untyped-def]
+            h.drain()  # no runner thread in the harness: run the queued job before polling
+            return super().follow_job(job_id, **kwargs)
+
+    api = DrainingApi(h.client)  # pyright: ignore[reportArgumentType]
+    assert main(["stand-in", "daily"], client=api, synthesizer=h.synthesizer) == 0
+    out = capsys.readouterr().out
+    assert "prompt: " in out and "completed at" in out

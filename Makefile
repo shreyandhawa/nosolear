@@ -1,4 +1,4 @@
-.PHONY: setup app api api-dev web seed test test-live test-local-models lint gen-api
+.PHONY: smoke setup app api api-dev web seed test test-live test-local-models lint gen-api
 
 setup:
 	git config core.hooksPath scripts/git-hooks
@@ -39,3 +39,6 @@ gen-api:
 	mkdir -p apps/web/src/shared/api
 	cd apps/api && uv run python -m nosolear.api.export_openapi > ../web/src/shared/api/openapi.json
 	cd apps/web && pnpm gen:api
+
+smoke:
+	scripts/smoke.sh
