@@ -114,7 +114,12 @@ class ReadinessReport:
 
     @property
     def ready(self) -> bool:
-        return all(row.status is not ReadinessStatus.MISSING for row in self.rows)
+        # The coach is optional: without a key, feedback uses templates.
+        return all(
+            row.status is not ReadinessStatus.MISSING
+            for row in self.rows
+            if row.component is not Component.ANTHROPIC
+        )
 
 
 def _row(

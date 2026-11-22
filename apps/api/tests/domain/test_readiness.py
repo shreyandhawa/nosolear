@@ -248,7 +248,8 @@ def test_ready_false_only_when_a_row_is_missing():
     assert build_readiness(make_inputs()).ready is True
     degraded = make_inputs(data_dir_mode=0o755)
     assert build_readiness(degraded).ready is True
-    assert build_readiness(make_inputs(anthropic_key_set=False)).ready is False
+    assert build_readiness(make_inputs(azure_key_set=False)).ready is False
+    assert build_readiness(make_inputs(anthropic_key_set=False)).ready is True
 
 
 def test_format_readiness_columns():

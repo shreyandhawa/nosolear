@@ -8,7 +8,7 @@ web
 
 ## Users
 
-One person, the owner: a speaker of another first language practising General American English for about 15 minutes a day, alone at a laptop with a microphone. The app is laptop first (1280 px and wider); phone access comes later.
+Developers who clone it, run it and tweak it: speakers of another first language practising General American English for about 15 minutes a day, alone at a laptop with a microphone. Azure Speech is required; the Anthropic coach is optional. The app is laptop first (1280 px and wider); phone access comes later.
 
 ## Product Purpose
 
@@ -20,7 +20,7 @@ It learns one speaker's own error profile (calibrated detectors, measured miss r
 
 ## Operating Context
 
-Runs locally from `make app` at http://127.0.0.1:8000. No accounts, no hosting, no telemetry. Nothing leaves the machine except calls the owner's own Azure Speech and Anthropic keys make, metered against monthly and daily caps.
+Runs locally from `make app` at http://127.0.0.1:8000. No accounts, no hosting, no telemetry. Nothing leaves the machine except calls the owner's own Azure Speech key (required) and Anthropic key (optional) make, metered against monthly and daily caps.
 
 ## Capabilities and Constraints
 

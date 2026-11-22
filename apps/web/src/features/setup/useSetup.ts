@@ -13,6 +13,9 @@ export function missingEnvLines(rows: Row[]): string[] {
   return [...new Set(names)].map((name) => `${name}=`);
 }
 
+const REQUIRED = ["azure_speech", "azure_capabilities"];
+const COACH = ["anthropic"];
+
 export function useSetup() {
   const queryClient = useQueryClient();
   const readiness = useQuery({
@@ -30,9 +33,16 @@ export function useSetup() {
       void queryClient.invalidateQueries({ queryKey: ["onboarding"] });
     },
   });
+  const rows = readiness.data?.rows ?? [];
+  const required = rows.filter((r) => REQUIRED.includes(r.component));
+  const coach = rows.filter((r) => COACH.includes(r.component));
   return {
     readiness,
-    envLines: readiness.data ? missingEnvLines(readiness.data.rows) : [],
+    required,
+    coach,
+    local: rows.filter((r) => !REQUIRED.includes(r.component) && !COACH.includes(r.component)),
+    envLines: missingEnvLines(required),
+    coachLines: missingEnvLines(coach),
     blocked: onboarding.data?.step === "readiness",
     probe,
   };

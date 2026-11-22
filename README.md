@@ -1,6 +1,6 @@
 # Nosolear
 
-An open-source English speaking coach that runs on your own machine. You bring your own Azure Speech and Anthropic API keys and run it locally. There are no accounts, no hosting and no shared keys. It works for a speaker of any first language and aims at General American English.
+An open-source English speaking coach that runs on your own machine. You bring your own Azure Speech key, and optionally an Anthropic key for the AI coach, and run it locally. There are no accounts, no hosting and no shared keys. It works for a speaker of any first language and aims at General American English.
 
 It trains three skills:
 
@@ -25,7 +25,7 @@ The screens below show sample data.
 
 ## Status
 
-The first run and the daily session work in the browser, with recording in the page. Start the app with `make app` and open http://127.0.0.1:8000. Today you can:
+The first run and the daily session work in the browser, with recording in the page. Start the app with `make app` and open http://127.0.0.1:8000. A Welcome page walks through the parts and how long each takes, and stays available as Guide in the navigation. Today you can:
 
 - check your setup on the Setup screen, or with `nosolear doctor`
 - calibrate the detectors on your voice, record a baseline and read the ranked report
@@ -70,7 +70,7 @@ Keys go in `.env` on your machine. Never paste a key into a chat, an issue or a 
 2. Create a Speech resource on the **F0** (free) tier and note its key and region.
 3. In Azure Cost Management, set a $1 budget alert as a safety net.
 
-**Anthropic** (the AI coach):
+**Anthropic** (the AI coach, optional). Without a key, feedback uses written templates instead of coach-written fixes, and On the spot and Articulate are not scored. It costs about $0.20 a month on Haiku and about $7 on Opus with daily use (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §11).
 
 1. Create an API key in the [Anthropic Console](https://console.anthropic.com), ideally in a workspace with a spend limit.
 
@@ -87,7 +87,7 @@ chmod 600 .env
 `make setup` installs the API and web dependencies and turns on the repository's git hooks. Then edit `.env`:
 
 - `NOSOLEAR_AZURE_SPEECH_KEY` and `NOSOLEAR_AZURE_SPEECH_REGION`: from your Speech resource
-- `NOSOLEAR_ANTHROPIC_API_KEY`: from the Console
+- `NOSOLEAR_ANTHROPIC_API_KEY`: optional, from the Console
 - `NOSOLEAR_PACK`: optional language pack. The default is `neutral`; `nepali` adds weak starting guesses for Nepali first-language speakers
 
 Every setting is listed, with its default, in `.env.example`. Keys and provider choices come only from the environment or `.env`.
@@ -107,7 +107,7 @@ The report has one row per component: Azure Speech, Azure capabilities, Anthropi
 - **not probed**: the live capability probe has not run
 - **degraded**: it works, with a caveat
 
-`nosolear doctor` is offline. It never prints a key, a fragment of one or its length. It exits 0 when nothing is missing, 1 when something is, and 2 when your settings are invalid. Until you add keys, Azure Speech and Anthropic show as missing, and so does the transcriber, which can use Azure or a local model from an extra. If the data dir row says `.env` is readable by other users, run `chmod 600 .env`. Run `nosolear doctor --probe` once after you add your keys, and again if you change the Azure region or locale. It makes a few paid calls: a short sentence to Azure, and a passage of about a minute for each installed local transcriber, so it spends your quota. It prints one line per probe, stores what each one measured (n-best phonemes, prosody, and the real-time factor of each local transcriber), then prints the report. It exits 1 if a probe failed. Its results appear as the Azure capabilities and transcriber rows, and `auto` uses the measured speed. The app's `POST /api/readiness/probe` runs the same probes. Only you start either one; nothing runs them on its own.
+`nosolear doctor` is offline. It never prints a key, a fragment of one or its length. It exits 0 when nothing required is missing, 1 when something is, and 2 when your settings are invalid. A missing Anthropic key shows as missing, but doctor still exits 0. Until you add keys, Azure Speech shows as missing, and so does the transcriber, which can use Azure or a local model from an extra. If the data dir row says `.env` is readable by other users, run `chmod 600 .env`. Run `nosolear doctor --probe` once after you add your keys, and again if you change the Azure region or locale. It makes a few paid calls: a short sentence to Azure, and a passage of about a minute for each installed local transcriber, so it spends your quota. It prints one line per probe, stores what each one measured (n-best phonemes, prosody, and the real-time factor of each local transcriber), then prints the report. It exits 1 if a probe failed. Its results appear as the Azure capabilities and transcriber rows, and `auto` uses the measured speed. The app's `POST /api/readiness/probe` runs the same probes. Only you start either one; nothing runs them on its own.
 
 ## Run
 
