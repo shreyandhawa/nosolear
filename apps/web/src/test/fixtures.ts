@@ -84,29 +84,52 @@ export const calibrateJob = {
   tries: 1,
 };
 
+const baselineItem = (n: number, section: string, text: string, scripted: boolean, recorded: boolean) => ({
+  attempt_id: `a${n}`,
+  item_id: `p${n}`,
+  order: n,
+  section,
+  step: scripted ? "read" : "answer",
+  text,
+  scripted,
+  max_seconds: scripted ? 30 : 60,
+  start_limit_seconds: scripted ? null : 10,
+  stand_in_text: text,
+  recorded,
+  job_status: recorded ? "done" : null,
+});
+
+// Two sections, with long prompts, so the page's bounds show under ?mock=baseline.
 export const baselineSession = (completed: boolean, recorded = true) => ({
   session_id: "b1",
   protocol_version: 1,
   started_at: "2026-11-15T10:00:00Z",
   completed_at: completed ? "2026-11-15T10:20:00Z" : null,
   items: [
-    {
-      attempt_id: "a1",
-      item_id: "p1",
-      order: 1,
-      section: "Read aloud",
-      step: "read",
-      text: "A very good day.",
-      scripted: true,
-      max_seconds: 30,
-      start_limit_seconds: null,
-      stand_in_text: "A very good day.",
-      recorded,
-      job_status: recorded ? "done" : null,
-    },
+    baselineItem(1, "Read aloud", "A very good day.", true, recorded),
+    baselineItem(2, "Read aloud", "The thirty-three thieves thought they thrilled the throne throughout Thursday.", true, recorded),
+    baselineItem(3, "Read aloud", "She sells sea shells by the sea shore.", true, recorded),
+    baselineItem(4, "Answer", "Describe a place you know well, and what you would show a visitor there.", false, recorded),
+    baselineItem(5, "Answer", "Explain how you would teach a friend to cook your favourite dish.", false, recorded),
   ],
 });
 
+const reportItem = (n: number) => ({
+  error_key: n === 1 ? "sound.sub.v.w" : `sound.sub.x${n}`,
+  description: n === 1 ? "/v/ said as /w/" : `/s${n}/ said as /z${n}/`,
+  skill: "sounds",
+  impact: 3,
+  status: n % 2 ? "active" : "watching",
+  p_hat: 0.3,
+  ci_low: 0.1,
+  ci_high: 0.5,
+  n_eff: 4,
+  priority: 0.9 - n * 0.05,
+  provisional: n === 1,
+  clips: [{ attempt_id: "a1", start_ms: 100, end_ms: 400, word: "very", expected: "v", produced: "w" }],
+});
+
+// Twelve ranked errors: the API returns every entry, and the page trims.
 export const baselineReport = {
   session_id: "b1",
   completed_at: "2026-11-15T10:20:00Z",
@@ -115,22 +138,7 @@ export const baselineReport = {
   snapshot_id: "x1",
   notes: [],
   skill_scores: [{ skill: "sounds", score: 72, scores: {}, values: {} }],
-  items: [
-    {
-      error_key: "sound.sub.v.w",
-      description: "/v/ said as /w/",
-      skill: "sounds",
-      impact: 3,
-      status: "active",
-      p_hat: 0.3,
-      ci_low: 0.1,
-      ci_high: 0.5,
-      n_eff: 4,
-      priority: 0.9,
-      provisional: true,
-      clips: [{ attempt_id: "a1", start_ms: 100, end_ms: 400, word: "very", expected: "v", produced: "w" }],
-    },
-  ],
+  items: Array.from({ length: 12 }, (_, i) => reportItem(i + 1)),
 };
 
 export const plan = {
