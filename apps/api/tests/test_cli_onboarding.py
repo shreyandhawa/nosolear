@@ -31,9 +31,13 @@ def test_onboarding_prints_each_blocker_fix(make_harness: Callable[..., Harness]
     rows = tuple(
         ReadinessRow(
             component,
-            ReadinessStatus.MISSING if component is Component.ANTHROPIC else ReadinessStatus.READY,
+            ReadinessStatus.MISSING
+            if component is Component.AZURE_SPEECH
+            else ReadinessStatus.READY,
             "reason",
-            "set NOSOLEAR_ANTHROPIC_API_KEY in .env" if component is Component.ANTHROPIC else None,
+            "set NOSOLEAR_AZURE_SPEECH_KEY in .env"
+            if component is Component.AZURE_SPEECH
+            else None,
         )
         for component in Component
     )
@@ -41,7 +45,7 @@ def test_onboarding_prints_each_blocker_fix(make_harness: Callable[..., Harness]
     assert main(["onboarding"], client=_api(h)) == 0
     assert capsys.readouterr().out.splitlines() == [
         "Next: readiness",
-        "  set NOSOLEAR_ANTHROPIC_API_KEY in .env",
+        "  set NOSOLEAR_AZURE_SPEECH_KEY in .env",
     ]
 
 

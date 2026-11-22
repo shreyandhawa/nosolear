@@ -199,6 +199,28 @@ def test_a_stored_analysis_is_returned_without_a_port_call(tmp_path):
     assert len(scorer.calls) == 1
 
 
+def test_with_no_coach_configured_the_coach_step_is_skipped(tmp_path):
+    info = attempt("speak", scripted=False, reference=None)
+    world = World(tmp_path, [info])
+    steps = {
+        step.name: step
+        for step in provider_steps(
+            scorer=FakeScorer(),
+            transcriber=FakeTranscriber(),
+            phone_probe=None,
+            coach=None,
+            taxonomy=TAX,
+            analyses=world.analyses,
+            recordings=world.recordings,
+            attempts=world.attempts,
+            audio=world.audio,
+            configs=_V0_ONLY,
+            tracked=lambda: frozenset(),
+        )
+    }
+    assert not steps["coach"].applies(ctx(info.id))  # free talk, but there is no coach
+
+
 def test_the_transcript_is_stored_and_reused_for_coaching(tmp_path):
     info = attempt("quick_answer", scripted=False, reference=None)
     world = World(tmp_path, [info])

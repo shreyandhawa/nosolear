@@ -26,14 +26,17 @@ export function SetupPage() {
       media={
         envLines.length > 0 && (
           <>
-            <Label>Still missing in .env</Label>
+            <Label>{blocked ? "Still missing in .env" : "Optional in .env"}</Label>
             <pre className="bg-fg/12 px-3 py-2 text-[0.9375rem] break-all whitespace-pre-wrap">{envLines.join("\n")}</pre>
           </>
         )
       }
       text={
         envLines.length > 0 ? (
-          <p>Add them to the .env file at the repo root, then restart the server.</p>
+          <p>
+            {blocked ? "" : "Without it, feedback uses written templates instead of the coach. "}
+            Add {blocked ? "them" : "it"} to the .env file at the repo root, then restart the server.
+          </p>
         ) : (
           readiness.isError && <p role="alert">Couldn't load readiness. Is the API running?</p>
         )

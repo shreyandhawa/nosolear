@@ -94,3 +94,16 @@ def test_daily_attempt_takes_a_recording_like_a_baseline_attempt(
 
     assert h.drain() >= 1
     assert h.client.get(f"/api/jobs/{job_id}").json()["status"] == "done"
+
+
+def test_daily_attempt_analyzes_without_an_anthropic_key(
+    make_harness: Callable[..., Harness],
+) -> None:
+    # No key: the coach step is skipped, so the analysis still finishes instead of failing.
+    h = make_harness(coach_configured=False)
+    attempt = h.client.post(SESSION).json()["attempts"][0]
+
+    job_id = h.upload(attempt["id"], attempt["prompt_text"] or "Tell me about your day.")
+
+    assert h.drain() >= 1
+    assert h.client.get(f"/api/jobs/{job_id}").json()["status"] == "done"

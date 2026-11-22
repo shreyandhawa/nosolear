@@ -158,17 +158,22 @@ class ProbeStep:
 class CoachStep:
     name = "coach"
 
-    def __init__(self, *, coach: Coach, taxonomy: Taxonomy, stores: _Stores) -> None:
+    def __init__(self, *, coach: Coach | None, taxonomy: Taxonomy, stores: _Stores) -> None:
         self._coach = coach
         self._taxonomy = taxonomy
         self._stores = stores
 
     def applies(self, ctx: StepContext) -> bool:
+        """`None` means no Anthropic key: the step is skipped, not blocked."""
+        if self._coach is None:
+            return False
         info = self._stores.attempt(ctx)
         return info is not None and coach_task_for_step(info.step) is not None
 
     def run(self, ctx: StepContext) -> None:
         attempt_id = _attempt_id(ctx)
+        if self._coach is None:
+            raise ValueError("No coach is configured.")
         if self._stores.analyses.get(attempt_id, AnalysisKind.COACH) is not None:
             return
         info = self._stores.attempts.get(attempt_id)
@@ -193,7 +198,7 @@ def provider_steps(
     scorer: PronunciationScorer,
     transcriber: Transcriber,
     phone_probe: PhoneProbe | None,
-    coach: Coach,
+    coach: Coach | None,
     taxonomy: Taxonomy,
     analyses: AnalysisStore,
     recordings: RecordingStore,

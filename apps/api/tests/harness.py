@@ -144,6 +144,7 @@ def make_harness(tmp_path: Path) -> Iterator[Callable[..., Harness]]:
         rubric: Rubric | None = None,
         readiness: ReadinessReport | None = None,
         coach: FakeCoach | None = None,
+        coach_configured: bool = True,
         scorer: PronunciationScorer | None = None,
     ) -> Harness:
         data_dir = tmp_path / f"h{next(_next_id)}"
@@ -154,10 +155,16 @@ def make_harness(tmp_path: Path) -> Iterator[Callable[..., Harness]]:
             transcriber=voice.transcriber,
             speech_synthesizer=voice.speech_synthesizer,
             phone_probe=voice.probe if probe else None,
-            coach=coach if coach is not None else FakeCoach([_empty_coach(rubric)]),
+            coach=None
+            if not coach_configured
+            else coach
+            if coach is not None
+            else FakeCoach([_empty_coach(rubric)]),
         )
+        # `coach_configured=False` is a user with no Anthropic key: no stand-in coach and no key.
+        no_key: dict[str, object] = {} if coach_configured else {"anthropic_api_key": None}
         app = create_app(
-            make_settings(data_dir=data_dir),
+            make_settings(data_dir=data_dir, **no_key),
             clock=clock_used,
             raw_ports=ports,
             start_runner=start_runner,

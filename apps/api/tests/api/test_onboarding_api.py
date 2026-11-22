@@ -19,13 +19,20 @@ def _with_missing(component: Component, status: ReadinessStatus, fix: str) -> Re
 
 
 def test_onboarding_reports_blockers_with_fixes(make_harness: Callable[..., Harness]):
+    fix = "set NOSOLEAR_AZURE_SPEECH_KEY in .env"
+    h = make_harness(readiness=_with_missing(Component.AZURE_SPEECH, ReadinessStatus.MISSING, fix))
+    body = h.client.get("/api/onboarding").json()
+    assert body["step"] == "readiness"
+    assert body["blockers"] == [{"component": "azure_speech", "status": "missing", "fix": fix}]
+    assert body["calibration"] == "not_run"
+    assert body["baseline"] == "not_started" and body["baseline_session_id"] is None
+
+
+def test_a_missing_anthropic_key_does_not_hold_onboarding(make_harness: Callable[..., Harness]):
     fix = "set NOSOLEAR_ANTHROPIC_API_KEY in .env"
     h = make_harness(readiness=_with_missing(Component.ANTHROPIC, ReadinessStatus.MISSING, fix))
     body = h.client.get("/api/onboarding").json()
-    assert body["step"] == "readiness"
-    assert body["blockers"] == [{"component": "anthropic", "status": "missing", "fix": fix}]
-    assert body["calibration"] == "not_run"
-    assert body["baseline"] == "not_started" and body["baseline_session_id"] is None
+    assert body["step"] == "calibration" and body["blockers"] == []
 
 
 def test_onboarding_starts_at_calibration_when_ready(make_harness: Callable[..., Harness]):

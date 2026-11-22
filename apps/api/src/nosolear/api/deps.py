@@ -520,6 +520,11 @@ def build_ledger(settings: Settings, engine: Engine, *, clock: Clock | None = No
     return SqliteUsageLedger(engine, caps=_caps(settings), clock=clock or SystemClock())
 
 
+def _coach_configured(settings: Settings, raw: RawPorts | None) -> bool:
+    """A key, or a stand-in coach from a test or eval harness."""
+    return settings.anthropic_api_key is not None or (raw is not None and raw.coach is not None)
+
+
 def build_services(
     settings: Settings,
     engine: Engine,
@@ -567,7 +572,7 @@ def build_services(
         scorer=providers.scorer,
         transcriber=providers.transcriber,
         phone_probe=providers.phone_probe,
-        coach=providers.coach,
+        coach=providers.coach if _coach_configured(settings, raw_ports) else None,
         taxonomy=DEFAULT_TAXONOMY,
         analyses=analyses,
         recordings=recordings,
