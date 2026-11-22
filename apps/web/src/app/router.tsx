@@ -6,10 +6,12 @@ import { DailyPage } from "../features/daily/DailyPage";
 import { HomePage } from "../features/home/HomePage";
 import { ProfilePage } from "../features/progress/ProfilePage";
 import { SetupPage } from "../features/setup/SetupPage";
+import { WelcomePage } from "../features/welcome/WelcomePage";
 import { StatusDot } from "../shared/ui/Desk";
 import { useNav } from "./useNav";
 
 const TRAIL = [
+  { step: "welcome", label: "Welcome", to: "/welcome" },
   { step: "readiness", label: "Setup", to: "/setup" },
   { step: "calibration", label: "Calibration", to: "/calibration" },
   { step: "baseline", label: "Baseline", to: "/baseline" },
@@ -62,6 +64,11 @@ function RootLayout() {
                 Setup
               </Link>
             </li>
+            <li>
+              <Link to="/welcome" className={link}>
+                Guide
+              </Link>
+            </li>
           </ul>
         )}
         <p className="ml-auto flex min-w-0 items-center gap-2 text-[0.8125rem] text-fg/72">
@@ -89,6 +96,7 @@ export function createAppRouter() {
   return createRouter({
     routeTree: rootRoute.addChildren([
       createRoute({ getParentRoute: parent, path: "/", component: HomePage }),
+      createRoute({ getParentRoute: parent, path: "/welcome", component: WelcomePage }),
       createRoute({ getParentRoute: parent, path: "/setup", component: SetupPage }),
       createRoute({ getParentRoute: parent, path: "/calibration", component: CalibrationPage }),
       createRoute({ getParentRoute: parent, path: "/baseline", component: BaselinePage }),

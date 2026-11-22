@@ -241,6 +241,17 @@ def test_doctor_probe_without_a_region_exits_1_and_reveals_nothing(
         assert key not in captured.out and key not in captured.err
 
 
+def test_doctor_exits_0_without_the_optional_anthropic_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("NOSOLEAR_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("NOSOLEAR_AZURE_SPEECH_KEY", AZURE_KEY)
+    monkeypatch.setenv("NOSOLEAR_AZURE_SPEECH_REGION", "westus2")
+    monkeypatch.delenv("NOSOLEAR_ANTHROPIC_API_KEY", raising=False)
+    assert main(["doctor"]) == 0
+    assert "NOSOLEAR_ANTHROPIC_API_KEY" in capsys.readouterr().out
+
+
 def test_doctor_with_an_unknown_pack_still_prints_every_row(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

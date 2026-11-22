@@ -735,7 +735,7 @@ The selection policy (§6.6), the daily plan, and one-fix-per-skill feedback (§
 
 ### Later phases
 
-The web app (onboarding, calibration, the baseline and the daily loop, with in-browser recording) is built (`docs/app-first.md`). Next, in order:
+The web app (onboarding, calibration, the baseline and the daily loop, with in-browser recording) is built (`docs/app-first.md`). The Anthropic coach is optional: without a key the coach step is skipped and feedback uses templates. A Welcome page opens the first run. Next, in order:
 
 1. A design pass on these screens.
 2. Drills, one family at a time, each as backend, API and screen together, sounds first.
@@ -786,7 +786,7 @@ The app also sets `HF_HUB_DISABLE_TELEMETRY=1` for the Hugging Face libraries be
 Readiness is a pure domain function over, per provider: is it configured, is its library installed, and what did the probes find. It returns a report with one row per component: Azure Speech, Azure capabilities, Anthropic, transcriber, phone probe, language pack, data dir and usage against caps.
 
 - **Each row** has a status (ready, missing, not installed, not probed, degraded), a reason, and the fix, for example "set `NOSOLEAR_ANTHROPIC_API_KEY` in `.env`" or "run `uv sync --extra local` and install espeak-ng".
-- **`nosolear doctor`** prints the report. It is offline: it reads config, checks imports and executables, and reads stored probe results.
+- **`nosolear doctor`** prints the report. It is offline: it reads config, checks imports and executables, and reads stored probe results. It exits 1 only when a required row is missing; the Anthropic key is optional (without it feedback uses templates), so a missing key does not fail it or block onboarding.
 - **`nosolear doctor --probe`** also runs the capability probe and the speed check (§4, §5.1). These are metered calls.
 - **`GET /api/readiness`** returns the same report as JSON, for onboarding.
 - **It shows:** yes or no for each key, non-secret values such as region, locale, model id, transcriber and pack, probe results with their dates, and usage against each cap.
