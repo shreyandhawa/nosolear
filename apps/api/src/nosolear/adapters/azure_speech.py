@@ -204,6 +204,13 @@ class SdkSpeechBackend:
         config.set_speech_synthesis_output_format(
             speechsdk.SpeechSynthesisOutputFormat.Riff16Khz16BitMonoPcm
         )
+        # By default the SDK fetches MP3 and decodes it on a CoreAudio thread of its own; tearing
+        # the synthesizer down on a server worker thread while that thread runs crashed the API
+        # with SIGSEGV (2026-11-22). Plain PCM needs no decoder thread.
+        config.set_property(
+            speechsdk.PropertyId.SpeechServiceConnection_SynthEnableCompressedAudioTransmission,
+            "false",
+        )
         synthesizer = speechsdk.SpeechSynthesizer(speech_config=config, audio_config=None)
         boundaries: list[WordBoundary] = []
 
