@@ -25,13 +25,15 @@ The screens below show sample data.
 
 ## Status
 
-The backend comes first. A first profile page exists, and the recording and scoring screens arrive in later phases (the main web UI is Phase 2). Today you can:
+The first run and the daily session work in the browser, with recording in the page. Start the app with `make app` and open http://127.0.0.1:8000. Today you can:
 
-- seed a synthetic error profile with `make seed`, start `make api-dev` and `make web`, then open `/profile` at http://localhost:5173
-- check your setup with `nosolear doctor`
-- run the local API with `nosolear serve` (or `make api`)
+- check your setup on the Setup screen, or with `nosolear doctor`
+- calibrate the detectors on your voice, record a baseline and read the ranked report
+- do the daily session: speak for 60 seconds, get one fix per skill, and hear your clip beside a model voice
+- see each tracked error's miss rate on the Progress page
+- run the API on its own with `nosolear serve` (or `make api`)
 
-Recording, scoring and the coach need the later phases. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and the build phases.
+Not built yet: drills, live voice conversation, phone access and key entry in the app. The screens are tested with fake providers; a full run against live Azure and Claude has not been done yet. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and the build phases.
 
 ## Platforms
 
