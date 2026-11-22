@@ -667,6 +667,10 @@
             ],
             "title": "Attempt Id"
           },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
           "end_ms": {
             "anyOf": [
               {
@@ -752,6 +756,7 @@
         "required": [
           "id",
           "error_key",
+          "description",
           "message",
           "model_text",
           "source",

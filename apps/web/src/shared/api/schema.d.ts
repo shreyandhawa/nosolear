@@ -599,6 +599,8 @@ export interface components {
         FeedbackItemOut: {
             /** Attempt Id */
             attempt_id: string | null;
+            /** Description */
+            description: string;
             /** End Ms */
             end_ms: number | null;
             /** Error Key */

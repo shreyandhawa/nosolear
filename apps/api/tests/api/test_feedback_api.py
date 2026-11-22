@@ -204,6 +204,18 @@ def test_capped_coach_returns_200_degraded_with_reason(
         assert skill["item"]["fallback_reason"] == "cap_exceeded"
 
 
+def test_with_no_anthropic_key_the_reason_is_capability_missing(
+    make_harness: Callable[..., Harness],
+) -> None:
+    harness = make_harness(coach_configured=False)
+    session_id = seed(harness)
+    body = harness.client.post(f"/api/sessions/{session_id}/feedback").json()
+    for skill in body["skills"]:
+        assert skill["item"]["source"] == "template"
+        assert skill["item"]["fallback_reason"] == "capability_missing"
+    assert body["skills"][1]["item"]["description"]
+
+
 def test_post_twice_is_idempotent(make_harness: Callable[..., Harness]) -> None:
     coach = _coach_three()
     harness = make_harness(coach=coach)

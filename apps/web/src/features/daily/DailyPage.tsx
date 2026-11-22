@@ -20,7 +20,7 @@ const STATES: Record<string, string> = { fix: "One fix", clean: "Clean", not_sco
 const REASONS: Record<string, string> = {
   cap_exceeded: "today's coach cap is used up",
   provider_unavailable: "the coach could not be reached",
-  capability_missing: "the coach is not set up",
+  capability_missing: "the coach is off (no Anthropic key in .env)",
   invalid_output: "the coach's answer could not be used",
 };
 const STEPS: Record<string, string> = {
@@ -80,12 +80,12 @@ function PlanSlots(plan: Plan) {
   };
 }
 
-function FeedbackSlots(skill: SkillFeedback) {
+export function FeedbackSlots(skill: SkillFeedback) {
   const item = skill.item;
   return {
     title: (
       <TitleBlock step={`${SKILLS[skill.skill]}, ${STATES[skill.state].toLowerCase()}`}>
-        {item ? (item.word ?? <Pair errorKey={item.error_key} fallback={item.error_key} />) : STATES[skill.state]}
+        {item ? (item.word ?? <Pair errorKey={item.error_key} fallback={item.description} />) : STATES[skill.state]}
       </TitleBlock>
     ),
     media: item && (
@@ -100,18 +100,23 @@ function FeedbackSlots(skill: SkillFeedback) {
         {item.model_text && <ModelVoice source="feedback_item" id={item.id} />}
       </div>
     ),
-    text: item && (
-      <dl className="grid grid-cols-2 gap-4">
-        <div>
-          <dt className="text-[0.8125rem] font-medium text-fg/72">Your word</dt>
-          <dd className="font-display text-[1.375rem]">{item.word ?? "—"}</dd>
-        </div>
-        <div>
-          <dt className="text-[0.8125rem] font-medium text-fg/72">Say it like this</dt>
-          <dd className="font-display text-[1.375rem]">{item.model_text ?? "—"}</dd>
-        </div>
-      </dl>
-    ),
+    text:
+      item && (item.word || item.model_text) ? (
+        <dl className="grid grid-cols-2 gap-4">
+          {item.word && (
+            <div>
+              <dt className="text-[0.8125rem] font-medium text-fg/72">Your word</dt>
+              <dd className="font-display text-[1.375rem]">{item.word}</dd>
+            </div>
+          )}
+          {item.model_text && (
+            <div>
+              <dt className="text-[0.8125rem] font-medium text-fg/72">Say it like this</dt>
+              <dd className="font-display text-[1.375rem]">{item.model_text}</dd>
+            </div>
+          )}
+        </dl>
+      ) : null,
     note: item ? (
       <>
         <p>{item.message}</p>

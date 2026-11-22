@@ -172,6 +172,7 @@ class FeedbackItemOut(BaseModel):
 
     id: str
     error_key: str
+    description: str
     message: str
     model_text: str | None
     source: FeedbackSourceName

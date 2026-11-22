@@ -192,6 +192,7 @@ export const feedback = {
       item: {
         id: "f1",
         error_key: "sound.sub.v.w",
+        description: "/v/ said as /w/",
         message: "Teeth on lip.",
         model_text: "very",
         source: "template",

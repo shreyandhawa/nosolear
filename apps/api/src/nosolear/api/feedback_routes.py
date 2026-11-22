@@ -40,6 +40,7 @@ def _item_out(item: FeedbackItem) -> FeedbackItemOut:
     return FeedbackItemOut(
         id=item.id,
         error_key=item.error_key,
+        description=DEFAULT_TAXONOMY.get(item.error_key).description,
         message=item.message,
         model_text=item.model_text,
         source=item.source,
