@@ -54,8 +54,19 @@ class StartedSession:
     attempts: tuple[AttemptRef, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class SessionProgress:
+    analyze_job_id: str | None
+    completed: bool
+
+
 class DailySessionStore(Protocol):
     def for_plan(self, plan_id: str) -> StartedSession | None: ...
+
+    def progress(self, session_id: str) -> SessionProgress:
+        """The newest analyze job of the session's attempts (None before an upload), and whether
+        the session was completed. A client that left the page resumes from this."""
+        ...
 
     def create(
         self, *, plan_id: str, prompt_item_id: str | None, started_at: datetime

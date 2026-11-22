@@ -573,6 +573,21 @@
             "title": "Attempts",
             "type": "array"
           },
+          "completed": {
+            "title": "Completed",
+            "type": "boolean"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
           "plan_id": {
             "title": "Plan Id",
             "type": "string"
@@ -585,7 +600,9 @@
         "required": [
           "session_id",
           "plan_id",
-          "attempts"
+          "attempts",
+          "job_id",
+          "completed"
         ],
         "title": "DailySessionOut",
         "type": "object"

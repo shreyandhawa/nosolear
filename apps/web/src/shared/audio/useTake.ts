@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { uploadRecording, type UploadAccepted } from "../api/http";
 import { useRecorder } from "./useRecorder";
 
@@ -24,8 +24,14 @@ export function useTake(attemptId: string | null, maxSeconds: number, onUploaded
     resetRecording();
   }, [attemptId, resetUpload, resetRecording]);
 
+  // A reset applies on the next render, so after an attempt change this commit still holds the
+  // previous take: only a take started for the current attempt may be uploaded.
+  const takenFor = useRef<string | null>(null);
   useEffect(() => {
-    if (rec.state === "recorded" && rec.wav && attemptId) mutate(rec.wav);
+    if (rec.state === "starting") takenFor.current = attemptId;
+  }, [rec.state, attemptId]);
+  useEffect(() => {
+    if (rec.state === "recorded" && rec.wav && attemptId && takenFor.current === attemptId) mutate(rec.wav);
   }, [rec.state, rec.wav, mutate, attemptId]);
 
   const message =

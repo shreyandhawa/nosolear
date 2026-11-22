@@ -24,9 +24,24 @@ export function useDaily() {
     onSuccess: (data) => queryClient.setQueryData(["plan-today"], data),
   });
   const start = useMutation({
-    mutationFn: async () => (await must(api.POST("/api/plan/today/session"), "start the session")) as Session,
-    onSuccess: (session) => dispatch({ type: "started", session }),
+    mutationFn: async () => {
+      const session = (await must(api.POST("/api/plan/today/session"), "start the session")) as Session;
+      const feedback = session.completed
+        ? ((await must(
+            api.GET("/api/sessions/{session_id}/feedback", { params: { path: { session_id: session.session_id } } }),
+            "feedback",
+          )) as Feedback)
+        : null;
+      return { session, feedback };
+    },
+    onSuccess: ({ session, feedback }) => dispatch({ type: "started", session, feedback }),
   });
+  // Opening Today again, after leaving or reloading, rebuilds the stage from the server. Starting
+  // is idempotent: it returns the day's open session.
+  const { mutate: startSession, isIdle: startIdle } = start;
+  useEffect(() => {
+    if (plan.data && state.phase === "plan" && startIdle) startSession();
+  }, [plan.data, state.phase, startIdle, startSession]);
   const job = useJob(state.phase === "analyze" ? state.jobId : null);
   const feedback = useMutation({
     mutationFn: (sessionId: string) =>
