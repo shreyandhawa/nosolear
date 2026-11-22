@@ -238,11 +238,6 @@ class SdkSpeechBackend:
             )
             pronunciation.apply_to(recognizer)
 
-        def json_text(result: Any) -> str:
-            return result.properties.get_property(
-                speechsdk.PropertyId.SpeechServiceResponse_JsonResult
-            )
-
         def cancellation_of(result: Any) -> Cancellation | None:
             if result.reason != speechsdk.ResultReason.Canceled:
                 return None
@@ -256,7 +251,7 @@ class SdkSpeechBackend:
             cancelled = cancellation_of(once)
             if cancelled is not None:
                 return RecognitionOutcome(results=(), cancellation=cancelled)
-            return RecognitionOutcome(results=(_json_result(json_text(once)),), cancellation=None)
+            return RecognitionOutcome(results=(_json_result(once.json),), cancellation=None)
 
         results: list[Mapping[str, object]] = []
         problems: list[Cancellation] = []
@@ -267,7 +262,7 @@ class SdkSpeechBackend:
                 speechsdk.ResultReason.RecognizedSpeech,
                 speechsdk.ResultReason.NoMatch,
             ):
-                results.append(_json_result(json_text(event.result)))
+                results.append(_json_result(event.result.json))
 
         def on_canceled(event: Any) -> None:
             found = cancellation_of(event.result)

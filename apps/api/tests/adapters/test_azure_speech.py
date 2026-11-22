@@ -1,14 +1,22 @@
-"""The shared Azure client, tested through the fake backend. No SDK import and no network."""
+"""The shared Azure client and its SDK backend, tested through fakes. No SDK, no network."""
 
 import logging
 import threading
+from types import SimpleNamespace
 
 import pytest
 from provider_fakes import FakeSpeechBackend
 from pydantic import SecretStr
 from security.planted import PLANTED_AZURE_KEY, PROVIDER_BODY_MARKER, assert_no_leak
 
-from nosolear.adapters.azure_speech import AzureSpeech, Cancellation, classify
+from nosolear.adapters import azure_speech
+from nosolear.adapters.azure_speech import (
+    AzureSpeech,
+    Cancellation,
+    RecognitionRequest,
+    SdkSpeechBackend,
+    classify,
+)
 from nosolear.domain.errors import (
     ProviderUnavailable,
     RequestNotSent,
@@ -104,3 +112,67 @@ def test_classify(code, details, retryable, message):
     error = classify(Cancellation(code, details))
     assert isinstance(error, RetryableProviderError) is retryable
     assert str(error) == message
+
+
+class _Signal:
+    def __init__(self) -> None:
+        self.handlers = []
+
+    def connect(self, handler) -> None:
+        self.handlers.append(handler)
+
+    def fire(self, event) -> None:
+        for handler in self.handlers:
+            handler(event)
+
+
+def fake_sdk(result: SimpleNamespace) -> SimpleNamespace:
+    """Just enough of the Speech SDK for `SdkSpeechBackend.recognize`. Continuous recognition
+    fires every event at once, on the calling thread."""
+
+    class Recognizer:
+        def __init__(self, **_kwargs) -> None:
+            self.recognized, self.canceled, self.session_stopped = _Signal(), _Signal(), _Signal()
+
+        def recognize_once(self) -> SimpleNamespace:
+            return result
+
+        def start_continuous_recognition(self) -> None:
+            self.recognized.fire(SimpleNamespace(result=result))
+            self.session_stopped.fire(None)
+
+        def stop_continuous_recognition(self) -> None:
+            pass
+
+    return SimpleNamespace(
+        SpeechConfig=lambda **_kwargs: SimpleNamespace(set_profanity=lambda _option: None),
+        OutputFormat=SimpleNamespace(Detailed="Detailed"),
+        ProfanityOption=SimpleNamespace(Raw="Raw"),
+        audio=SimpleNamespace(AudioConfig=lambda **_kwargs: None),
+        SpeechRecognizer=Recognizer,
+        PronunciationAssessmentConfig=lambda **_kwargs: SimpleNamespace(apply_to=lambda _r: None),
+        ResultReason=SimpleNamespace(
+            Canceled="Canceled", RecognizedSpeech="RecognizedSpeech", NoMatch="NoMatch"
+        ),
+    )
+
+
+@pytest.mark.parametrize("continuous", [False, True])
+def test_sdk_backend_reads_the_result_json(monkeypatch, tmp_path, continuous):
+    # As in SDK 1.53: the JSON is `result.json`, and `result.properties` is a plain dict copy.
+    result = SimpleNamespace(
+        reason="RecognizedSpeech", json='{"RecognitionStatus": "Success"}', properties={}
+    )
+    monkeypatch.setattr(azure_speech, "_sdk", lambda: fake_sdk(result))
+    backend = SdkSpeechBackend(key=SecretStr(PLANTED_AZURE_KEY), region="eastus")
+    request = RecognitionRequest(
+        wav=tmp_path / "clip.wav",
+        locale="en-US",
+        continuous=continuous,
+        pronunciation_json="{}",
+        word_timestamps=False,
+        timeout_s=1,
+    )
+    outcome = backend.recognize(request)
+    assert outcome.results == ({"RecognitionStatus": "Success"},)
+    assert outcome.cancellation is None
